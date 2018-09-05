@@ -1,0 +1,15 @@
+/out
+/node_modules
+/target
+
+/dependency-reduced-pom.xml
+/classpath.txt
+/test-classpath.txt
+/docpath.txt
+
+*.log
+*.log.*
+.idea
+*.iml
+*.vsix
+.DS_store
