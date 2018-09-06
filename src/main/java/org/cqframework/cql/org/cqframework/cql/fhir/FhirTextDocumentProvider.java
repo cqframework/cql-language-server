@@ -50,11 +50,13 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
 
     @Override
     public Iterable<TextDocumentItem> getDocuments(String rootUri) {
-        String baseUri = getEndpoint(rootUri);
+        String baseUri = changeScheme(getBaseUri(rootUri), "http");
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
         IQuery<IBaseBundle> search = fhirClient.search().byUrl("Library");
         Bundle results = search.returnBundle(Bundle.class).execute();
         List<TextDocumentItem> libraries = new ArrayList<>();
+        // Switch back to FHIR scheme to report URIs back to the text document service
+        baseUri = changeScheme(baseUri, "fhir");
         extractLibraries(baseUri, results, libraries);
         while (results.getLink(IBaseBundle.LINK_NEXT) != null) {
             results = fhirClient.loadPage().next(results).execute();
@@ -77,11 +79,12 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
 
     @Override
     public TextDocumentItem getDocument(String uri) {
-        String baseUri = getEndpoint(uri);
+        // URI coming from the language client will have a "fhir:" scheme
+        String baseUri = changeScheme(getBaseUri(uri), "http");
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
         Library library = fhirClient.read().resource(Library.class).withUrl(uri).execute();
         if (library != null) {
-            TextDocumentItem textDocument = extractTextDocument(baseUri, library);
+            TextDocumentItem textDocument = extractTextDocument(changeScheme(uri, "fhir"), library);
             return textDocument;
         }
 
@@ -107,16 +110,20 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         return null;
     }
 
-    // URIs coming from the language client will use fhir: as the scheme and be Library urls.
-    private String getEndpoint(String uri) {
+    private String getBaseUri(String uri) {
         int index = uri.lastIndexOf("/Library");
         if (index > 0) {
             uri = uri.substring(0, index);
         }
 
-        index = uri.indexOf("fhir");
-        if (index == 0) {
-            uri = "http" + uri.substring(4);
+        return uri;
+    }
+
+    // URIs coming from the language client will use fhir: as the scheme and be Library urls.
+    private String changeScheme(String uri, String newScheme) {
+        int index = uri.indexOf(":");
+        if (index > 0) {
+            uri = newScheme + uri.substring(index);
         }
 
         return uri;
