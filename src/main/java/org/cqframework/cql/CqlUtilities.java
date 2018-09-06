@@ -16,7 +16,7 @@ import java.util.logging.Logger;
  */
 public class CqlUtilities {
 
-    static Optional<Diagnostic> convert(CqlTranslatorException error) {
+    static Diagnostic convert(CqlTranslatorException error) {
         if (error.getLocator() != null) {
             Range range = position(error);
             Diagnostic diagnostic = new Diagnostic();
@@ -26,19 +26,22 @@ public class CqlUtilities {
             diagnostic.setRange(range);
             diagnostic.setMessage(error.getMessage());
 
-            return Optional.of(diagnostic);
+            return diagnostic;
         }
         else {
             LOG.warning("Skipped " + error.getMessage());
 
-            return Optional.empty();
+            return null;
         }
     }
 
     static List<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
         ArrayList result = new ArrayList<>();
         for (CqlTranslatorException error : errors) {
-            result.add(convert(error));
+            Diagnostic diagnostic = convert(error);
+            if (diagnostic != null) {
+                result.add(diagnostic);
+            }
         }
         return result;
     }

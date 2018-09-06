@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
 class CqlWorkspaceService implements WorkspaceService {
+    private static final Logger LOG = Logger.getLogger("main");
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
     private final CqlTextDocumentService textDocuments;
@@ -47,6 +48,4 @@ class CqlWorkspaceService implements WorkspaceService {
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {
         textDocuments.doLint(textDocuments.openFiles());
     }
-
-    private static final Logger LOG = Logger.getLogger("main");
 }

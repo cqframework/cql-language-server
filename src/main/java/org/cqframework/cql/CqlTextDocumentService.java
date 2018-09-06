@@ -22,6 +22,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 class CqlTextDocumentService implements TextDocumentService {
+    private static final Logger LOG = Logger.getLogger("main");
 
     // LibrarySourceProvider implementation that pulls from the active content in the language server,
     // or the TextDocumentProvider if the content is not active
@@ -77,7 +78,7 @@ class CqlTextDocumentService implements TextDocumentService {
 
     /** All open files, not including things like old git-versions in a diff view */
     Set<URI> openFiles() {
-        return Sets.filter(activeDocuments.keySet(), uri -> uri.getScheme().equals("file"));
+        return Sets.filter(activeDocuments.keySet(), uri -> uri.getScheme().equals("fhir"));
     }
 
     void loadDocuments(String rootUri) {
@@ -99,7 +100,13 @@ class CqlTextDocumentService implements TextDocumentService {
             if (content.isPresent()) {
                 List<CqlTranslatorException> exceptions = server.getTranslationManager().translate(content.get());
 
+                LOG.info(String.format("lint completed on %s with %d messages.", uri, exceptions.size()));
+
                 PublishDiagnosticsParams params = new PublishDiagnosticsParams(uri.toString(), CqlUtilities.convert(exceptions));
+                for (Diagnostic diagnostic : params.getDiagnostics()) {
+                    LOG.info(String.format("diagnostic: %s %d:%d-%d:%d: %s", uri, diagnostic.getRange().getStart().getLine(), diagnostic.getRange().getStart().getCharacter(),
+                            diagnostic.getRange().getEnd().getLine(), diagnostic.getRange().getEnd().getCharacter(), diagnostic.getMessage()));
+                }
                 client.join().publishDiagnostics(params);
             }
         }
@@ -298,6 +305,4 @@ class CqlTextDocumentService implements TextDocumentService {
         // Re-lint all active documents
         doLint(openFiles());
     }
-
-    private static final Logger LOG = Logger.getLogger("main");
 }
