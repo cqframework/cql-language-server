@@ -10,6 +10,7 @@ import org.hl7.fhir.dstu3.model.Bundle;
 import org.hl7.fhir.dstu3.model.Library;
 import org.hl7.fhir.instance.model.api.IBaseBundle;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -106,10 +107,16 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         return null;
     }
 
+    // URIs coming from the language client will use fhir: as the scheme and be Library urls.
     private String getEndpoint(String uri) {
         int index = uri.lastIndexOf("/Library");
         if (index > 0) {
-            return uri.substring(0, index);
+            uri = uri.substring(0, index);
+        }
+
+        index = uri.indexOf("fhir");
+        if (index == 0) {
+            uri = "http" + uri.substring(4);
         }
 
         return uri;
