@@ -78,7 +78,7 @@ class CqlTextDocumentService implements TextDocumentService {
 
     /** All open files, not including things like old git-versions in a diff view */
     Set<URI> openFiles() {
-        return Sets.filter(activeDocuments.keySet(), uri -> uri.getScheme().equals("fhir"));
+        return Sets.filter(activeDocuments.keySet(), uri -> uri.getPath().contains("Library"));
     }
 
     void loadDocuments(String rootUri) {
