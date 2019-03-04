@@ -6,6 +6,20 @@
 	"version": "0.2.0",
     "configurations": [
         {
+            "type": "java",
+            "name": "Debug (Attach)",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5051
+        },
+        {
+            "type": "java",
+            "name": "CodeLens (Launch) - Main",
+            "request": "launch",
+            "mainClass": "org.cqframework.cql.Main",
+            "projectName": "cql-language-server"
+        },
+        {
             "name": "Extension",
             "type": "extensionHost",
             "request": "launch",
