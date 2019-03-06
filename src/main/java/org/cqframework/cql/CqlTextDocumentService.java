@@ -3,6 +3,7 @@ package org.cqframework.cql;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
+import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.org.cqframework.cql.fhir.FhirTextDocumentProvider;
 import org.eclipse.lsp4j.*;
@@ -28,18 +29,24 @@ class CqlTextDocumentService implements TextDocumentService {
     // or the TextDocumentProvider if the content is not active
     class CqlTextDocumentServiceLibrarySourceProvider implements LibrarySourceProvider {
 
+        private FhirLibrarySourceProvider innerProvider;
+
         public CqlTextDocumentServiceLibrarySourceProvider() {
+            this.innerProvider = new FhirLibrarySourceProvider();
         }
 
         @Override
         public InputStream getLibrarySource(VersionedIdentifier versionedIdentifier) {
             // TODO: Resolve the use of versioned identifier versus a URI...
             URI documentUri = null;
-            try {
-                documentUri = new URI(server.getRootUri() + "/" + versionedIdentifier.getId());
-            } catch (URISyntaxException e) {
-                LOG.log(Level.SEVERE, e.getMessage());
-                //e.printStackTrace();
+            String id = versionedIdentifier.getId();
+
+            
+            for(URI uri : activeDocuments.keySet()){
+                if (uri.toString().endsWith(id)) {
+                    documentUri = uri;
+                    break;
+                }
             }
 
             Optional<String> content = activeContent(documentUri);
@@ -52,7 +59,7 @@ class CqlTextDocumentService implements TextDocumentService {
                 return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
             }
 
-            return null;
+            return this.innerProvider.getLibrarySource(versionedIdentifier);
         }
     }
 

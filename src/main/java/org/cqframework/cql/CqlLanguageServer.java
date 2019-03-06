@@ -34,11 +34,6 @@ class CqlLanguageServer implements LanguageServer {
     private final CqlTextDocumentService textDocuments = new CqlTextDocumentService(client, this);
     private final CqlWorkspaceService workspace = new CqlWorkspaceService(client, this, textDocuments);
 
-    private String rootUri;
-    String getRootUri() {
-        return rootUri;
-    }
-
     private CqlTranslationManager translationManager;
     CqlTranslationManager getTranslationManager() {
         return translationManager;
@@ -46,8 +41,6 @@ class CqlLanguageServer implements LanguageServer {
 
     @Override
     public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
-
-        rootUri = params.getRootUri();
         translationManager = new CqlTranslationManager(textDocuments.getLibrarySourceProvider());
 
         InitializeResult result = new InitializeResult();
