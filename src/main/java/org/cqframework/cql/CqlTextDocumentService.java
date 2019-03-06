@@ -54,6 +54,13 @@ class CqlTextDocumentService implements TextDocumentService {
                 return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
             }
 
+            for(URI uri : allDocuments.keySet()){
+                if (uri.toString().endsWith(id)) {
+                    documentUri = uri;
+                    break;
+                }
+            }
+
             TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
             if (textDocumentItem != null) {
                 return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
@@ -91,8 +98,9 @@ class CqlTextDocumentService implements TextDocumentService {
     void loadDocuments(String rootUri) {
         for (TextDocumentItem item : textDocumentProvider.getDocuments(rootUri)) {
             try {
-                allDocuments.put(new URI(item.getUri()), item);
-            } catch (URISyntaxException e) {
+                    allDocuments.put(new URI(item.getUri()), item);
+                }
+            catch (URISyntaxException e) {
                 //e.printStackTrace();
                 LOG.log(Level.SEVERE, e.getMessage());
             }
@@ -234,6 +242,10 @@ class CqlTextDocumentService implements TextDocumentService {
         TextDocumentItem document = params.getTextDocument();
         URI uri = URI.create(document.getUri());
 
+        String baseUri = this.getLibraryBaseUri(uri.toString());
+
+        this.loadDocuments(baseUri);
+
         activeDocuments.put(uri, new VersionedContent(document.getText(), document.getVersion()));
 
         doLint(Collections.singleton(uri));
@@ -308,14 +320,23 @@ class CqlTextDocumentService implements TextDocumentService {
         activeDocuments.remove(uri);
 
         // Clear diagnostics
-        client.join()
-                 .publishDiagnostics(
-                         new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
+        // client.join()
+        //          .publishDiagnostics(
+        //                  new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
         // Re-lint all active documents
         doLint(openFiles());
+    }
+
+    private String getLibraryBaseUri(String uri) {
+        int index = uri.lastIndexOf("/Library");
+        if (index > 0) {
+            uri = uri.substring(0, index);
+        }
+
+        return uri;
     }
 }

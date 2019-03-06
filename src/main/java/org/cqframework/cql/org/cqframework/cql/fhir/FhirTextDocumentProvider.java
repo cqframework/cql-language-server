@@ -79,7 +79,7 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(uri);
         Library library = fhirClient.read().resource(Library.class).withUrl(uri).execute();
         if (library != null) {
-            TextDocumentItem textDocument = extractTextDocument(uri, library);
+            TextDocumentItem textDocument = extractTextDocument(this.getLibraryBaseUri(uri), library);
             return textDocument;
         }
 
@@ -92,7 +92,7 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
                 // TODO: Could use this for any content type, would require a mapping from content type to LanguageServer LanguageId
                 if (content.getContentType().equals("text/cql")) {
                     TextDocumentItem textDocumentItem = new TextDocumentItem();
-                    textDocumentItem.setUri(baseUri + "/Library/" + library.getId());
+                    textDocumentItem.setUri(baseUri + "/Library/" + this.getLibraryId(library.getId()));
                     textDocumentItem.setVersion(0); // TODO: Cannot assume version of the resource is tracked and/or relevant without making assumptions about the FHIR Server...
                     textDocumentItem.setLanguageId("cql");
                     textDocumentItem.setText(new String(content.getData(), StandardCharsets.UTF_8));
@@ -105,12 +105,30 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         return null;
     }
 
-    private String getBaseUri(String uri) {
+    public String getLibraryBaseUri(String uri) {
         int index = uri.lastIndexOf("/Library");
+        String baseUri = null;
         if (index > 0) {
-            uri = uri.substring(0, index);
+            baseUri = uri.substring(0, index);
         }
 
-        return uri;
+        return baseUri;
+    }
+
+    public String getLibraryId(String uri) {
+        String baseUri = getLibraryBaseUri(uri);
+        String id = null;
+        if (baseUri != null) {
+            id = uri.replace(baseUri, "");
+        }
+
+        int index = id.lastIndexOf("/_history");
+        if (index > 0) {
+            id = id.substring(0, index);
+        }
+
+        id = id.replace("/Library/", "");
+
+        return id;
     }
 }
