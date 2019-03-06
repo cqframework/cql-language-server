@@ -97,7 +97,7 @@ class CqlTextDocumentService implements TextDocumentService {
 
         for (URI uri : paths) {
             Optional<String> content = activeContent(uri);
-            if (content.isPresent()) {
+            if (content.isPresent() && content.get().length() > 0) {
                 List<CqlTranslatorException> exceptions = server.getTranslationManager().translate(content.get());
 
                 LOG.info(String.format("lint completed on %s with %d messages.", uri, exceptions.size()));
@@ -107,6 +107,12 @@ class CqlTextDocumentService implements TextDocumentService {
                     LOG.info(String.format("diagnostic: %s %d:%d-%d:%d: %s", uri, diagnostic.getRange().getStart().getLine(), diagnostic.getRange().getStart().getCharacter(),
                             diagnostic.getRange().getEnd().getLine(), diagnostic.getRange().getEnd().getCharacter(), diagnostic.getMessage()));
                 }
+                client.join().publishDiagnostics(params);
+            }
+            else
+            {
+                Diagnostic d = new Diagnostic(new Range(new Position(0,0), new Position(0,0)), "Library does not contain CQL content.", DiagnosticSeverity.Warning, "lint");
+                PublishDiagnosticsParams params = new PublishDiagnosticsParams(uri.toString(), Arrays.asList(d));
                 client.join().publishDiagnostics(params);
             }
         }

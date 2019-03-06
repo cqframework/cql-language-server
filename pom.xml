@@ -63,6 +63,11 @@
             <artifactId>hapi-fhir-base</artifactId>
             <version>3.4.0</version>
         </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-client</artifactId>
+            <version>3.4.0</version>
+        </dependency>
         <!-- Java implementation of VS Code language server protocol -->
         <dependency>
             <groupId>org.eclipse.lsp4j</groupId>
