@@ -54,7 +54,7 @@ class CqlTextDocumentService implements TextDocumentService {
                 return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
             }
 
-            for(URI uri : allDocuments.keySet()){
+            for(URI uri : allDocuments){
                 if (uri.toString().endsWith(id)) {
                     documentUri = uri;
                     break;
@@ -74,7 +74,7 @@ class CqlTextDocumentService implements TextDocumentService {
     private final CqlLanguageServer server;
     private final TextDocumentProvider textDocumentProvider = new FhirTextDocumentProvider();
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
-    private final Map<URI, TextDocumentItem> allDocuments = new HashMap<>();
+    private final Set<URI> allDocuments = new HashSet<>();
 
     CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
@@ -96,15 +96,7 @@ class CqlTextDocumentService implements TextDocumentService {
     }
 
     void loadDocuments(String rootUri) {
-        for (TextDocumentItem item : textDocumentProvider.getDocuments(rootUri)) {
-            try {
-                    allDocuments.put(new URI(item.getUri()), item);
-                }
-            catch (URISyntaxException e) {
-                //e.printStackTrace();
-                LOG.log(Level.SEVERE, e.getMessage());
-            }
-        }
+        allDocuments.addAll(textDocumentProvider.getDocuments(rootUri));
     }
 
     void doLint(Collection<URI> paths) {
@@ -242,12 +234,19 @@ class CqlTextDocumentService implements TextDocumentService {
         TextDocumentItem document = params.getTextDocument();
         URI uri = URI.create(document.getUri());
 
-        String baseUri = this.getLibraryBaseUri(uri.toString());
-
-        this.loadDocuments(baseUri);
+        // TODO: filter this correctly on the client side
+        if (uri.toString().contains("metadata") || uri.toString().contains("_history")) {
+            return;
+        }
 
         activeDocuments.put(uri, new VersionedContent(document.getText(), document.getVersion()));
 
+        String baseUri = this.getLibraryBaseUri(uri.toString());
+
+        // TODO: Only load documents not already loaded
+        // TODO: Lint documents in the workspace but not currently active
+        
+        this.loadDocuments(baseUri);
         doLint(Collections.singleton(uri));
     }
 
