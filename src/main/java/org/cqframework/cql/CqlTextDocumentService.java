@@ -61,9 +61,11 @@ class CqlTextDocumentService implements TextDocumentService {
                 }
             }
 
-            TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
-            if (textDocumentItem != null) {
-                return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
+            if (documentUri != null){
+                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
+                if (textDocumentItem != null) {
+                    return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
+                }
             }
 
             return this.innerProvider.getLibrarySource(versionedIdentifier);
