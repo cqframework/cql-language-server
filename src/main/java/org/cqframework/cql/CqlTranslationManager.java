@@ -19,7 +19,6 @@ public class CqlTranslationManager {
         // TODO: validateUnits setting
 
         libraryManager.getLibrarySourceLoader().registerProvider(librarySourceProvider);
-        libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
     }
 
     public List<CqlTranslatorException> translate(String content) {

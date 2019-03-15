@@ -3,6 +3,7 @@ package org.cqframework.cql;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
+import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.org.cqframework.cql.fhir.FhirTextDocumentProvider;
 import org.eclipse.lsp4j.*;
@@ -28,18 +29,24 @@ class CqlTextDocumentService implements TextDocumentService {
     // or the TextDocumentProvider if the content is not active
     class CqlTextDocumentServiceLibrarySourceProvider implements LibrarySourceProvider {
 
+        private FhirLibrarySourceProvider innerProvider;
+
         public CqlTextDocumentServiceLibrarySourceProvider() {
+            this.innerProvider = new FhirLibrarySourceProvider();
         }
 
         @Override
         public InputStream getLibrarySource(VersionedIdentifier versionedIdentifier) {
             // TODO: Resolve the use of versioned identifier versus a URI...
             URI documentUri = null;
-            try {
-                documentUri = new URI(server.getRootUri() + "/" + versionedIdentifier.getId());
-            } catch (URISyntaxException e) {
-                LOG.log(Level.SEVERE, e.getMessage());
-                //e.printStackTrace();
+            String id = versionedIdentifier.getId();
+
+            
+            for(URI uri : activeDocuments.keySet()){
+                if (uri.toString().endsWith(id)) {
+                    documentUri = uri;
+                    break;
+                }
             }
 
             Optional<String> content = activeContent(documentUri);
@@ -47,12 +54,21 @@ class CqlTextDocumentService implements TextDocumentService {
                 return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
             }
 
-            TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
-            if (textDocumentItem != null) {
-                return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
+            for(URI uri : allDocuments){
+                if (uri.toString().endsWith(id)) {
+                    documentUri = uri;
+                    break;
+                }
             }
 
-            return null;
+            if (documentUri != null){
+                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
+                if (textDocumentItem != null) {
+                    return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
+                }
+            }
+
+            return this.innerProvider.getLibrarySource(versionedIdentifier);
         }
     }
 
@@ -60,7 +76,7 @@ class CqlTextDocumentService implements TextDocumentService {
     private final CqlLanguageServer server;
     private final TextDocumentProvider textDocumentProvider = new FhirTextDocumentProvider();
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
-    private final Map<URI, TextDocumentItem> allDocuments = new HashMap<>();
+    private final Set<URI> allDocuments = new HashSet<>();
 
     CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
@@ -82,14 +98,7 @@ class CqlTextDocumentService implements TextDocumentService {
     }
 
     void loadDocuments(String rootUri) {
-        for (TextDocumentItem item : textDocumentProvider.getDocuments(rootUri)) {
-            try {
-                allDocuments.put(new URI(item.getUri()), item);
-            } catch (URISyntaxException e) {
-                //e.printStackTrace();
-                LOG.log(Level.SEVERE, e.getMessage());
-            }
-        }
+        allDocuments.addAll(textDocumentProvider.getDocuments(rootUri));
     }
 
     void doLint(Collection<URI> paths) {
@@ -227,8 +236,19 @@ class CqlTextDocumentService implements TextDocumentService {
         TextDocumentItem document = params.getTextDocument();
         URI uri = URI.create(document.getUri());
 
+        // TODO: filter this correctly on the client side
+        if (uri.toString().contains("metadata") || uri.toString().contains("_history")) {
+            return;
+        }
+
         activeDocuments.put(uri, new VersionedContent(document.getText(), document.getVersion()));
 
+        String baseUri = this.getLibraryBaseUri(uri.toString());
+
+        // TODO: Only load documents not already loaded
+        // TODO: Lint documents in the workspace but not currently active
+        
+        this.loadDocuments(baseUri);
         doLint(Collections.singleton(uri));
     }
 
@@ -301,14 +321,23 @@ class CqlTextDocumentService implements TextDocumentService {
         activeDocuments.remove(uri);
 
         // Clear diagnostics
-        client.join()
-                 .publishDiagnostics(
-                         new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
+        // client.join()
+        //          .publishDiagnostics(
+        //                  new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
         // Re-lint all active documents
         doLint(openFiles());
+    }
+
+    private String getLibraryBaseUri(String uri) {
+        int index = uri.lastIndexOf("/Library");
+        if (index > 0) {
+            uri = uri.substring(0, index);
+        }
+
+        return uri;
     }
 }

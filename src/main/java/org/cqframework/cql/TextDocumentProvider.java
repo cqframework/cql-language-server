@@ -4,11 +4,12 @@ import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.TextDocumentItem;
 
 import java.net.URI;
+import java.util.Collection;
 
 /**
  * Created by Bryn on 9/4/2018.
  */
 public interface TextDocumentProvider {
-    Iterable<TextDocumentItem> getDocuments(String rootUri);
+    Collection<URI> getDocuments(String rootUri);
     TextDocumentItem getDocument(String uri);
 }

@@ -1,6 +1,7 @@
 package org.cqframework.cql.org.cqframework.cql.fhir;
 
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.rest.api.SummaryEnum;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
 import ca.uhn.fhir.rest.gclient.IQuery;
 import org.cqframework.cql.TextDocumentProvider;
@@ -12,9 +13,12 @@ import org.hl7.fhir.instance.model.api.IBaseBundle;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
+
+import com.google.common.net.UrlEscapers;
 
 /**
  * Created by Bryn on 9/4/2018.
@@ -49,34 +53,59 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
     }
 
     @Override
-    public Iterable<TextDocumentItem> getDocuments(String rootUri) {
-        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(rootUri);
-        IQuery<IBaseBundle> search = fhirClient.search().byUrl("Library");
+    public Collection<URI> getDocuments(String baseUri) {
+        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
+        IQuery<IBaseBundle> search = fhirClient.search().byUrl("Library").summaryMode(SummaryEnum.TRUE);
         Bundle results = search.returnBundle(Bundle.class).execute();
-        List<TextDocumentItem> libraries = new ArrayList<>();
-        extractLibraries(rootUri, results, libraries);
+        HashSet<URI> uris = new HashSet<URI>();
+
+        updateUris(baseUri, results, uris);
         while (results.getLink(IBaseBundle.LINK_NEXT) != null) {
             results = fhirClient.loadPage().next(results).execute();
-            extractLibraries(rootUri, results, libraries);
+            updateUris(baseUri, results, uris);
         }
 
-        return libraries;
+        return uris;
     }
 
 
-    private void extractLibraries(String baseUri, Bundle bundle, List<TextDocumentItem> libraries) {
+    private void updateUris(String baseUri, Bundle bundle, Set<URI> uris) {
         for (Bundle.BundleEntryComponent entry : bundle.getEntry()) {
             Library library = (Library)entry.getResource();
-            TextDocumentItem textDocument = extractTextDocument(baseUri, library);
-            if (textDocument != null) {
-                libraries.add(textDocument);
+            if (library.getType().getCoding().get(0).getCode().equals("logic-library")) {
+                try {
+                    String id = library.getId();
+
+                    // handles base uri being prefixed
+                    int index = id.lastIndexOf("/Library/");
+                    if (index > 0) {
+                        id = id.substring(index + 9);
+                    }
+
+                    // handles _history being postfixed
+                    index = id.indexOf("/");
+                    if (index > 0) {
+                        id = id.substring(0, index);
+                    }
+
+                    uris.add(new URI(baseUri + "/Library/" + id));
+                }
+                catch (Exception e) {
+                    // Nothing...
+                }
             }
         }
     }
 
     @Override
     public TextDocumentItem getDocument(String uri) {
-        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(uri);
+        String baseUri = uri;
+        int index = uri.indexOf("/Library");
+        if (index > 0) {
+            baseUri = uri.substring(0, index);
+        }
+
+        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
         Library library = fhirClient.read().resource(Library.class).withUrl(uri).execute();
         if (library != null) {
             TextDocumentItem textDocument = extractTextDocument(uri, library);
@@ -86,13 +115,13 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         return null;
     }
 
-    private TextDocumentItem extractTextDocument(String baseUri, Library library) {
+    private TextDocumentItem extractTextDocument(String uri, Library library) {
         if (library.getType().getCoding().get(0).getCode().equals("logic-library")) {
             for (Attachment content : library.getContent()) {
                 // TODO: Could use this for any content type, would require a mapping from content type to LanguageServer LanguageId
                 if (content.getContentType().equals("text/cql")) {
                     TextDocumentItem textDocumentItem = new TextDocumentItem();
-                    textDocumentItem.setUri(baseUri + "/Library/" + library.getId());
+                    textDocumentItem.setUri(uri);
                     textDocumentItem.setVersion(0); // TODO: Cannot assume version of the resource is tracked and/or relevant without making assumptions about the FHIR Server...
                     textDocumentItem.setLanguageId("cql");
                     textDocumentItem.setText(new String(content.getData(), StandardCharsets.UTF_8));
@@ -103,14 +132,5 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         }
 
         return null;
-    }
-
-    private String getBaseUri(String uri) {
-        int index = uri.lastIndexOf("/Library");
-        if (index > 0) {
-            uri = uri.substring(0, index);
-        }
-
-        return uri;
     }
 }
