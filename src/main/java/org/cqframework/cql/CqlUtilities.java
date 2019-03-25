@@ -59,13 +59,14 @@ public class CqlUtilities {
     }
 
     private static Range position(CqlTranslatorException error) {
+        // The Language server API assumes 0 based indices and an exclusive range
         return new Range(
                 new Position(
-                        error.getLocator().getStartLine(),
-                        error.getLocator().getStartChar()
+                        error.getLocator().getStartLine() - 1,
+                        error.getLocator().getStartChar() - 1
                 ),
                 new Position(
-                        error.getLocator().getEndLine(),
+                        error.getLocator().getEndLine() - 1,
                         error.getLocator().getEndChar()
                 )
         );
