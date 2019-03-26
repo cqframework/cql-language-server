@@ -41,9 +41,14 @@ class CqlTextDocumentService implements TextDocumentService {
             URI documentUri = null;
             String id = versionedIdentifier.getId();
 
-            
             for(URI uri : activeDocuments.keySet()){
+                // This will match be URI
                 if (uri.toString().endsWith(id)) {
+                    documentUri = uri;
+                    break;
+                }
+                // This will match if the content contains the library definition is present.
+                if (activeDocuments.get(uri).content.matches("(?s).*library\\s+" + id + "\\s+(?s).*")){
                     documentUri = uri;
                     break;
                 }
@@ -65,7 +70,17 @@ class CqlTextDocumentService implements TextDocumentService {
                 TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
                 if (textDocumentItem != null) {
                     return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
-                }
+                } 
+            }
+
+            // Search the FHIR server of the first document we know about.
+            if (allDocuments.size() > 0) {
+                URI uri = allDocuments.iterator().next();
+                String baseUri = CqlUtilities.getLibraryBaseUri(uri.toString());
+                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(baseUri, id);
+                if (textDocumentItem != null) {
+                    return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
+                } 
             }
 
             return this.innerProvider.getLibrarySource(versionedIdentifier);
@@ -243,7 +258,7 @@ class CqlTextDocumentService implements TextDocumentService {
 
         activeDocuments.put(uri, new VersionedContent(document.getText(), document.getVersion()));
 
-        String baseUri = this.getLibraryBaseUri(uri.toString());
+        String baseUri = CqlUtilities.getLibraryBaseUri(uri.toString());
 
         // TODO: Only load documents not already loaded
         // TODO: Lint documents in the workspace but not currently active
@@ -321,23 +336,14 @@ class CqlTextDocumentService implements TextDocumentService {
         activeDocuments.remove(uri);
 
         // Clear diagnostics
-        // client.join()
-        //          .publishDiagnostics(
-        //                  new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
+        client.join()
+                 .publishDiagnostics(
+                         new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
         // Re-lint all active documents
         doLint(openFiles());
-    }
-
-    private String getLibraryBaseUri(String uri) {
-        int index = uri.lastIndexOf("/Library");
-        if (index > 0) {
-            uri = uri.substring(0, index);
-        }
-
-        return uri;
     }
 }

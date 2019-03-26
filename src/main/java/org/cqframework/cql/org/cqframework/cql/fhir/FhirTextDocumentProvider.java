@@ -4,6 +4,8 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.api.SummaryEnum;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
 import ca.uhn.fhir.rest.gclient.IQuery;
+
+import org.cqframework.cql.CqlUtilities;
 import org.cqframework.cql.TextDocumentProvider;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
@@ -99,17 +101,44 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
 
     @Override
     public TextDocumentItem getDocument(String uri) {
-        String baseUri = uri;
-        int index = uri.indexOf("/Library");
-        if (index > 0) {
-            baseUri = uri.substring(0, index);
-        }
+        String baseUri = CqlUtilities.getLibraryBaseUri(uri);
 
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
         Library library = fhirClient.read().resource(Library.class).withUrl(uri).execute();
+
         if (library != null) {
-            TextDocumentItem textDocument = extractTextDocument(uri, library);
-            return textDocument;
+            return extractTextDocument(uri, library);
+        }
+
+        return null;
+    }
+
+
+
+    @Override
+    public TextDocumentItem getDocument(String baseUri, String idOrName) {
+
+        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
+        Library library = null;
+        try {
+            library = fhirClient.read().resource(Library.class).withId(idOrName).execute();
+        }
+        catch (Exception e) {}
+
+        if (library == null ) {
+            Bundle result = fhirClient.search().forResource(Library.class).where(Library.NAME.matches().value(idOrName))
+                .returnBundle(Bundle.class).execute();
+
+            if (result.hasEntry() && result.getEntry().size() > 0){
+                try {
+                    library = fhirClient.read().resource(Library.class)
+                    .withId(result.getEntry().get(0).getResource().getId()).execute();
+                }
+                catch (Exception e) {}
+            }
+        }
+        if (library != null) {
+            return extractTextDocument(baseUri + "/Library/" + idOrName, library);
         }
 
         return null;

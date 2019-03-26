@@ -16,6 +16,15 @@ import java.util.logging.Logger;
  */
 public class CqlUtilities {
 
+    public static String getLibraryBaseUri(String uri) {
+        int index = uri.lastIndexOf("/Library");
+        if (index > 0) {
+            uri = uri.substring(0, index);
+        }
+
+        return uri;
+    }
+
     static Diagnostic convert(CqlTranslatorException error) {
         if (error.getLocator() != null) {
             Range range = position(error);

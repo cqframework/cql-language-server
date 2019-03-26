@@ -11,5 +11,6 @@ import java.util.Collection;
  */
 public interface TextDocumentProvider {
     Collection<URI> getDocuments(String rootUri);
+    TextDocumentItem getDocument(String rootUri, String idOrName);
     TextDocumentItem getDocument(String uri);
 }
