@@ -276,13 +276,17 @@ class CqlTextDocumentService implements TextDocumentService {
 
         if (document.getVersion() > existing.version) {
             for (TextDocumentContentChangeEvent change : params.getContentChanges()) {
-                if (change.getRange() == null)
+                if (change.getRange() == null) {
                     activeDocuments.put(
                             uri, new VersionedContent(change.getText(), document.getVersion()));
-                else newText = patch(newText, change);
+                }
+                else {
+                    newText = patch(newText, change);
+                    activeDocuments.put(uri, new VersionedContent(newText, document.getVersion()));
+                }
             }
 
-            activeDocuments.put(uri, new VersionedContent(newText, document.getVersion()));
+
         } else
             LOG.warning(
                     "Ignored change with version "

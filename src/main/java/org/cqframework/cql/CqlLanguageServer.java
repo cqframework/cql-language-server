@@ -46,11 +46,11 @@ class CqlLanguageServer implements LanguageServer {
         InitializeResult result = new InitializeResult();
         ServerCapabilities c = new ServerCapabilities();
 
-        c.setTextDocumentSync(TextDocumentSyncKind.Incremental);
+        c.setTextDocumentSync(TextDocumentSyncKind.Full);
         //c.setDefinitionProvider(true);
-        c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
-        c.setDocumentFormattingProvider(true);
-        c.setDocumentRangeFormattingProvider(true);
+        //c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
+        //c.setDocumentFormattingProvider(true);
+        //c.setDocumentRangeFormattingProvider(true);
         //c.setHoverProvider(true);
         //c.setWorkspaceSymbolProvider(true);
         //c.setReferencesProvider(true);
