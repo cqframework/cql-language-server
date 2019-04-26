@@ -57,7 +57,7 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
     @Override
     public Collection<URI> getDocuments(String baseUri) {
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
-        IQuery<IBaseBundle> search = fhirClient.search().byUrl("Library").summaryMode(SummaryEnum.TRUE);
+        IQuery<IBaseBundle> search = fhirClient.search().byUrl("Library").elementsSubset("name","version","type").encodedJson();
         Bundle results = search.returnBundle(Bundle.class).execute();
         HashSet<URI> uris = new HashSet<URI>();
 
@@ -104,7 +104,7 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         String baseUri = CqlUtilities.getLibraryBaseUri(uri);
 
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
-        Library library = fhirClient.read().resource(Library.class).withUrl(uri).execute();
+        Library library = fhirClient.read().resource(Library.class).withUrl(uri).elementsSubset("name", "version", "content", "type").encodedJson().execute();
 
         if (library != null) {
             return extractTextDocument(uri, library);
@@ -121,18 +121,18 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
         Library library = null;
         try {
-            library = fhirClient.read().resource(Library.class).withId(idOrName).execute();
+            library = fhirClient.read().resource(Library.class).withId(idOrName).elementsSubset("name", "version", "content", "type").encodedJson().execute();
         }
         catch (Exception e) {}
 
         if (library == null ) {
-            Bundle result = fhirClient.search().forResource(Library.class).where(Library.NAME.matches().value(idOrName))
-                .returnBundle(Bundle.class).execute();
+            Bundle result = fhirClient.search().forResource(Library.class).elementsSubset("name", "version").where(Library.NAME.matches().value(idOrName))
+                .returnBundle(Bundle.class).encodedJson().execute();
 
             if (result.hasEntry() && result.getEntry().size() > 0){
                 try {
                     library = fhirClient.read().resource(Library.class)
-                    .withId(result.getEntry().get(0).getResource().getId()).execute();
+                    .withId(result.getEntry().get(0).getResource().getId()).elementsSubset("name", "version", "content", "type").encodedJson().execute();
                 }
                 catch (Exception e) {}
             }
