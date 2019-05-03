@@ -1,9 +1,6 @@
 package org.cqframework.cql.org.cqframework.cql.fhir;
 
-import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.rest.api.SummaryEnum;
-import ca.uhn.fhir.rest.client.api.IGenericClient;
-import ca.uhn.fhir.rest.gclient.IQuery;
+import java.nio.charset.StandardCharsets;
 
 import org.cqframework.cql.CqlUtilities;
 import org.cqframework.cql.TextDocumentProvider;
@@ -11,16 +8,9 @@ import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
 import org.hl7.fhir.dstu3.model.Library;
-import org.hl7.fhir.instance.model.api.IBaseBundle;
 
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
-
-import com.google.common.net.UrlEscapers;
+import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.rest.client.api.IGenericClient;
 
 /**
  * Created by Bryn on 9/4/2018.
@@ -55,51 +45,6 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
     }
 
     @Override
-    public Collection<URI> getDocuments(String baseUri) {
-        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
-        IQuery<IBaseBundle> search = fhirClient.search().byUrl("Library").elementsSubset("name","version","type").encodedJson();
-        Bundle results = search.returnBundle(Bundle.class).execute();
-        HashSet<URI> uris = new HashSet<URI>();
-
-        updateUris(baseUri, results, uris);
-        while (results.getLink(IBaseBundle.LINK_NEXT) != null) {
-            results = fhirClient.loadPage().next(results).execute();
-            updateUris(baseUri, results, uris);
-        }
-
-        return uris;
-    }
-
-
-    private void updateUris(String baseUri, Bundle bundle, Set<URI> uris) {
-        for (Bundle.BundleEntryComponent entry : bundle.getEntry()) {
-            Library library = (Library)entry.getResource();
-            if (library.getType().getCoding().get(0).getCode().equals("logic-library")) {
-                try {
-                    String id = library.getId();
-
-                    // handles base uri being prefixed
-                    int index = id.lastIndexOf("/Library/");
-                    if (index > 0) {
-                        id = id.substring(index + 9);
-                    }
-
-                    // handles _history being postfixed
-                    index = id.indexOf("/");
-                    if (index > 0) {
-                        id = id.substring(0, index);
-                    }
-
-                    uris.add(new URI(baseUri + "/Library/" + id));
-                }
-                catch (Exception e) {
-                    // Nothing...
-                }
-            }
-        }
-    }
-
-    @Override
     public TextDocumentItem getDocument(String uri) {
         String baseUri = CqlUtilities.getLibraryBaseUri(uri);
 
@@ -113,32 +58,43 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         return null;
     }
 
-
-
     @Override
-    public TextDocumentItem getDocument(String baseUri, String idOrName) {
+    public TextDocumentItem getDocument(String baseUri, String name, String version) {
 
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
-        Library library = null;
-        try {
-            library = fhirClient.read().resource(Library.class).withId(idOrName).elementsSubset("name", "version", "content", "type").encodedJson().execute();
-        }
-        catch (Exception e) {}
 
-        if (library == null ) {
-            Bundle result = fhirClient.search().forResource(Library.class).elementsSubset("name", "version").where(Library.NAME.matches().value(idOrName))
+        Bundle result = fhirClient.search().forResource(Library.class).elementsSubset("name", "version").where(Library.NAME.matchesExactly().value(name))
                 .returnBundle(Bundle.class).encodedJson().execute();
 
-            if (result.hasEntry() && result.getEntry().size() > 0){
-                try {
-                    library = fhirClient.read().resource(Library.class)
-                    .withId(result.getEntry().get(0).getResource().getId()).elementsSubset("name", "version", "content", "type").encodedJson().execute();
+        Library library = null;
+        String libraryUrl = null;
+        Library maxVersion = null;
+        String maxUrl = null;
+        if (result.hasEntry() && result.getEntry().size() > 0){
+            for (Bundle.BundleEntryComponent bec : result.getEntry()) {
+                Library l = (Library)bec.getResource();
+                if ((version != null && l.getVersion().equals(version)) ||
+                    (version == null && !l.hasVersion()))
+                {
+                    library = l;
+                    libraryUrl = bec.getFullUrl();
                 }
-                catch (Exception e) {}
+    
+                if (maxVersion == null || compareVersions(maxVersion.getVersion(), l.getVersion()) < 0){
+                    maxVersion = l;
+                    maxUrl = bec.getFullUrl();
+                }
             }
         }
+
+        if (version == null && maxVersion != null) {
+            library = maxVersion;
+            libraryUrl = maxUrl;
+        }
+
+        // This is a subsetted resource, so we get the full version here.
         if (library != null) {
-            return extractTextDocument(baseUri + "/Library/" + idOrName, library);
+            return getDocument(libraryUrl);
         }
 
         return null;
@@ -161,5 +117,46 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         }
 
         return null;
+    }
+
+    public static int compareVersions(String version1, String version2)
+    {
+        // Treat null as MAX VERSION
+        if (version1 == null && version2 == null) {
+            return 0;
+        }
+
+        if (version1 != null && version2 == null) {
+            return -1;
+        }
+
+        if (version1 == null && version2 != null) {
+            return 1;
+        }
+
+        String[] string1Vals = version1.split("\\.");
+        String[] string2Vals = version2.split("\\.");
+    
+        int length = Math.max(string1Vals.length, string2Vals.length);
+    
+        for (int i = 0; i < length; i++)
+        {
+            Integer v1 = (i < string1Vals.length)?Integer.parseInt(string1Vals[i]):0;
+            Integer v2 = (i < string2Vals.length)?Integer.parseInt(string2Vals[i]):0;
+    
+            //Making sure Version1 bigger than version2
+            if (v1 > v2)
+            {
+                return 1;
+            }
+            //Making sure Version1 smaller than version2
+            else if(v1 < v2)
+            {
+                return -1;
+            }
+        }
+    
+        //Both are equal
+        return 0;
     }
 }

@@ -37,18 +37,21 @@ class CqlTextDocumentService implements TextDocumentService {
 
         @Override
         public InputStream getLibrarySource(VersionedIdentifier versionedIdentifier) {
-            // TODO: Resolve the use of versioned identifier versus a URI...
             URI documentUri = null;
             String id = versionedIdentifier.getId();
+            String version = versionedIdentifier.getVersion();
+
+            String matchText = "(?s).*library\\s+" + id;
+            if (version != null) {
+                matchText += ("\\s+version\\s+'" + version + "'\\s+(?s).*");
+            }
+            else {
+                matchText += "'\\s+(?s).*";
+            }
 
             for(URI uri : activeDocuments.keySet()){
-                // This will match be URI
-                if (uri.toString().endsWith(id)) {
-                    documentUri = uri;
-                    break;
-                }
                 // This will match if the content contains the library definition is present.
-                if (activeDocuments.get(uri).content.matches("(?s).*library\\s+" + id + "\\s+(?s).*")){
+                if (activeDocuments.get(uri).content.matches(matchText)){
                     documentUri = uri;
                     break;
                 }
@@ -59,25 +62,12 @@ class CqlTextDocumentService implements TextDocumentService {
                 return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
             }
 
-            for(URI uri : allDocuments){
-                if (uri.toString().endsWith(id)) {
-                    documentUri = uri;
-                    break;
-                }
-            }
-
-            if (documentUri != null){
-                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(documentUri.toString());
-                if (textDocumentItem != null) {
-                    return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
-                } 
-            }
 
             // Search the FHIR server of the first document we know about.
-            if (allDocuments.size() > 0) {
-                URI uri = allDocuments.iterator().next();
+            if (activeDocuments.size() > 0) {
+                URI uri = activeDocuments.keySet().iterator().next();
                 String baseUri = CqlUtilities.getLibraryBaseUri(uri.toString());
-                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(baseUri, id);
+                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(baseUri, id, version);
                 if (textDocumentItem != null) {
                     return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
                 } 
@@ -91,7 +81,6 @@ class CqlTextDocumentService implements TextDocumentService {
     private final CqlLanguageServer server;
     private final TextDocumentProvider textDocumentProvider = new FhirTextDocumentProvider();
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
-    private final Set<URI> allDocuments = new HashSet<>();
 
     CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
@@ -110,10 +99,6 @@ class CqlTextDocumentService implements TextDocumentService {
     /** All open files, not including things like old git-versions in a diff view */
     Set<URI> openFiles() {
         return Sets.filter(activeDocuments.keySet(), uri -> uri.getPath().contains("Library"));
-    }
-
-    void loadDocuments(String rootUri) {
-        allDocuments.addAll(textDocumentProvider.getDocuments(rootUri));
     }
 
     void doLint(Collection<URI> paths) {
@@ -262,8 +247,6 @@ class CqlTextDocumentService implements TextDocumentService {
 
         // TODO: Only load documents not already loaded
         // TODO: Lint documents in the workspace but not currently active
-        
-        this.loadDocuments(baseUri);
         doLint(Collections.singleton(uri));
     }
 
