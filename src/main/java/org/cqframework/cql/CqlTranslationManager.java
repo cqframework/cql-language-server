@@ -15,15 +15,15 @@ public class CqlTranslationManager {
 
     public CqlTranslationManager(LibrarySourceProvider librarySourceProvider) {
         modelManager = new ModelManager();
-        libraryManager = new LibraryManager(modelManager);
+        libraryManager = new NonCachingLibraryManager(modelManager);
         // TODO: validateUnits setting
 
         libraryManager.getLibrarySourceLoader().registerProvider(librarySourceProvider);
-        libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
     }
 
     public List<CqlTranslatorException> translate(String content) {
-        // TODO: translator settings
+        // TODO: translator setting
+
         CqlTranslator translator = CqlTranslator.fromText(content, modelManager, libraryManager);
         // TODO: cache translation result...
         return translator.getExceptions();

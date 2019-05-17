@@ -16,6 +16,15 @@ import java.util.logging.Logger;
  */
 public class CqlUtilities {
 
+    public static String getLibraryBaseUri(String uri) {
+        int index = uri.lastIndexOf("/Library");
+        if (index > 0) {
+            uri = uri.substring(0, index);
+        }
+
+        return uri;
+    }
+
     static Diagnostic convert(CqlTranslatorException error) {
         if (error.getLocator() != null) {
             Range range = position(error);
@@ -59,13 +68,14 @@ public class CqlUtilities {
     }
 
     private static Range position(CqlTranslatorException error) {
+        // The Language server API assumes 0 based indices and an exclusive range
         return new Range(
                 new Position(
-                        error.getLocator().getStartLine(),
-                        error.getLocator().getStartChar()
+                        error.getLocator().getStartLine() - 1,
+                        error.getLocator().getStartChar() - 1
                 ),
                 new Position(
-                        error.getLocator().getEndLine(),
+                        error.getLocator().getEndLine() - 1,
                         error.getLocator().getEndChar()
                 )
         );
