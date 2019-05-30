@@ -6,6 +6,10 @@ import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.org.cqframework.cql.fhir.FhirTextDocumentProvider;
+
+import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
+import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
+
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -211,7 +215,34 @@ class CqlTextDocumentService implements TextDocumentService {
 
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
-        return null;
+        try {
+            TextDocumentItem td = this.textDocumentProvider.getDocument(params.getTextDocument().getUri());
+            String text = td.getText();
+            // Get lines from the text;
+            String[] lines = text.split("[\n|\r]");
+
+            FormatResult fr = CqlFormatterVisitor.getFormattedOutput(new ByteArrayInputStream(td.getText().getBytes()));
+
+            // Only update the content if it's valid CQL.
+            if (fr.getErrors().size() != 0) {
+                MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
+                this.client.join().showMessage(mp);
+
+                return null;
+            }
+            else {
+                int line = lines.length - 1;
+                int character = lines[line].length() - 1;
+                TextEdit te = new TextEdit(new Range(new Position(0, 0), new Position(lines.length, character)), fr.getOutput());
+                return CompletableFuture.completedFuture(Collections.singletonList(te));
+            }
+        }
+        catch (Exception e) {
+            MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
+            this.client.join().showMessage(mp);
+
+            return null;
+        }
     }
 
     @Override
