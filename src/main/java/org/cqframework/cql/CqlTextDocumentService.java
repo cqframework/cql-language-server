@@ -17,6 +17,8 @@ import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
@@ -28,7 +30,6 @@ class CqlTextDocumentService implements TextDocumentService {
     // LibrarySourceProvider implementation that pulls from the active content in the language server,
     // or the TextDocumentProvider if the content is not active
     class CqlTextDocumentServiceLibrarySourceProvider implements LibrarySourceProvider {
-
         private FhirLibrarySourceProvider innerProvider;
 
         public CqlTextDocumentServiceLibrarySourceProvider() {
@@ -62,7 +63,6 @@ class CqlTextDocumentService implements TextDocumentService {
                 return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
             }
 
-
             // Search the FHIR server of the first document we know about.
             if (activeDocuments.size() > 0) {
                 URI uri = activeDocuments.keySet().iterator().next();
@@ -70,7 +70,7 @@ class CqlTextDocumentService implements TextDocumentService {
                 TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(baseUri, id, version);
                 if (textDocumentItem != null) {
                     return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
-                } 
+                }
             }
 
             return this.innerProvider.getLibrarySource(versionedIdentifier);
@@ -87,8 +87,17 @@ class CqlTextDocumentService implements TextDocumentService {
         this.server = server;
     }
 
+    boolean documentSourceIsFileSystem = true;
+    String workspaceRootPath = "Users/Adam/Src/opioid-cds/pages/cql";
     LibrarySourceProvider getLibrarySourceProvider() {
-        return new CqlTextDocumentServiceLibrarySourceProvider();
+//        workspaceRootPath = "Users/Adam";
+//        if (documentSourceIsFileSystem && StringUtils.isNotEmpty(workspaceRootPath) && StringUtils.isNotBlank(workspaceRootPath)) {
+            Path path = Paths.get(workspaceRootPath);
+            return new DefaultLibrarySourceProvider(path);
+//        }
+//        else {
+//            return new CqlTextDocumentServiceLibrarySourceProvider();
+//        }
     }
 
     /** Text of file, if it is in the active set */
