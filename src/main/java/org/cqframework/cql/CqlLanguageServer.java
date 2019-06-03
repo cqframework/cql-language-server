@@ -30,13 +30,18 @@ TODO: Completion for expressions, parameters, code systems, value sets, codes, a
 class CqlLanguageServer implements LanguageServer {
     private static final Logger LOG = Logger.getLogger("main");
 
+    private final CqlWorkspaceService workspace;
+    private final CqlTextDocumentService textDocuments;
     private final CompletableFuture<LanguageClient> client = new CompletableFuture<>();
-    private final CqlTextDocumentService textDocuments = new CqlTextDocumentService(client, this);
-    private final CqlWorkspaceService workspace = new CqlWorkspaceService(client, this, textDocuments);
 
     private CqlTranslationManager translationManager;
     CqlTranslationManager getTranslationManager() {
         return translationManager;
+    }
+
+    public CqlLanguageServer(String workspaceDir) {
+        this.textDocuments = new CqlTextDocumentService(client, this, workspaceDir);
+        this.workspace = new CqlWorkspaceService(client, this, textDocuments);
     }
 
     @Override

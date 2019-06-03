@@ -2,6 +2,7 @@ package org.cqframework.cql;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
+import org.apache.commons.lang3.StringUtils;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
@@ -79,25 +80,25 @@ class CqlTextDocumentService implements TextDocumentService {
 
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
+    private final String workspaceDir;
     private final TextDocumentProvider textDocumentProvider = new FhirTextDocumentProvider();
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
 
-    CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
+    CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server, String workspaceDir) {
         this.client = client;
         this.server = server;
+        this.workspaceDir = workspaceDir;
     }
 
-    boolean documentSourceIsFileSystem = true;
-    String workspaceRootPath = "Users/Adam/Src/opioid-cds/pages/cql";
     LibrarySourceProvider getLibrarySourceProvider() {
-//        workspaceRootPath = "Users/Adam";
-//        if (documentSourceIsFileSystem && StringUtils.isNotEmpty(workspaceRootPath) && StringUtils.isNotBlank(workspaceRootPath)) {
+        String workspaceRootPath = this.workspaceDir;
+        if (StringUtils.isNotEmpty(workspaceRootPath) && StringUtils.isNotBlank(workspaceRootPath)) {
             Path path = Paths.get(workspaceRootPath);
             return new DefaultLibrarySourceProvider(path);
-//        }
-//        else {
-//            return new CqlTextDocumentServiceLibrarySourceProvider();
-//        }
+        }
+        else {
+            return new CqlTextDocumentServiceLibrarySourceProvider();
+        }
     }
 
     /** Text of file, if it is in the active set */

@@ -69,7 +69,8 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            CqlLanguageServer server = new CqlLanguageServer();
+            String workspaceDir = args[0];
+            CqlLanguageServer server = new CqlLanguageServer(workspaceDir);
             Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, System.in, System.out);
 
             server.installClient(launcher.getRemoteProxy());
