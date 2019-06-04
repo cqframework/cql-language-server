@@ -279,7 +279,7 @@ class CqlTextDocumentService implements TextDocumentService {
                 }
             }
 
-
+            doLint(Collections.singleton(uri));
         } else
             LOG.warning(
                     "Ignored change with version "
