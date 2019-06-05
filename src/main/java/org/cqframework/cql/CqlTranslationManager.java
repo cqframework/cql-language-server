@@ -1,6 +1,7 @@
 package org.cqframework.cql;
 
 import org.cqframework.cql.cql2elm.*;
+import org.cqframework.cql.source.*;
 import org.fhir.ucum.UcumService;
 
 import java.util.List;
@@ -11,14 +12,16 @@ import java.util.List;
 public class CqlTranslationManager {
     private final ModelManager modelManager;
     private final LibraryManager libraryManager;
-    private final UcumService ucumService = null;
 
-    public CqlTranslationManager(LibrarySourceProvider librarySourceProvider) {
+    public CqlTranslationManager(CqlTextDocumentService textDocumentService, CqlWorkspaceService workspaceService) {
         modelManager = new ModelManager();
         libraryManager = new NonCachingLibraryManager(modelManager);
         // TODO: validateUnits setting
 
-        libraryManager.getLibrarySourceLoader().registerProvider(librarySourceProvider);
+        libraryManager.getLibrarySourceLoader().registerProvider(new ActiveContentLibrarySourceProvider(textDocumentService));
+        libraryManager.getLibrarySourceLoader().registerProvider(new WorkspaceLibrarySourceProvider(workspaceService));
+        libraryManager.getLibrarySourceLoader().registerProvider(new FhirServerLibrarySourceProvider(workspaceService));
+        libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
     }
 
     public List<CqlTranslatorException> translate(String content) {

@@ -4,48 +4,74 @@ import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
-class CqlWorkspaceService implements WorkspaceService {
+public class CqlWorkspaceService implements WorkspaceService {
     private static final Logger LOG = Logger.getLogger("main");
+
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
-    private final CqlTextDocumentService textDocuments;
 
-    CqlWorkspaceService(
-            CompletableFuture<LanguageClient> client,
-            CqlLanguageServer server,
-            CqlTextDocumentService textDocuments) {
+    private boolean clientSupportsWorkspaceFolders = false;
+
+    private Map<String,WorkspaceFolder> workspaceFolders = new HashMap<String, WorkspaceFolder>();
+    
+    
+    CqlWorkspaceService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
         this.server = server;
-        this.textDocuments = textDocuments;
+        this.clientSupportsWorkspaceFolders = false;
     }
 
-    @Override
-    public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
-        LOG.info(params.toString());
+    public void initialize(List<WorkspaceFolder> folders, Boolean clientSupportsWorkspaceFolders) {
+        this.addFolders(folders);
 
-        switch (params.getCommand()) {
-            default:
-                LOG.warning("Unknown command " + params.getCommand());
+        if (clientSupportsWorkspaceFolders != null && clientSupportsWorkspaceFolders.booleanValue()) {
+            this.clientSupportsWorkspaceFolders = true;
         }
-
-        return CompletableFuture.completedFuture("Done");
     }
 
     @Override
-    public CompletableFuture<List<? extends SymbolInformation>> symbol(WorkspaceSymbolParams params) {
-        return null;
+	public void didChangeWorkspaceFolders(DidChangeWorkspaceFoldersParams params) {
+        this.addFolders(params.getEvent().getAdded());
+        this.removeFolders(params.getEvent().getRemoved());
     }
 
     @Override
-    public void didChangeConfiguration(DidChangeConfigurationParams change) {
+    public void didChangeConfiguration(DidChangeConfigurationParams params) {
     }
 
     @Override
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {
-        textDocuments.doLint(textDocuments.openFiles());
+    }
+
+    public Collection<WorkspaceFolder> getWorkspaceFolders() {
+        if (this.clientSupportsWorkspaceFolders) {
+            List<WorkspaceFolder> folders = this.client.join().workspaceFolders().join();
+            if (folders != null) {
+                return folders;
+            }
+        }
+  
+        return this.workspaceFolders.values();
+    }
+
+    private void addFolders(List<WorkspaceFolder> folders) {
+        for (WorkspaceFolder f : folders) {
+            workspaceFolders.putIfAbsent(f.getUri(), f);
+        }
+    }
+
+    private void removeFolders(List<WorkspaceFolder> folders) {
+        for (WorkspaceFolder f : folders) {
+            if (workspaceFolders.containsKey(f.getUri())) {
+                workspaceFolders.remove(f.getUri());
+            }
+        }
     }
 }

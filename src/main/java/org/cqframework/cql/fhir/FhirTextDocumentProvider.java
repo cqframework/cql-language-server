@@ -1,9 +1,8 @@
-package org.cqframework.cql.org.cqframework.cql.fhir;
+package org.cqframework.cql.fhir;
 
 import java.nio.charset.StandardCharsets;
 
 import org.cqframework.cql.CqlUtilities;
-import org.cqframework.cql.TextDocumentProvider;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
@@ -15,7 +14,7 @@ import ca.uhn.fhir.rest.client.api.IGenericClient;
 /**
  * Created by Bryn on 9/4/2018.
  */
-public class FhirTextDocumentProvider implements TextDocumentProvider {
+public class FhirTextDocumentProvider {
     protected FhirContext fhirContext;
 
     /*
@@ -44,7 +43,6 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         this.fhirContext = FhirContext.forDstu3();
     }
 
-    @Override
     public TextDocumentItem getDocument(String uri) {
         String baseUri = CqlUtilities.getLibraryBaseUri(uri);
 
@@ -58,7 +56,6 @@ public class FhirTextDocumentProvider implements TextDocumentProvider {
         return null;
     }
 
-    @Override
     public TextDocumentItem getDocument(String baseUri, String name, String version) {
 
         IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);

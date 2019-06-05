@@ -1,113 +1,81 @@
 package org.cqframework.cql;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.logging.Logger;
+
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
-import org.apache.commons.lang3.StringUtils;
+
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
-import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
-import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-import org.cqframework.cql.org.cqframework.cql.fhir.FhirTextDocumentProvider;
-import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.CodeLens;
+import org.eclipse.lsp4j.CodeLensParams;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.CompletionList;
+import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.DidChangeTextDocumentParams;
+import org.eclipse.lsp4j.DidCloseTextDocumentParams;
+import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DidSaveTextDocumentParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
+import org.eclipse.lsp4j.DocumentHighlight;
+import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
+import org.eclipse.lsp4j.DocumentRangeFormattingParams;
+import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.RenameParams;
+import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.TextDocumentPositionParams;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
+import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
-import org.hl7.elm.r1.VersionedIdentifier;
 
-import java.io.*;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-class CqlTextDocumentService implements TextDocumentService {
+public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger LOG = Logger.getLogger("main");
-
-    // LibrarySourceProvider implementation that pulls from the active content in the language server,
-    // or the TextDocumentProvider if the content is not active
-    class CqlTextDocumentServiceLibrarySourceProvider implements LibrarySourceProvider {
-        private FhirLibrarySourceProvider innerProvider;
-
-        public CqlTextDocumentServiceLibrarySourceProvider() {
-            this.innerProvider = new FhirLibrarySourceProvider();
-        }
-
-        @Override
-        public InputStream getLibrarySource(VersionedIdentifier versionedIdentifier) {
-            URI documentUri = null;
-            String id = versionedIdentifier.getId();
-            String version = versionedIdentifier.getVersion();
-
-            String matchText = "(?s).*library\\s+" + id;
-            if (version != null) {
-                matchText += ("\\s+version\\s+'" + version + "'\\s+(?s).*");
-            }
-            else {
-                matchText += "'\\s+(?s).*";
-            }
-
-            for(URI uri : activeDocuments.keySet()){
-                // This will match if the content contains the library definition is present.
-                if (activeDocuments.get(uri).content.matches(matchText)){
-                    documentUri = uri;
-                    break;
-                }
-            }
-
-            Optional<String> content = activeContent(documentUri);
-            if (content.isPresent()) {
-                return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
-            }
-
-            // Search the FHIR server of the first document we know about.
-            if (activeDocuments.size() > 0) {
-                URI uri = activeDocuments.keySet().iterator().next();
-                String baseUri = CqlUtilities.getLibraryBaseUri(uri.toString());
-                TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(baseUri, id, version);
-                if (textDocumentItem != null) {
-                    return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
-                }
-            }
-
-            return this.innerProvider.getLibrarySource(versionedIdentifier);
-        }
-    }
 
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
-    private final String workspaceDir;
-    private final TextDocumentProvider textDocumentProvider = new FhirTextDocumentProvider();
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
 
-    CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server, String workspaceDir) {
+    CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
         this.server = server;
-        this.workspaceDir = workspaceDir;
-    }
-
-    LibrarySourceProvider getLibrarySourceProvider() {
-        String workspaceRootPath = this.workspaceDir;
-        if (StringUtils.isNotEmpty(workspaceRootPath) && StringUtils.isNotBlank(workspaceRootPath)) {
-            Path path = Paths.get(workspaceRootPath);
-            return new DefaultLibrarySourceProvider(path);
-        }
-        else {
-            return new CqlTextDocumentServiceLibrarySourceProvider();
-        }
     }
 
     /** Text of file, if it is in the active set */
-    Optional<String> activeContent(URI file) {
+    public Optional<String> activeContent(URI file) {
         return Optional.ofNullable(activeDocuments.get(file)).map(doc -> doc.content);
     }
 
     /** All open files, not including things like old git-versions in a diff view */
-    Set<URI> openFiles() {
+    public Set<URI> openFiles() {
         return Sets.filter(activeDocuments.keySet(), uri -> uri.getPath().contains("Library"));
     }
 
@@ -138,8 +106,7 @@ class CqlTextDocumentService implements TextDocumentService {
     }
 
     @Override
-    public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
-            TextDocumentPositionParams position) {
+    public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
 
         URI uri = URI.create(position.getTextDocument().getUri());
         Optional<String> content = activeContent(uri);
@@ -182,12 +149,6 @@ class CqlTextDocumentService implements TextDocumentService {
     }
 
     @Override
-    public CompletableFuture<List<? extends Location>> definition(
-            TextDocumentPositionParams position) {
-        return null;
-    }
-
-    @Override
     public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
         return null;
     }
@@ -195,17 +156,6 @@ class CqlTextDocumentService implements TextDocumentService {
     @Override
     public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(
             TextDocumentPositionParams position) {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<List<? extends SymbolInformation>> documentSymbol(
-            DocumentSymbolParams params) {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<List<? extends Command>> codeAction(CodeActionParams params) {
         return null;
     }
 
@@ -252,8 +202,6 @@ class CqlTextDocumentService implements TextDocumentService {
         }
 
         activeDocuments.put(uri, new VersionedContent(document.getText(), document.getVersion()));
-
-        String baseUri = CqlUtilities.getLibraryBaseUri(uri.toString());
 
         // TODO: Only load documents not already loaded
         // TODO: Lint documents in the workspace but not currently active

@@ -10,6 +10,8 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 import javax.tools.*;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -30,26 +32,63 @@ TODO: Completion for expressions, parameters, code systems, value sets, codes, a
 class CqlLanguageServer implements LanguageServer {
     private static final Logger LOG = Logger.getLogger("main");
 
-    private final CqlWorkspaceService workspace;
-    private final CqlTextDocumentService textDocuments;
+    private final CqlWorkspaceService workspaceService;
+    private final CqlTextDocumentService textDocumentService;
     private final CompletableFuture<LanguageClient> client = new CompletableFuture<>();
 
     private CqlTranslationManager translationManager;
-    CqlTranslationManager getTranslationManager() {
-        return translationManager;
-    }
 
-    public CqlLanguageServer(String workspaceDir) {
-        this.textDocuments = new CqlTextDocumentService(client, this, workspaceDir);
-        this.workspace = new CqlWorkspaceService(client, this, textDocuments);
+    public CqlLanguageServer() {
+        this.textDocumentService = new CqlTextDocumentService(client, this);
+        this.workspaceService = new CqlWorkspaceService(client, this);
+        this.translationManager = new CqlTranslationManager(this.textDocumentService, this.workspaceService);
     }
 
     @Override
-    public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
-        translationManager = new CqlTranslationManager(textDocuments.getLibrarySourceProvider());
+    public CompletableFuture<InitializeResult> initialize(InitializeParams params) { 
+        try {  
+            this.initializeWorkspaceService(params);
+            this.initializeTextDocumentService(params);
+            
+            InitializeResult result = new InitializeResult();
+            result.setCapabilities(this.getServerCapabilities());
 
-        InitializeResult result = new InitializeResult();
+            return CompletableFuture.completedFuture(result);
+        }
+        catch (Exception e) {
+            LOG.log(Level.SEVERE, "failed to initialize with error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void initializeTextDocumentService(InitializeParams params) {
+        // Nothing to do for the moment.
+    }
+
+    private void initializeWorkspaceService(InitializeParams params) {
+        List<WorkspaceFolder> workspaceFolders = new ArrayList<WorkspaceFolder>();
+        if (params.getWorkspaceFolders() != null)
+        {
+            workspaceFolders.addAll(params.getWorkspaceFolders());
+        }
+
+        if (params.getRootUri() != null) {
+            workspaceFolders.add(new WorkspaceFolder(params.getRootUri()));
+        }
+
+        this.workspaceService.initialize(workspaceFolders, params.getCapabilities().getWorkspace().getWorkspaceFolders());
+
+
+    }
+
+    private ServerCapabilities getServerCapabilities() {
         ServerCapabilities c = new ServerCapabilities();
+        // Register for workspace change notifications
+        WorkspaceFoldersOptions wfo = new WorkspaceFoldersOptions();
+        wfo.setChangeNotifications(true);
+        WorkspaceServerCapabilities wsc = new WorkspaceServerCapabilities();
+        wsc.setWorkspaceFolders(wfo);
+        c.setWorkspace(wsc);
 
         c.setTextDocumentSync(TextDocumentSyncKind.Full);
         //c.setDefinitionProvider(true);
@@ -65,9 +104,7 @@ class CqlLanguageServer implements LanguageServer {
         //        new ExecuteCommandOptions(ImmutableList.of("Java.importClass")));
         //c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(", ",")));
 
-        result.setCapabilities(c);
-
-        return CompletableFuture.completedFuture(result);
+        return c;
     }
 
     @Override
@@ -80,12 +117,16 @@ class CqlLanguageServer implements LanguageServer {
 
     @Override
     public TextDocumentService getTextDocumentService() {
-        return textDocuments;
+        return textDocumentService;
     }
 
     @Override
     public WorkspaceService getWorkspaceService() {
-        return workspace;
+        return workspaceService;
+    }
+
+    public CqlTranslationManager getTranslationManager() {
+        return translationManager;
     }
 
     void installClient(LanguageClient client) {
@@ -124,27 +165,5 @@ class CqlLanguageServer implements LanguageServer {
                 };
 
         Logger.getLogger("").addHandler(sendToClient);
-    }
-
-    static void onDiagnostic(javax.tools.Diagnostic<? extends JavaFileObject> diagnostic) {
-        Level level = level(diagnostic.getKind());
-        String message = diagnostic.getMessage(null);
-
-        LOG.log(level, message);
-    }
-
-    private static Level level(javax.tools.Diagnostic.Kind kind) {
-        switch (kind) {
-            case ERROR:
-                return Level.SEVERE;
-            case WARNING:
-            case MANDATORY_WARNING:
-                return Level.WARNING;
-            case NOTE:
-                return Level.INFO;
-            case OTHER:
-            default:
-                return Level.FINE;
-        }
     }
 }
