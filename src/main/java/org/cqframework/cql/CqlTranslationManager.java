@@ -24,11 +24,7 @@ public class CqlTranslationManager {
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
     }
 
-    public List<CqlTranslatorException> translate(String content) {
-        // TODO: translator setting
-
-        CqlTranslator translator = CqlTranslator.fromText(content, modelManager, libraryManager);
-        // TODO: cache translation result...
-        return translator.getExceptions();
+    public CqlTranslator translate(String content) {
+            return CqlTranslator.fromText(content, modelManager, libraryManager);
     }
 }

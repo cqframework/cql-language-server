@@ -21,11 +21,15 @@ import java.util.logging.Logger;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 
+import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.CodeLens;
 import org.eclipse.lsp4j.CodeLensParams;
+import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionList;
@@ -91,7 +95,8 @@ public class CqlTextDocumentService implements TextDocumentService {
         for (URI uri : paths) {
             Optional<String> content = activeContent(uri);
             if (content.isPresent() && content.get().length() > 0) {
-                List<CqlTranslatorException> exceptions = server.getTranslationManager().translate(content.get());
+                CqlTranslator translator = server.getTranslationManager().translate(content.get());
+                List<CqlTranslatorException> exceptions = translator.getExceptions();
 
                 LOG.info(String.format("lint completed on %s with %d messages.", uri, exceptions.size()));
 

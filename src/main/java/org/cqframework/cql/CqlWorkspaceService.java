@@ -1,13 +1,18 @@
 package org.cqframework.cql;
 
+import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
+import com.google.gson.JsonElement;
+
+import java.net.URI;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
@@ -35,6 +40,34 @@ public class CqlWorkspaceService implements WorkspaceService {
             this.clientSupportsWorkspaceFolders = true;
         }
     }
+
+    @Override
+    public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
+
+        try 
+        {
+            String command = params.getCommand();
+            // There's currently not a "show text file" or similar command in the LSP spec,
+            // So it's not client agnostic. The client has to know that the result of this command
+            // is XML and display it accordingly.
+            if (command.equals("Other.ViewXML")) {
+                String uri = ((JsonElement)params.getArguments().get(0)).getAsString();
+                Optional<String> content = ((CqlTextDocumentService)this.server.getTextDocumentService()).activeContent(new URI(uri));
+                if (content.isPresent()) {
+                    CqlTranslator translator = this.server.getTranslationManager().translate(content.get());
+                    return CompletableFuture.completedFuture(translator.toXml());
+                }
+            }
+            else {
+                this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Unknown Command %s", command)));
+            }
+        }
+        catch (Exception e) {
+            return null;
+        }
+
+        return null;
+	}
 
     @Override
 	public void didChangeWorkspaceFolders(DidChangeWorkspaceFoldersParams params) {

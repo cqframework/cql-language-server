@@ -99,9 +99,9 @@ class CqlLanguageServer implements LanguageServer {
         //c.setWorkspaceSymbolProvider(true);
         //c.setReferencesProvider(true);
         //c.setDocumentSymbolProvider(true);
-        //c.setCodeActionProvider(true);
-        //c.setExecuteCommandProvider(
-        //        new ExecuteCommandOptions(ImmutableList.of("Java.importClass")));
+        // c.setCodeActionProvider(true);
+        c.setExecuteCommandProvider(
+               new ExecuteCommandOptions(ImmutableList.of("Other.ViewXML")));
         //c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(", ",")));
 
         return c;
