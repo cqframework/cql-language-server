@@ -1,6 +1,7 @@
 package org.cqframework.cql;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -21,6 +22,8 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
+import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
+import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
 import org.eclipse.lsp4j.CodeLens;
 import org.eclipse.lsp4j.CodeLensParams;
 import org.eclipse.lsp4j.CompletionItem;
@@ -39,6 +42,8 @@ import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
@@ -52,6 +57,7 @@ import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
+
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -171,7 +177,39 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
-        return null;
+        try {
+            Optional<String> content = this.activeContent(new URI(params.getTextDocument().getUri()));
+
+            if (!content.isPresent()) {
+                return null;
+            }
+
+            String text = content.get();
+            // Get lines from the text;
+            String[] lines = text.split("[\n|\r]");
+
+            FormatResult fr = CqlFormatterVisitor.getFormattedOutput(new ByteArrayInputStream(text.getBytes()));
+
+            // Only update the content if it's valid CQL.
+            if (fr.getErrors().size() != 0) {
+                MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
+                this.client.join().showMessage(mp);
+
+                return null;
+            }
+            else {
+                int line = lines.length - 1;
+                int character = lines[line].length() - 1;
+                TextEdit te = new TextEdit(new Range(new Position(0, 0), new Position(lines.length, character)), fr.getOutput());
+                return CompletableFuture.completedFuture(Collections.singletonList(te));
+            }
+        }
+        catch (Exception e) {
+            MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
+            this.client.join().showMessage(mp);
+
+            return null;
+        }
     }
 
     @Override

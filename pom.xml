@@ -59,6 +59,11 @@
             <artifactId>quick</artifactId>
             <version>${cqframework-version}</version>
         </dependency>
+        <dependency>
+            <groupId>info.cqframework</groupId>
+            <artifactId>cql-formatter</artifactId>
+            <version>${cqframework-version}</version>
+        </dependency>
         <!-- HAPI FHIR STU3 Client -->
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
