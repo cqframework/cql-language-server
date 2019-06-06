@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class CqlWorkspaceService implements WorkspaceService {
@@ -22,23 +23,16 @@ public class CqlWorkspaceService implements WorkspaceService {
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
 
-    private boolean clientSupportsWorkspaceFolders = false;
-
     private Map<String,WorkspaceFolder> workspaceFolders = new HashMap<String, WorkspaceFolder>();
     
     
     CqlWorkspaceService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
         this.server = server;
-        this.clientSupportsWorkspaceFolders = false;
     }
 
-    public void initialize(List<WorkspaceFolder> folders, Boolean clientSupportsWorkspaceFolders) {
+    public void initialize(List<WorkspaceFolder> folders) {
         this.addFolders(folders);
-
-        if (clientSupportsWorkspaceFolders != null && clientSupportsWorkspaceFolders.booleanValue()) {
-            this.clientSupportsWorkspaceFolders = true;
-        }
     }
 
     @Override
@@ -84,13 +78,6 @@ public class CqlWorkspaceService implements WorkspaceService {
     }
 
     public Collection<WorkspaceFolder> getWorkspaceFolders() {
-        if (this.clientSupportsWorkspaceFolders) {
-            List<WorkspaceFolder> folders = this.client.join().workspaceFolders().join();
-            if (folders != null) {
-                return folders;
-            }
-        }
-  
         return this.workspaceFolders.values();
     }
 

@@ -76,9 +76,7 @@ class CqlLanguageServer implements LanguageServer {
             workspaceFolders.add(new WorkspaceFolder(params.getRootUri()));
         }
 
-        this.workspaceService.initialize(workspaceFolders, params.getCapabilities().getWorkspace().getWorkspaceFolders());
-
-
+        this.workspaceService.initialize(workspaceFolders);
     }
 
     private ServerCapabilities getServerCapabilities() {
