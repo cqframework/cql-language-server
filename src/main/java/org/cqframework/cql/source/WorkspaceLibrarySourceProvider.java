@@ -79,7 +79,6 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
             
                 @Override
                 public boolean accept(File dir, String name) {
-                    name = name.replace("_", "");
                     return name.startsWith(libraryName) && name.endsWith(".cql");
                 }
 
