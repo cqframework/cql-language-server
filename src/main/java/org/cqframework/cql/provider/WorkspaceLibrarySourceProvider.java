@@ -1,11 +1,11 @@
-package org.cqframework.cql.source;
+package org.cqframework.cql.provider;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.DirectoryFileFilter;
 import org.apache.commons.io.filefilter.IOFileFilter;
-import org.cqframework.cql.CqlWorkspaceService;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.cql2elm.model.Version;
+import org.cqframework.cql.service.CqlWorkspaceService;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.hl7.elm.r1.VersionedIdentifier;
 

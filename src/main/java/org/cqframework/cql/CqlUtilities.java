@@ -44,7 +44,7 @@ public class CqlUtilities {
         }
     }
 
-    static List<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
+    public static List<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
         ArrayList result = new ArrayList<>();
         for (CqlTranslatorException error : errors) {
             Diagnostic diagnostic = convert(error);

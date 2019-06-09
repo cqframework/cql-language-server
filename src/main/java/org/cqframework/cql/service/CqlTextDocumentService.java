@@ -1,4 +1,4 @@
-package org.cqframework.cql;
+package org.cqframework.cql.service;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -21,15 +21,15 @@ import java.util.logging.Logger;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 
+import org.cqframework.cql.CqlLanguageServer;
+import org.cqframework.cql.CqlUtilities;
+import org.cqframework.cql.VersionedContent;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
-import org.eclipse.lsp4j.CodeAction;
-import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.CodeLens;
 import org.eclipse.lsp4j.CodeLensParams;
-import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionList;
@@ -61,7 +61,6 @@ import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
-
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -74,7 +73,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     private final CqlLanguageServer server;
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
 
-    CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
+    public CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
         this.server = server;
     }
@@ -95,7 +94,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         for (URI uri : paths) {
             Optional<String> content = activeContent(uri);
             if (content.isPresent() && content.get().length() > 0) {
-                CqlTranslator translator = server.getTranslationManager().translate(content.get());
+                CqlTranslator translator = server.getTranslationManager().translate(uri, content.get());
                 List<CqlTranslatorException> exceptions = translator.getExceptions();
 
                 LOG.info(String.format("lint completed on %s with %d messages.", uri, exceptions.size()));
@@ -255,6 +254,12 @@ public class CqlTextDocumentService implements TextDocumentService {
     public void didChange(DidChangeTextDocumentParams params) {
         VersionedTextDocumentIdentifier document = params.getTextDocument();
         URI uri = URI.create(document.getUri());
+        
+        // TODO: filter this correctly on the client side
+        if (uri.toString().contains("metadata") || uri.toString().contains("_history")) {
+            return;
+        }
+
         VersionedContent existing = activeDocuments.get(uri);
         String newText = existing.content;
 

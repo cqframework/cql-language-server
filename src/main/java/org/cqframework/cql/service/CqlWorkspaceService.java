@@ -1,11 +1,4 @@
-package org.cqframework.cql;
-
-import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.eclipse.lsp4j.*;
-import org.eclipse.lsp4j.services.LanguageClient;
-import org.eclipse.lsp4j.services.WorkspaceService;
-
-import com.google.gson.JsonElement;
+package org.cqframework.cql.service;
 
 import java.net.URI;
 import java.util.Collection;
@@ -14,8 +7,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
+
+import com.google.gson.JsonElement;
+
+import org.cqframework.cql.CqlLanguageServer;
+import org.cqframework.cql.cql2elm.CqlTranslator;
+import org.eclipse.lsp4j.DidChangeConfigurationParams;
+import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
+import org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams;
+import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
+import org.eclipse.lsp4j.WorkspaceFolder;
+import org.eclipse.lsp4j.services.LanguageClient;
+import org.eclipse.lsp4j.services.WorkspaceService;
 
 public class CqlWorkspaceService implements WorkspaceService {
     private static final Logger LOG = Logger.getLogger("main");
@@ -26,7 +32,7 @@ public class CqlWorkspaceService implements WorkspaceService {
     private Map<String,WorkspaceFolder> workspaceFolders = new HashMap<String, WorkspaceFolder>();
     
     
-    CqlWorkspaceService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
+    public CqlWorkspaceService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
         this.server = server;
     }
@@ -45,10 +51,11 @@ public class CqlWorkspaceService implements WorkspaceService {
             // So it's not client agnostic. The client has to know that the result of this command
             // is XML and display it accordingly.
             if (command.equals("Other.ViewXML")) {
-                String uri = ((JsonElement)params.getArguments().get(0)).getAsString();
-                Optional<String> content = ((CqlTextDocumentService)this.server.getTextDocumentService()).activeContent(new URI(uri));
+                String uriString = ((JsonElement)params.getArguments().get(0)).getAsString();
+                URI uri = new URI(uriString);
+                Optional<String> content = ((CqlTextDocumentService)this.server.getTextDocumentService()).activeContent(uri);
                 if (content.isPresent()) {
-                    CqlTranslator translator = this.server.getTranslationManager().translate(content.get());
+                    CqlTranslator translator = this.server.getTranslationManager().translate(uri, content.get());
                     return CompletableFuture.completedFuture(translator.toXml());
                 }
             }

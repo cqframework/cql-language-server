@@ -1,4 +1,4 @@
-package org.cqframework.cql.source;
+package org.cqframework.cql.provider;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.logging.Logger;
 
-import org.cqframework.cql.CqlTextDocumentService;
+import org.cqframework.cql.service.CqlTextDocumentService;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.hl7.elm.r1.VersionedIdentifier;
 

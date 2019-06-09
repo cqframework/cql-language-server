@@ -1,6 +1,10 @@
 package org.cqframework.cql;
 
 import com.google.common.collect.ImmutableList;
+
+import org.cqframework.cql.manager.CqlTranslationManager;
+import org.cqframework.cql.service.CqlTextDocumentService;
+import org.cqframework.cql.service.CqlWorkspaceService;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
@@ -29,7 +33,7 @@ TODO: Completion for function arguments
 TODO: Completion for expressions, parameters, code systems, value sets, codes, and concepts
  */
 
-class CqlLanguageServer implements LanguageServer {
+public class CqlLanguageServer implements LanguageServer {
     private static final Logger LOG = Logger.getLogger("main");
 
     private final CqlWorkspaceService workspaceService;
