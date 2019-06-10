@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.cqframework.cql.CqlUtilities;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibraryManager;
@@ -41,12 +42,14 @@ public class CqlTranslationManager {
     }
 
     private LibraryManager createLibraryManager(URI uri, ModelManager modelManager) {
-        LibraryManager libraryManager = new NonCachingLibraryManager(modelManager);
+        LibraryManager libraryManager = new LibraryManager(modelManager);
         // TODO: validateUnits setting
 
-        libraryManager.getLibrarySourceLoader().registerProvider(new ActiveContentLibrarySourceProvider(this.textDocumentService));
-        libraryManager.getLibrarySourceLoader().registerProvider(new WorkspaceLibrarySourceProvider(this.workspaceService));
-        libraryManager.getLibrarySourceLoader().registerProvider(new FhirServerLibrarySourceProvider(this.workspaceService));
+        URI baseUri = CqlUtilities.getHead(uri);
+
+        libraryManager.getLibrarySourceLoader().registerProvider(new ActiveContentLibrarySourceProvider(baseUri, this.textDocumentService));
+        libraryManager.getLibrarySourceLoader().registerProvider(new WorkspaceLibrarySourceProvider(baseUri));
+        libraryManager.getLibrarySourceLoader().registerProvider(new FhirServerLibrarySourceProvider(baseUri));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
 
         return libraryManager;

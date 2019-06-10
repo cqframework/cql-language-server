@@ -2,14 +2,13 @@ package org.cqframework.cql.provider;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.logging.Logger;
 
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.fhir.FhirTextDocumentProvider;
-import org.cqframework.cql.service.CqlWorkspaceService;
 import org.eclipse.lsp4j.TextDocumentItem;
-import org.eclipse.lsp4j.WorkspaceFolder;
 import org.hl7.elm.r1.VersionedIdentifier;
 
 
@@ -17,31 +16,28 @@ import org.hl7.elm.r1.VersionedIdentifier;
 public class FhirServerLibrarySourceProvider implements LibrarySourceProvider {
     private static final Logger LOG = Logger.getLogger("main");
 
-    private final CqlWorkspaceService workspaceService;
     private final FhirTextDocumentProvider textDocumentProvider;
 
-    public FhirServerLibrarySourceProvider(CqlWorkspaceService workspaceService) {
-        this.workspaceService = workspaceService;
+    private final URI baseUri;
+
+    public FhirServerLibrarySourceProvider(URI baseUri) {
+        this.baseUri = baseUri;
         this.textDocumentProvider = new FhirTextDocumentProvider();
     }
 
     @Override
     public InputStream getLibrarySource(VersionedIdentifier versionedIdentifier) {
 
-        for (WorkspaceFolder f : this.workspaceService.getWorkspaceFolders()) {
+        if (!this.baseUri.getScheme().startsWith("http")) {
+            return null;
+        }
 
-            // Only search remote urls
-            if (!f.getUri().startsWith("http")) {
-                continue;
-            }
+        TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(baseUri, 
+            versionedIdentifier.getId(), 
+            versionedIdentifier.getVersion());
 
-            TextDocumentItem textDocumentItem = textDocumentProvider.getDocument(f.getUri(), 
-                versionedIdentifier.getId(), 
-                versionedIdentifier.getVersion());
-
-            if (textDocumentItem != null) {
-                return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
-            }
+        if (textDocumentItem != null) {
+            return new ByteArrayInputStream(textDocumentItem.getText().getBytes(StandardCharsets.UTF_8));
         }
 
         return null;

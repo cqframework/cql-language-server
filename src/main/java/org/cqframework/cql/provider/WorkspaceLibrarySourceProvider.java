@@ -26,44 +26,39 @@ import java.util.logging.Logger;
 public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
     private static final Logger LOG = Logger.getLogger("main");
 
-    private final CqlWorkspaceService workspaceService;
+    private final URI baseUri;
 
-    public WorkspaceLibrarySourceProvider(CqlWorkspaceService workspaceService) {
-        this.workspaceService = workspaceService;
+    public WorkspaceLibrarySourceProvider(URI baseUri) {
+        this.baseUri = baseUri;
     }
 
     @Override
     public InputStream getLibrarySource(VersionedIdentifier libraryIdentifier) {
+        if (this.baseUri.getScheme().startsWith(("http"))) {
+            return null;
 
-        for (WorkspaceFolder f : this.workspaceService.getWorkspaceFolders()) {
-            // If the uri is a remote server, skip the folder.
-            if (f.getUri().startsWith("http")) {
-                continue;
+        }
+
+        File file = this.searchPath(this.baseUri, libraryIdentifier);
+        if (file != null && file.exists()) {
+            try {
+                return new FileInputStream(file);
+            } catch (FileNotFoundException e) {
+                LOG.log(Level.INFO,
+                        String.format("WorkspaceProvider attempted to load source for library %s but failed with: "
+                                + e.getMessage()),
+                        libraryIdentifier.getId());
             }
 
-            File file = this.searchPath(f.getUri(), libraryIdentifier);
-            if (file != null && file.exists()) {
-                try {
-                    return new FileInputStream(file);
-                } catch (FileNotFoundException e) {
-                    LOG.log(Level.INFO,
-                            String.format("WorkspaceProvider attempted to load source for library %s but failed with: "
-                                    + e.getMessage()),
-                            libraryIdentifier.getId());
-                }
-
-            }
-            
         }
 
         return null;
     }
 
-    private File searchPath(String folderUri, VersionedIdentifier libraryIdentifier) {
+    private File searchPath(URI baseUri, VersionedIdentifier libraryIdentifier) {
         Path path;
         try {
-            // This mess handles file:// uris and the like
-            path =  Paths.get(new URL(folderUri).toURI());
+            path = Paths.get(baseUri);
         }
         catch (Exception e) {
             return null;
@@ -96,7 +91,7 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
             File mostRecentFile = null;
             Version mostRecent = null;
             Version requestedVersion = libraryIdentifier.getVersion() == null ? null : new Version(libraryIdentifier.getVersion());
-            Collection<File> files = FileUtils.listFiles(path.toFile(), filter, DirectoryFileFilter.DIRECTORY);
+            Collection<File> files = FileUtils.listFiles(path.toFile(), filter, null);
             if (files != null) {
                 for (File file: files) {
                     String fileName = file.getName();
@@ -139,11 +134,6 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
                     }
                 }
             }
-
-            // Do not throw, allow the loader to throw, just report null
-            //if (mostRecentFile == null) {
-            //    throw new IllegalArgumentException(String.format("Could not resolve most recent source library for library %s.", libraryIdentifier.getId()));
-            //}
 
             libraryFile = mostRecentFile;
         }

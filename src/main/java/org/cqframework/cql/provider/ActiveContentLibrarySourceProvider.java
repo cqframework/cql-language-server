@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.logging.Logger;
 
 import org.cqframework.cql.service.CqlTextDocumentService;
+import org.cqframework.cql.CqlUtilities;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.hl7.elm.r1.VersionedIdentifier;
 
@@ -16,9 +17,11 @@ import org.hl7.elm.r1.VersionedIdentifier;
 public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider {
     private static final Logger LOG = Logger.getLogger("main");
 
+    private final URI baseUri;
     private final CqlTextDocumentService textDocumentService;
 
-    public ActiveContentLibrarySourceProvider(CqlTextDocumentService textDocumentService) {
+    public ActiveContentLibrarySourceProvider(URI baseUri, CqlTextDocumentService textDocumentService) {
+        this.baseUri = baseUri;
         this.textDocumentService = textDocumentService;
     }
 
@@ -36,6 +39,12 @@ public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider
         }
 
         for(URI uri : this.textDocumentService.openFiles()){
+
+            URI root = CqlUtilities.getHead(uri);
+            if (!root.equals(this.baseUri)) {
+                continue;
+            }
+            
             Optional<String> content = this.textDocumentService.activeContent(uri);
             // This will match if the content contains the library definition is present.
             if (content.isPresent() && content.get().matches(matchText)){

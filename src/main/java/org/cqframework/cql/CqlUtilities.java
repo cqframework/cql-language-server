@@ -6,6 +6,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -16,13 +17,42 @@ import java.util.logging.Logger;
  */
 public class CqlUtilities {
 
-    public static String getLibraryBaseUri(String uri) {
-        int index = uri.lastIndexOf("/Library");
-        if (index > 0) {
-            uri = uri.substring(0, index);
+    public static URI getFhirBaseUri(URI uri) {
+        // TODO: This should actually just recognize the FHIR types.
+        int index = uri.getPath().lastIndexOf("Library/");
+        if (index > -1) {
+            uri = getHead(uri);
+        }
+
+        index = uri.getPath().lastIndexOf("/Library");
+        if (index > -1) {
+            uri = getHead(uri);
         }
 
         return uri;
+    }
+
+    public static URI getHead(URI uri) {
+        String path = uri.getPath();
+        if (path != null) {
+            int index = path.lastIndexOf("/");
+            if (index > -1) {
+                return CqlUtilities.withPath(uri, path.substring(0, index));
+            }
+
+            return uri;
+        }
+
+        return uri;
+    }
+
+    private static URI withPath(URI uri, String path) {
+        try {
+            return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path, uri.getFragment(), uri.getQuery());
+        }
+        catch (Exception e) {
+            return null;
+        }
     }
 
     static Diagnostic convert(CqlTranslatorException error) {

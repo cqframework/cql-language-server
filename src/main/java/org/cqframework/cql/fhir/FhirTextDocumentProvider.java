@@ -1,5 +1,6 @@
 package org.cqframework.cql.fhir;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 import org.cqframework.cql.CqlUtilities;
@@ -8,6 +9,9 @@ import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
 import org.hl7.fhir.dstu3.model.Library;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
 
@@ -15,6 +19,7 @@ import ca.uhn.fhir.rest.client.api.IGenericClient;
  * Created by Bryn on 9/4/2018.
  */
 public class FhirTextDocumentProvider {
+    private static final Logger LOG = Logger.getLogger("main");
     protected FhirContext fhirContext;
 
     /*
@@ -43,67 +48,80 @@ public class FhirTextDocumentProvider {
         this.fhirContext = FhirContext.forDstu3();
     }
 
-    public TextDocumentItem getDocument(String uri) {
-        String baseUri = CqlUtilities.getLibraryBaseUri(uri);
+    public TextDocumentItem getDocument(URI uri) {
 
-        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
-        Library library = fhirClient.read().resource(Library.class).withUrl(uri).elementsSubset("name", "version", "content", "type").encodedJson().execute();
+        try {
+            URI baseUri = CqlUtilities.getFhirBaseUri(uri);
 
-        if (library != null) {
-            return extractTextDocument(uri, library);
-        }
+            IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri.toString());
+            Library library = fhirClient.read().resource(Library.class).withUrl(uri.toString()).elementsSubset("name", "version", "content", "type").encodedJson().execute();
 
-        return null;
-    }
-
-    public TextDocumentItem getDocument(String baseUri, String name, String version) {
-
-        IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri);
-
-        Bundle result = fhirClient.search().forResource(Library.class).elementsSubset("name", "version").where(Library.NAME.matchesExactly().value(name))
-                .returnBundle(Bundle.class).encodedJson().execute();
-
-        Library library = null;
-        String libraryUrl = null;
-        Library maxVersion = null;
-        String maxUrl = null;
-        if (result.hasEntry() && result.getEntry().size() > 0){
-            for (Bundle.BundleEntryComponent bec : result.getEntry()) {
-                Library l = (Library)bec.getResource();
-                if ((version != null && l.getVersion().equals(version)) ||
-                    (version == null && !l.hasVersion()))
-                {
-                    library = l;
-                    libraryUrl = bec.getFullUrl();
-                }
-    
-                if (maxVersion == null || compareVersions(maxVersion.getVersion(), l.getVersion()) < 0){
-                    maxVersion = l;
-                    maxUrl = bec.getFullUrl();
-                }
+            if (library != null) {
+                return extractTextDocument(uri, library);
             }
         }
-
-        if (version == null && maxVersion != null) {
-            library = maxVersion;
-            libraryUrl = maxUrl;
-        }
-
-        // This is a subsetted resource, so we get the full version here.
-        if (library != null) {
-            return getDocument(libraryUrl);
+        catch (Exception e) {
+            LOG.log(Level.SEVERE, String.format("FHIRTextDocumentProvider failed to resolve %s with error: ", uri.toString()) + e.getMessage());
         }
 
         return null;
     }
 
-    private TextDocumentItem extractTextDocument(String uri, Library library) {
+    public TextDocumentItem getDocument(URI baseUri, String name, String version) {
+        try {
+            URI uri = CqlUtilities.getFhirBaseUri(baseUri);
+
+            IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(uri.toString());
+
+            Bundle result = fhirClient.search().forResource(Library.class).elementsSubset("name", "version").where(Library.NAME.matchesExactly().value(name))
+                    .returnBundle(Bundle.class).encodedJson().execute();
+
+            Library library = null;
+            String libraryUrl = null;
+            Library maxVersion = null;
+            String maxUrl = null;
+            if (result.hasEntry() && result.getEntry().size() > 0){
+                for (Bundle.BundleEntryComponent bec : result.getEntry()) {
+                    Library l = (Library)bec.getResource();
+                    if ((version != null && l.getVersion().equals(version)) ||
+                        (version == null && !l.hasVersion()))
+                    {
+                        library = l;
+                        libraryUrl = bec.getFullUrl();
+                    }
+        
+                    if (maxVersion == null || compareVersions(maxVersion.getVersion(), l.getVersion()) < 0){
+                        maxVersion = l;
+                        maxUrl = bec.getFullUrl();
+                    }
+                }
+            }
+
+            if (version == null && maxVersion != null) {
+                library = maxVersion;
+                libraryUrl = maxUrl;
+            }
+
+            // This is a subsetted resource, so we get the full version here.
+            if (library != null) {
+                return getDocument(new URI(libraryUrl));
+            }
+
+        }
+        catch (Exception e) {
+            LOG.log(Level.SEVERE, String.format("FHIRTextDocumentProvider failed to resolve %s with error: ",  name) + e.getMessage());
+        }
+
+        return null;
+    }
+
+    private TextDocumentItem extractTextDocument(URI uri, Library library) {
         if (library.getType().getCoding().get(0).getCode().equals("logic-library")) {
             for (Attachment content : library.getContent()) {
                 // TODO: Could use this for any content type, would require a mapping from content type to LanguageServer LanguageId
                 if (content.getContentType().equals("text/cql")) {
                     TextDocumentItem textDocumentItem = new TextDocumentItem();
-                    textDocumentItem.setUri(uri);
+                    textDocumentItem.setUri(uri.toString());
                     textDocumentItem.setVersion(0); // TODO: Cannot assume version of the resource is tracked and/or relevant without making assumptions about the FHIR Server...
                     textDocumentItem.setLanguageId("cql");
                     textDocumentItem.setText(new String(content.getData(), StandardCharsets.UTF_8));
