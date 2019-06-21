@@ -41,7 +41,7 @@
         </dependency>
 
         <!-- CQL Engine -->
-        <dependency>
+        <!-- <dependency>
             <groupId>org.opencds.cqf</groupId>
             <artifactId>cql-engine</artifactId>
             <version>${cql-engine-version}</version>
@@ -63,7 +63,8 @@
                     <artifactId>slf4j-log4j12</artifactId>
                 </exclusion>
             </exclusions>
-        </dependency>
+        </dependency> -->
+        
         <!-- CQL-to-ELM Translator -->
         <dependency>
             <groupId>info.cqframework</groupId>
