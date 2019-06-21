@@ -22,7 +22,7 @@ public class NonCachingLibraryManager extends LibraryManager {
     
     public NonCachingLibraryManager(ModelManager modelManager) {
         super(modelManager);
-
+        
         this.modelManager = modelManager;
         this.librarySourceLoader = new CopiedLibrarySourceLoader();
     }
@@ -60,7 +60,13 @@ public class NonCachingLibraryManager extends LibraryManager {
         }
 
         try {
-            CqlTranslator translator = CqlTranslator.fromStream(librarySource, modelManager, this);
+            CqlTranslator translator = CqlTranslator.fromStream(librarySource, modelManager, this,
+                CqlTranslator.Options.EnableAnnotations,
+                CqlTranslator.Options.EnableLocators,
+                CqlTranslator.Options.DisableListDemotion,
+                CqlTranslator.Options.DisableListPromotion,
+                CqlTranslator.Options.DisableMethodInvocation);
+
             if (errors != null) {
                 errors.addAll(translator.getExceptions());
             }

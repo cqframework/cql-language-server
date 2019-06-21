@@ -22,9 +22,12 @@ public class CqlTranslationManager {
     }
 
     public List<CqlTranslatorException> translate(String content) {
-        // TODO: translator setting
-
-        CqlTranslator translator = CqlTranslator.fromText(content, modelManager, libraryManager);
+        CqlTranslator translator = CqlTranslator.fromText(content, modelManager, libraryManager,
+            CqlTranslator.Options.EnableAnnotations,
+            CqlTranslator.Options.EnableLocators,
+            CqlTranslator.Options.DisableListDemotion,
+            CqlTranslator.Options.DisableListPromotion,
+            CqlTranslator.Options.DisableMethodInvocation);
         // TODO: cache translation result...
         return translator.getExceptions();
     }
