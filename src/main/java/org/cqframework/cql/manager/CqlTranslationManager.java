@@ -34,7 +34,12 @@ public class CqlTranslationManager {
         ModelManager modelManager = this.createModelManager();
         LibraryManager libraryManager = this.createLibraryManager(uri, modelManager);
 
-        return CqlTranslator.fromText(content, modelManager, libraryManager);
+        return CqlTranslator.fromText(content, modelManager, libraryManager,
+            CqlTranslator.Options.EnableAnnotations,
+            CqlTranslator.Options.EnableLocators,
+            CqlTranslator.Options.DisableListDemotion,
+            CqlTranslator.Options.DisableListPromotion,
+            CqlTranslator.Options.DisableMethodInvocation);
     }
 
     private ModelManager createModelManager() {
@@ -42,7 +47,7 @@ public class CqlTranslationManager {
     }
 
     private LibraryManager createLibraryManager(URI uri, ModelManager modelManager) {
-        LibraryManager libraryManager = new LibraryManager(modelManager);
+        LibraryManager libraryManager = new NonCachingLibraryManager(modelManager);
         // TODO: validateUnits setting
 
         URI baseUri = CqlUtilities.getHead(uri);
