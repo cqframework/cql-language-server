@@ -14,12 +14,14 @@ import java.util.Map;
  * Created by Bryn on 12/29/2016.
  */
 public class CacheAwareModelManager extends ModelManager {
-    private final Map<String, Model> models = new HashMap<>();
 
-    private Map<VersionedIdentifier, Model> globalCache = new HashMap<>();
+    private final Map<VersionedIdentifier, Model> globalCache;
+
+    private final Map<String, Model> localCache;
 
     public CacheAwareModelManager(Map<VersionedIdentifier, Model> globalCache) {
         this.globalCache = globalCache;
+        this.localCache = new HashMap<>();
     }
 
 	private Model buildModel(VersionedIdentifier identifier) {
@@ -42,23 +44,35 @@ public class CacheAwareModelManager extends ModelManager {
 
     @Override
     public Model resolveModel(VersionedIdentifier modelIdentifier) {
-        // First check global cache which can contain multiple versions
-        Model model = globalCache.get(modelIdentifier);
+        Model model = null;
+        if (this.localCache.containsKey(modelIdentifier.getId())) {
+            model = this.localCache.get(modelIdentifier.getId());
+            if (modelIdentifier.getVersion() != null && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
+                throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s because version %s is already loaded.",
+                        modelIdentifier.getId(), modelIdentifier.getVersion(), model.getModelInfo().getVersion()));
+            }
 
-        // Next check local cache, which can contain only one version.
-        if (model == null) {
-           model = models.get(modelIdentifier.getId());
+        }
+
+        // Wasn't in the local cache. Let's check and see if it's valid to load it.
+        // if (model == null) {
+        //     for (String name : this.localCache.keySet()) {
+        //         if (!name.equals("System")) {
+        //             throw new IllegalArgumentException(String.format("Could not load model information for model %s, because model %s is already loaded.",
+        //                     modelIdentifier.getId(), name));
+        //         }
+        //     }
+        // }
+
+        if (model == null && this.globalCache.containsKey(modelIdentifier)) {
+            model = this.globalCache.get(modelIdentifier);
+            this.localCache.put(modelIdentifier.getId(), model);
         }
 
         if (model == null) {
             model = buildModel(modelIdentifier);
-            globalCache.put(modelIdentifier, model);
-            models.put(modelIdentifier.getId(), model);
-        }
-
-        if (modelIdentifier.getVersion() != null && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
-            throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s because version %s is already loaded.",
-                    modelIdentifier.getId(), modelIdentifier.getVersion(), model.getModelInfo().getVersion()));
+            this.globalCache.put(modelIdentifier, model);
+            this.localCache.put(modelIdentifier.getId(), model);
         }
 
         return model;
