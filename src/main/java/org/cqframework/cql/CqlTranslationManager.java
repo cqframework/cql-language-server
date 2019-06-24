@@ -1,27 +1,34 @@
 package org.cqframework.cql;
 
 import org.cqframework.cql.cql2elm.*;
+import org.cqframework.cql.cql2elm.model.Model;
+import org.cqframework.cql.manager.CacheAwareModelManager;
+import org.hl7.elm.r1.VersionedIdentifier;
 import org.fhir.ucum.UcumService;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Created by Bryn on 9/4/2018.
  */
 public class CqlTranslationManager {
-    private final ModelManager modelManager;
-    private final LibraryManager libraryManager;
-    private final UcumService ucumService = null;
+    private final Map<VersionedIdentifier, Model> modelCache = new HashMap<>();
+
+    private final LibrarySourceProvider librarySourceProvider;
+
 
     public CqlTranslationManager(LibrarySourceProvider librarySourceProvider) {
-        modelManager = new ModelManager();
-        libraryManager = new NonCachingLibraryManager(modelManager);
         // TODO: validateUnits setting
-
-        libraryManager.getLibrarySourceLoader().registerProvider(librarySourceProvider);
+        this.librarySourceProvider = librarySourceProvider;
     }
 
     public List<CqlTranslatorException> translate(String content) {
+        ModelManager modelManager = new CacheAwareModelManager(this.modelCache);
+        LibraryManager libraryManager = new NonCachingLibraryManager(modelManager);
+        libraryManager.getLibrarySourceLoader().registerProvider(librarySourceProvider);
+
         CqlTranslator translator = CqlTranslator.fromText(content, modelManager, libraryManager,
             CqlTranslator.Options.EnableAnnotations,
             CqlTranslator.Options.EnableLocators,
