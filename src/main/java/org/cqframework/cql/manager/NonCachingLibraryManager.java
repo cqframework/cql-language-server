@@ -117,12 +117,8 @@ class CopiedLibrarySourceLoader implements LibrarySourceLoader {
         for (LibrarySourceProvider provider : PROVIDERS) {
             InputStream localSource = provider.getLibrarySource(libraryIdentifier);
             if (localSource != null) {
-                if (source != null) {
-                    throw new IllegalArgumentException(String.format("Multiple sources found for library %s, version %s.",
-                            libraryIdentifier.getId(), libraryIdentifier.getVersion()));
-                }
-
                 source = localSource;
+                break;
             }
         }
 
