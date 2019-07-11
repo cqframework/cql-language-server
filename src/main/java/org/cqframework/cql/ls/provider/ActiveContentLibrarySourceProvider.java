@@ -1,21 +1,21 @@
-package org.cqframework.cql.provider;
+package org.cqframework.cql.ls.provider;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
-import java.util.logging.Logger;
+// import java.util.logging.Logger;
 
-import org.cqframework.cql.service.CqlTextDocumentService;
-import org.cqframework.cql.CqlUtilities;
+import org.cqframework.cql.ls.service.CqlTextDocumentService;
+import org.cqframework.cql.ls.CqlUtilities;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.hl7.elm.r1.VersionedIdentifier;
 
 
 // LibrarySourceProvider implementation that pulls from the active content
 public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider {
-    private static final Logger LOG = Logger.getLogger("main");
+    // private static final Logger LOG = Logger.getLogger("main");
 
     private final URI baseUri;
     private final CqlTextDocumentService textDocumentService;

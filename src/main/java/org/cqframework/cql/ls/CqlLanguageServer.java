@@ -1,17 +1,16 @@
-package org.cqframework.cql;
+package org.cqframework.cql.ls;
 
 import com.google.common.collect.ImmutableList;
 
-import org.cqframework.cql.manager.CqlTranslationManager;
-import org.cqframework.cql.service.CqlTextDocumentService;
-import org.cqframework.cql.service.CqlWorkspaceService;
+import org.cqframework.cql.ls.manager.CqlTranslationManager;
+import org.cqframework.cql.ls.service.CqlTextDocumentService;
+import org.cqframework.cql.ls.service.CqlWorkspaceService;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
-import javax.tools.*;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -45,7 +44,7 @@ public class CqlLanguageServer implements LanguageServer {
     public CqlLanguageServer() {
         this.textDocumentService = new CqlTextDocumentService(client, this);
         this.workspaceService = new CqlWorkspaceService(client, this);
-        this.translationManager = new CqlTranslationManager(this.textDocumentService, this.workspaceService);
+        this.translationManager = new CqlTranslationManager(this.textDocumentService);
     }
 
     @Override

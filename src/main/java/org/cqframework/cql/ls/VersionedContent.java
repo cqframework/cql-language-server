@@ -1,4 +1,4 @@
-package org.cqframework.cql;
+package org.cqframework.cql.ls;
 
 public class VersionedContent {
     public final String content;

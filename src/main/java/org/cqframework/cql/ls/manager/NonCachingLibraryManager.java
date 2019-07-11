@@ -1,4 +1,4 @@
-package org.cqframework.cql.manager;
+package org.cqframework.cql.ls.manager;
 
 import java.io.IOException;
 import java.io.InputStream;

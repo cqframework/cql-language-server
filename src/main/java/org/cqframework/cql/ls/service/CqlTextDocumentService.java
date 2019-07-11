@@ -1,4 +1,4 @@
-package org.cqframework.cql.service;
+package org.cqframework.cql.ls.service;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -21,9 +21,9 @@ import java.util.logging.Logger;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 
-import org.cqframework.cql.CqlLanguageServer;
-import org.cqframework.cql.CqlUtilities;
-import org.cqframework.cql.VersionedContent;
+import org.cqframework.cql.ls.CqlLanguageServer;
+import org.cqframework.cql.ls.CqlUtilities;
+import org.cqframework.cql.ls.VersionedContent;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
@@ -119,7 +119,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
 
         URI uri = URI.create(position.getTextDocument().getUri());
-        Optional<String> content = activeContent(uri);
+        // Optional<String> content = activeContent(uri);
         int line = position.getPosition().getLine() + 1;
         int character = position.getPosition().getCharacter() + 1;
 

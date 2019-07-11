@@ -1,23 +1,21 @@
-package org.cqframework.cql.provider;
+package org.cqframework.cql.ls.provider;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.filefilter.DirectoryFileFilter;
-import org.apache.commons.io.filefilter.IOFileFilter;
-import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-import org.cqframework.cql.cql2elm.model.Version;
-import org.cqframework.cql.service.CqlWorkspaceService;
-import org.eclipse.lsp4j.WorkspaceFolder;
-import org.hl7.elm.r1.VersionedIdentifier;
-
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.net.URI;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.filefilter.IOFileFilter;
+import org.cqframework.cql.cql2elm.LibrarySourceProvider;
+import org.cqframework.cql.cql2elm.model.Version;
+import org.hl7.elm.r1.VersionedIdentifier;
 
 // NOTE: This implementation is naive and assumes library file names will always take the form:
 // <filename>[-<version>].cql

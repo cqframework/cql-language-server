@@ -1,4 +1,4 @@
-package org.cqframework.cql.manager;
+package org.cqframework.cql.ls.manager;
 
 import org.cqframework.cql.cql2elm.ModelInfoLoader;
 import org.cqframework.cql.cql2elm.ModelInfoProvider;

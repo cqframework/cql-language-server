@@ -2,12 +2,15 @@
     
     <modelVersion>4.0.0</modelVersion>
     <groupId>info.cqframework</groupId>
-    <artifactId>cql-language-server</artifactId>
+    <artifactId>cql.ls</artifactId>
     <packaging>jar</packaging>
     <version>0.1-SNAPSHOT</version>
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
         <cqframework-version>1.3.17-SNAPSHOT</cqframework-version>
-        <cql-engine-version>1.3.7-SNAPSHOT</cql-engine-version>
+        <cql-engine-version>1.3.9-SNAPSHOT</cql-engine-version>
         <hapi_version>3.7.0</hapi_version>
     </properties>
 
@@ -200,6 +203,13 @@
                                     <goals>
                                         <goal>sign</goal>
                                     </goals>
+                                    <!-- This allows us to lookup the passphrase from maven settings.xml -->
+                                    <configuration>
+                                        <gpgArguments>
+                                            <arg>--pinentry-mode</arg>
+                                            <arg>loopback</arg>
+                                        </gpgArguments>
+                                    </configuration>
                                 </execution>
                             </executions>
                         </plugin>

@@ -1,4 +1,4 @@
-package org.cqframework.cql;
+package org.cqframework.cql.ls;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;

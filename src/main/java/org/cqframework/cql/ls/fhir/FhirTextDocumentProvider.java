@@ -1,9 +1,9 @@
-package org.cqframework.cql.fhir;
+package org.cqframework.cql.ls.fhir;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
-import org.cqframework.cql.CqlUtilities;
+import org.cqframework.cql.ls.CqlUtilities;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
