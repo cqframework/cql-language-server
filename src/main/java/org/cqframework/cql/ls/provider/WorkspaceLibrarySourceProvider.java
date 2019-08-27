@@ -13,13 +13,14 @@ import java.util.logging.Logger;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
+import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.cql2elm.model.Version;
 import org.hl7.elm.r1.VersionedIdentifier;
 
 // NOTE: This implementation is naive and assumes library file names will always take the form:
 // <filename>[-<version>].cql
-// And further that <filename> will never contain dashes, and that <version> will always be of the form <major>[.<minor>[.<patch>]]
+// And further that <version> will always be of the form <major>[.<minor>[.<patch>]]
 // Usage outside these boundaries will result in errors or incorrect behavior.
 public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
     private static final Logger LOG = Logger.getLogger("main");
@@ -90,43 +91,37 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
             Version mostRecent = null;
             Version requestedVersion = libraryIdentifier.getVersion() == null ? null : new Version(libraryIdentifier.getVersion());
             Collection<File> files = FileUtils.listFiles(path.toFile(), filter, null);
+            // The filter will give us all the files that start with the appropriate the appropriate name. We then need to
+            // split apart the name and version to do a more detailed comparison
+            // e.g. for a request for patient-view version 1.0.0 we might see:
+            // patient-view.cql
+            // patient-view-demo.cql
+            // patient-view-1.0.1.cql
+            // patient-view-1.0.0.cql 
+            // patient-view-demo-1.0.0.cql
             if (files != null) {
                 for (File file: files) {
                     String fileName = file.getName();
-                    int indexOfExtension = fileName.lastIndexOf(".");
-                    if (indexOfExtension >= 0) {
-                        fileName = fileName.substring(0, indexOfExtension);
+                    Pair<String,Version> nameAndVersion = this.getNameAndVersion(fileName);
+
+                    if (!nameAndVersion.getLeft().equalsIgnoreCase(libraryName)) {
+                        continue;
                     }
 
+                    Version version = nameAndVersion.getRight();
 
-                    int indexOfVersionSeparator = fileName.lastIndexOf("-");
-                    if (indexOfVersionSeparator >= 0) {
-                        Version version;
-                        try {
-                            version = new Version(fileName.substring(indexOfVersionSeparator + 1));
-                              // If there's an exact match short circuit.
-                            if (requestedVersion != null && version.compareTo(requestedVersion) == 0) {
-                                return file;
-                            }
-                            // If the file has a version, make sure it is compatible with the version we are looking for
-                            else if (requestedVersion == null || version.compatibleWith(requestedVersion)) {
-                                if (mostRecent == null || version.compareTo(mostRecent) > 0) {
-                                    mostRecent = version;
-                                    mostRecentFile = file;
-                                }
-                            }
-                        }
-                        // Sometimes a file ends with a name like patient-view, so just spliting on - isn't
-                        // a reliable way to ensure we actually have a version;
-                        catch (IllegalArgumentException e) {
-                            if (mostRecent == null) {
-                                mostRecentFile = file;
-                            }
-                        }
+                    // Exact match
+                    if (version != null && requestedVersion != null && version.compareTo(requestedVersion) == 0) {
+                        return file;
                     }
-                    else {
-                        // If the file is named correctly, but has no version, consider it the most recent version
-                        if (mostRecent == null) {
+                     // If the file is named correctly but has no version, consider it the most recent version
+                    else if (version == null) {
+                        return file;
+                    }
+                    // Otherwise, find the most recent compatible version
+                    else if (requestedVersion == null || version.compatibleWith(requestedVersion)) {
+                        if (mostRecent == null || version.compareTo(mostRecent) > 0) {
+                            mostRecent = version;
                             mostRecentFile = file;
                         }
                     }
@@ -137,5 +132,32 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
         }
 
         return libraryFile;
+    }
+
+    private Version getVersion(String version) {
+        try {
+            return new Version(version);
+        }
+        catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Pair<String,Version> getNameAndVersion(String fileName) {
+        int indexOfExtension = fileName.lastIndexOf(".");
+        if (indexOfExtension >= 0) {
+            fileName = fileName.substring(0, indexOfExtension);
+        }
+
+        int indexOfVersionSeparator = fileName.lastIndexOf("-");
+        Version version = null;
+        if (indexOfVersionSeparator >= 0) {
+            version = getVersion(fileName.substring(indexOfVersionSeparator + 1));
+            if (version != null) {
+                fileName = fileName.substring(0, indexOfVersionSeparator);
+            }
+        }
+
+        return Pair.of(fileName, version);
     }
 }
