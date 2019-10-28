@@ -13,3 +13,8 @@
 *.iml
 *.vsix
 .DS_store
+
+.settings
+.classpath
+.factorypath
+.project
