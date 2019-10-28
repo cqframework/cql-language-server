@@ -4,10 +4,20 @@
     <groupId>info.cqframework</groupId>
     <artifactId>cql.ls</artifactId>
     <packaging>jar</packaging>
-    <version>0.1-SNAPSHOT</version>
+    <version>${revision}</version>
+
     <name>CQL Language Server</name>
     <description>A Languager Server for CQL implementing the LSP</description>
     <url>https://github.com/DBCG/cql-language-server</url>
+
+    <properties>
+        <revision>0.1-SNAPSHOT</revision>
+        <jackson-2-version>2.5.0</jackson-2-version>
+        <jersey-2-version>2.10</jersey-2-version>
+        <cqframework-version>1.3.18-SNAPSHOT</cqframework-version>
+        <cql-engine-version>1.3.10-SNAPSHOT</cql-engine-version>
+        <hapi-version>3.7.0</hapi-version>
+    </properties>
 
     <licenses>
     <license>
@@ -16,6 +26,7 @@
         <distribution>repo</distribution>
     </license>
     </licenses>
+
 
     <scm>
         <!-- <url>https://github.com/DBCG/cql-language-server</url> -->
@@ -46,13 +57,6 @@
             <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
         </repository>
     </distributionManagement>
-    <properties>
-        <jackson-2-version>2.5.0</jackson-2-version>
-        <jersey-2-version>2.10</jersey-2-version>
-        <cqframework-version>1.3.18-SNAPSHOT</cqframework-version>
-        <cql-engine-version>1.3.10-SNAPSHOT</cql-engine-version>
-        <hapi_version>3.7.0</hapi_version>
-    </properties>
     <dependencies>
         <!-- CQL Engine -->
         <!-- <dependency>
@@ -109,17 +113,17 @@
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-structures-dstu3</artifactId>
-            <version>${hapi_version}</version>
+            <version>${hapi-version}</version>
         </dependency>
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-base</artifactId>
-            <version>${hapi_version}</version>
+            <version>${hapi-version}</version>
         </dependency>
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-client</artifactId>
-            <version>${hapi_version}</version>
+            <version>${hapi-version}</version>
         </dependency>
         <!-- Java implementation of VS Code language server protocol -->
         <dependency>
@@ -159,12 +163,22 @@
                 <version>3.2.1</version>
                 <configuration>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
-                    <shadedClassifierName>bin</shadedClassifierName>
+                    <shadedClassifierName>shaded</shadedClassifierName>
                     <transformers>
                         <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                             <mainClass>org.cqframework.cql.ls.Main</mainClass>
                         </transformer>
                     </transformers>
+                     <filters>
+                        <filter>
+                            <artifact>*:*</artifact>
+                            <excludes>
+                                <exclude>META-INF/*.SF</exclude>
+                                <exclude>META-INF/*.DSA</exclude>
+                                <exclude>META-INF/*.RSA</exclude>
+                            </excludes>
+                        </filter>
+                    </filters>
                 </configuration>
                 <executions>
                     <execution>
