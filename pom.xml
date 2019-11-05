@@ -297,6 +297,9 @@
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>3.2.1</version>
                     <configuration>
+                        <!-- TODO: Enable this once we know what extra dependencies we need to include
+                            <minimizeJar>true</minimizeJar>
+                        -->
                         <shadedArtifactAttached>true</shadedArtifactAttached>
                         <shadedClassifierName>shaded</shadedClassifierName>
                         <transformers>
