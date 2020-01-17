@@ -24,8 +24,10 @@ import com.google.common.collect.Sets;
 import org.cqframework.cql.ls.CqlLanguageServer;
 import org.cqframework.cql.ls.CqlUtilities;
 import org.cqframework.cql.ls.VersionedContent;
+import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
+import org.cqframework.cql.elm.tracking.TrackBack;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
 import org.eclipse.lsp4j.CodeLens;
@@ -46,6 +48,8 @@ import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.MarkedString;
+import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
@@ -65,6 +69,11 @@ import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
+import org.hl7.cql.model.DataType;
+import org.hl7.elm.r1.ExpressionDef;
+import org.hl7.elm.r1.Library.Statements;
+
+import japa.parser.ast.expr.Expression;
 
 public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger LOG = Logger.getLogger("main");
@@ -89,7 +98,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     void doLint(Collection<URI> paths) {
-         LOG.info("Lint " + Joiner.on(", ").join(paths));
+        LOG.info("Lint " + Joiner.on(", ").join(paths));
 
         for (URI uri : paths) {
             Optional<String> content = activeContent(uri);
@@ -99,16 +108,18 @@ public class CqlTextDocumentService implements TextDocumentService {
 
                 LOG.info(String.format("lint completed on %s with %d messages.", uri, exceptions.size()));
 
-                PublishDiagnosticsParams params = new PublishDiagnosticsParams(uri.toString(), CqlUtilities.convert(exceptions));
+                PublishDiagnosticsParams params = new PublishDiagnosticsParams(uri.toString(),
+                        CqlUtilities.convert(exceptions));
                 for (Diagnostic diagnostic : params.getDiagnostics()) {
-                    LOG.info(String.format("diagnostic: %s %d:%d-%d:%d: %s", uri, diagnostic.getRange().getStart().getLine(), diagnostic.getRange().getStart().getCharacter(),
-                            diagnostic.getRange().getEnd().getLine(), diagnostic.getRange().getEnd().getCharacter(), diagnostic.getMessage()));
+                    LOG.info(String.format("diagnostic: %s %d:%d-%d:%d: %s", uri,
+                            diagnostic.getRange().getStart().getLine(), diagnostic.getRange().getStart().getCharacter(),
+                            diagnostic.getRange().getEnd().getLine(), diagnostic.getRange().getEnd().getCharacter(),
+                            diagnostic.getMessage()));
                 }
                 client.join().publishDiagnostics(params);
-            }
-            else
-            {
-                Diagnostic d = new Diagnostic(new Range(new Position(0,0), new Position(0,0)), "Library does not contain CQL content.", DiagnosticSeverity.Warning, "lint");
+            } else {
+                Diagnostic d = new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
+                        "Library does not contain CQL content.", DiagnosticSeverity.Warning, "lint");
                 PublishDiagnosticsParams params = new PublishDiagnosticsParams(uri.toString(), Arrays.asList(d));
                 client.join().publishDiagnostics(params);
             }
@@ -140,17 +151,46 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     @Override
     public CompletableFuture<CompletionItem> resolveCompletionItem(CompletionItem unresolved) {
-        return CompletableFutures.computeAsync(
-                cancel -> {
-                    // server.configured().docs.resolveCompletionItem(unresolved);
+        return CompletableFutures.computeAsync(cancel -> {
+            // server.configured().docs.resolveCompletionItem(unresolved);
 
-                    return unresolved;
-                });
+            return unresolved;
+        });
     }
 
+    // TODO: Right now this just implements return type highlighting for expressions
+    // only.
+    // It also only works for top-level expressions.
+    // This functionality should probably be part of signature help
+    // So, some future work is do that and also make it work for sub-expressions.
     @Override
     public CompletableFuture<Hover> hover(TextDocumentPositionParams position) {
-        return null;
+        URI uri = null;
+        try {
+            uri = new URI(position.getTextDocument().getUri());
+        } catch (Exception e) {
+            return null;
+        }
+
+        Optional<String> content = activeContent(uri);
+        if (!content.isPresent() || content.get().length() == 0) {
+            return null;
+        }
+        CqlTranslator translator = server.getTranslationManager().translate(uri, content.get());
+
+        Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
+                translator.getTranslatedLibrary().getLibrary().getStatements());
+
+        if (exp == null || exp.getRight().getExpression() == null) {
+            return null;
+        }
+
+        DataType resultType = exp.getRight().getExpression().getResultType();
+
+        Hover hover = new Hover();
+        hover.setContents(Either.forLeft(List.of(Either.forRight(new MarkedString("cql", resultType.toString())))));
+        hover.setRange(exp.getLeft());
+        return CompletableFuture.completedFuture(hover);
     }
 
     @Override
@@ -164,8 +204,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     @Override
-    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(
-            TextDocumentPositionParams position) {
+    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(TextDocumentPositionParams position) {
         return null;
     }
 
@@ -200,15 +239,14 @@ public class CqlTextDocumentService implements TextDocumentService {
                 this.client.join().showMessage(mp);
 
                 return null;
-            }
-            else {
+            } else {
                 int line = lines.length - 1;
                 int character = lines[line].length() - 1;
-                TextEdit te = new TextEdit(new Range(new Position(0, 0), new Position(lines.length, character)), fr.getOutput());
+                TextEdit te = new TextEdit(new Range(new Position(0, 0), new Position(lines.length, character)),
+                        fr.getOutput());
                 return CompletableFuture.completedFuture(Collections.singletonList(te));
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
             this.client.join().showMessage(mp);
 
@@ -217,14 +255,12 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     @Override
-    public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
-            DocumentRangeFormattingParams params) {
+    public CompletableFuture<List<? extends TextEdit>> rangeFormatting(DocumentRangeFormattingParams params) {
         return null;
     }
 
     @Override
-    public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(
-            DocumentOnTypeFormattingParams params) {
+    public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(DocumentOnTypeFormattingParams params) {
         return null;
     }
 
@@ -254,7 +290,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     public void didChange(DidChangeTextDocumentParams params) {
         VersionedTextDocumentIdentifier document = params.getTextDocument();
         URI uri = URI.create(document.getUri());
-        
+
         // TODO: filter this correctly on the client side
         if (uri.toString().contains("metadata") || uri.toString().contains("_history")) {
             return;
@@ -266,10 +302,8 @@ public class CqlTextDocumentService implements TextDocumentService {
         if (document.getVersion() > existing.version) {
             for (TextDocumentContentChangeEvent change : params.getContentChanges()) {
                 if (change.getRange() == null) {
-                    activeDocuments.put(
-                            uri, new VersionedContent(change.getText(), document.getVersion()));
-                }
-                else {
+                    activeDocuments.put(uri, new VersionedContent(change.getText(), document.getVersion()));
+                } else {
                     newText = patch(newText, change);
                     activeDocuments.put(uri, new VersionedContent(newText, document.getVersion()));
                 }
@@ -277,11 +311,7 @@ public class CqlTextDocumentService implements TextDocumentService {
 
             doLint(Collections.singleton(uri));
         } else
-            LOG.warning(
-                    "Ignored change with version "
-                            + document.getVersion()
-                            + " <= "
-                            + existing.version);
+            LOG.warning("Ignored change with version " + document.getVersion() + " <= " + existing.version);
     }
 
     private String patch(String sourceText, TextDocumentContentChangeEvent change) {
@@ -312,8 +342,10 @@ public class CqlTextDocumentService implements TextDocumentService {
             while (true) {
                 int next = reader.read();
 
-                if (next == -1) return writer.toString();
-                else writer.write(next);
+                if (next == -1)
+                    return writer.toString();
+                else
+                    writer.write(next);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -329,14 +361,49 @@ public class CqlTextDocumentService implements TextDocumentService {
         activeDocuments.remove(uri);
 
         // Clear diagnostics
-        client.join()
-                 .publishDiagnostics(
-                         new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
+        client.join().publishDiagnostics(new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
         // Re-lint all active documents
         doLint(openFiles());
+    }
+
+    private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position, Statements statements) {
+        if (statements.getDef() == null || statements.getDef().size() == 0) {
+            return null;
+        }
+
+        for (ExpressionDef def : statements.getDef()) {
+            if (def.getTrackbacks() == null || def.getTrackbacks().size() == 0) {
+                continue;
+            }
+
+            for (TrackBack tb : def.getTrackbacks()) {
+                if (positionInTrackBack(position, tb)) {
+                    Range range = new Range(new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
+                            new Position(tb.getEndLine() - 1, tb.getEndChar()));
+                    return Pair.of(range, def);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private boolean positionInTrackBack(Position p, TrackBack tb) {
+        int startLine = tb.getStartLine() - 1;
+        int startChar = tb.getStartChar() - 1;
+        int endLine = tb.getEndLine() - 1;
+        int endChar = tb.getEndChar();
+
+        // Just kidding. We need intervals.
+        if (p.getLine() >= startLine && p.getLine() <= endLine) {
+            return true;
+        } else {
+            return false;
+        }
+
     }
 }

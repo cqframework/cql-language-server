@@ -96,7 +96,7 @@ public class CqlLanguageServer implements LanguageServer {
         //c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
         c.setDocumentFormattingProvider(true);
         c.setDocumentRangeFormattingProvider(false);
-        //c.setHoverProvider(true);
+        c.setHoverProvider(true);
         //c.setWorkspaceSymbolProvider(true);
         //c.setReferencesProvider(true);
         //c.setDocumentSymbolProvider(true);
