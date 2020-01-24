@@ -12,6 +12,7 @@ import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.LibrarySourceLoader;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.cql2elm.ModelManager;
+import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel;
 import org.cqframework.cql.cql2elm.model.TranslatedLibrary;
 import org.hl7.elm.r1.VersionedIdentifier;
 
@@ -33,7 +34,8 @@ public class NonCachingLibraryManager extends LibraryManager {
     }
 
     @Override
-    public TranslatedLibrary resolveLibrary(VersionedIdentifier libraryIdentifier, List<CqlTranslatorException> errors) {
+    public TranslatedLibrary resolveLibrary(VersionedIdentifier libraryIdentifier,
+    CqlTranslatorException.ErrorSeverity errorLevel, SignatureLevel signatureLevel, CqlTranslator.Options[] options, List<CqlTranslatorException> errors) {
         if (libraryIdentifier == null) {
             throw new IllegalArgumentException("libraryIdentifier is null.");
         }
@@ -42,10 +44,11 @@ public class NonCachingLibraryManager extends LibraryManager {
             throw new IllegalArgumentException("libraryIdentifier Id is null");
         }
 
-        return translateLibrary(libraryIdentifier, errors);
+        return translateLibrary(libraryIdentifier, errorLevel, signatureLevel, options, errors);
     }
 
-    private TranslatedLibrary translateLibrary(VersionedIdentifier libraryIdentifier, List<CqlTranslatorException> errors) {
+    private TranslatedLibrary translateLibrary(VersionedIdentifier libraryIdentifier, 
+        CqlTranslatorException.ErrorSeverity errorLevel, SignatureLevel signatureLevel, CqlTranslator.Options[] options, List<CqlTranslatorException> errors) {
         InputStream librarySource = null;
         try {
             librarySource = librarySourceLoader.getLibrarySource(libraryIdentifier);
@@ -60,12 +63,7 @@ public class NonCachingLibraryManager extends LibraryManager {
         }
 
         try {
-            CqlTranslator translator = CqlTranslator.fromStream(librarySource, modelManager, this,
-                CqlTranslator.Options.EnableAnnotations,
-                CqlTranslator.Options.EnableLocators,
-                CqlTranslator.Options.DisableListDemotion,
-                CqlTranslator.Options.DisableListPromotion,
-                CqlTranslator.Options.DisableMethodInvocation);
+            CqlTranslator translator = CqlTranslator.fromStream(librarySource, modelManager, this, errorLevel, signatureLevel, options);
 
             if (errors != null) {
                 errors.addAll(translator.getExceptions());
