@@ -8,11 +8,11 @@
 
     <name>CQL Language Server</name>
     <description>A Languager Server for CQL implementing the LSP</description>
-    <url>https://github.com/DBCG/cql-language-server</url>
+    <url>https://github.com/DBCG/cql-language-server/tree/master</url>
 
     <properties>
-        <version.major>0</version.major>
-        <version.minor>1</version.minor>
+        <version.major>1</version.major>
+        <version.minor>0</version.minor>
         <version.patch>0</version.patch>
         <!-- NOTE: Building under the release profile automatically drops the -SNAPSHOT extension -->
         <revision>${version.major}.${version.minor}.${version.patch}-SNAPSHOT</revision>
@@ -21,23 +21,33 @@
 
         <jackson-2-version>2.5.0</jackson-2-version>
         <jersey-2-version>2.10</jersey-2-version>
-        <cqframework-version>1.3.20-SNAPSHOT</cqframework-version>
-        <cql-engine-version>1.3.12-SNAPSHOT</cql-engine-version>
-        <hapi-version>4.1.0</hapi-version>
+        <cqframework-version>1.3.19</cqframework-version>
+        <cql-engine-version>1.3.12</cql-engine-version>
+        <hapi-version>4.2.0</hapi-version>
     </properties>
 
     <licenses>
-    <license>
-        <name>Apache License, Version 2.0</name>
-        <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-        <distribution>repo</distribution>
-    </license>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
     </licenses>
+
+        <developers>
+        <developer>
+            <name>Bryn Rhodes</name>
+        </developer>
+        <developer>
+            <name>Jonathan Percival</name>
+        </developer>
+    </developers>
 
 
     <scm>
-        <!-- <url>https://github.com/DBCG/cql-language-server</url> -->
+        <connection>scm:git:git://github.com/DBCG/cql-language-server.git</connection>
         <developerConnection>scm:git:https://github.com/DBCG/cql-language-server/</developerConnection>
+        <url>https://github.com/DBCG/cql-language-server</url>
     </scm>
 
     <repositories>
@@ -124,7 +134,7 @@
         </dependency>
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
-            <artifactId>hapi-fhir-base</artifactId>
+            <artifactId>hapi-fhir-structures-r4</artifactId>
             <version>${hapi-version}</version>
         </dependency>
         <dependency>
