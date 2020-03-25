@@ -1,4 +1,4 @@
-package org.cqframework.cql.provider;
+package org.cqframework.cql.ls.provider;
 
 import java.io.File;
 import java.io.FileInputStream;

@@ -1,4 +1,4 @@
-package org.cqframework.cql;
+package org.cqframework.cql.ls;
 
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.eclipse.lsp4j.Diagnostic;
@@ -9,7 +9,6 @@ import org.eclipse.lsp4j.Range;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
@@ -75,7 +74,7 @@ public class CqlUtilities {
     }
 
     public static List<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
-        ArrayList result = new ArrayList<>();
+        ArrayList<Diagnostic> result = new ArrayList<>();
         for (CqlTranslatorException error : errors) {
             Diagnostic diagnostic = convert(error);
             if (diagnostic != null) {

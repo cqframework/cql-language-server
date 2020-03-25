@@ -13,3 +13,9 @@
 *.iml
 *.vsix
 .DS_store
+
+.settings
+.classpath
+.factorypath
+.project
+.flattened-pom.xml

@@ -1,32 +1,29 @@
-package org.cqframework.cql.manager;
+package org.cqframework.cql.ls.manager;
 
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.cqframework.cql.CqlUtilities;
+import org.cqframework.cql.ls.CqlUtilities;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
-import org.cqframework.cql.provider.ActiveContentLibrarySourceProvider;
-import org.cqframework.cql.provider.FhirServerLibrarySourceProvider;
-import org.cqframework.cql.provider.WorkspaceLibrarySourceProvider;
-import org.cqframework.cql.service.CqlTextDocumentService;
-import org.cqframework.cql.service.CqlWorkspaceService;
+import org.cqframework.cql.ls.provider.ActiveContentLibrarySourceProvider;
+import org.cqframework.cql.ls.provider.FhirServerLibrarySourceProvider;
+import org.cqframework.cql.ls.provider.WorkspaceLibrarySourceProvider;
+import org.cqframework.cql.ls.service.CqlTextDocumentService;
 import org.hl7.elm.r1.VersionedIdentifier;
 
 public class CqlTranslationManager {
 
-    private final CqlWorkspaceService workspaceService;
     private final CqlTextDocumentService textDocumentService;
 
     private final Map<VersionedIdentifier, Model> globalCache;
 
-    public CqlTranslationManager(CqlTextDocumentService textDocumentService, CqlWorkspaceService workspaceService) {
+    public CqlTranslationManager(CqlTextDocumentService textDocumentService) {
         this.globalCache = new HashMap<>();
-        this.workspaceService = workspaceService;
         this.textDocumentService = textDocumentService;
     }
 

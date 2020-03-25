@@ -1,20 +1,20 @@
-package org.cqframework.cql.provider;
+package org.cqframework.cql.ls.provider;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.logging.Logger;
+// import java.util.logging.Logger;
 
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-import org.cqframework.cql.fhir.FhirTextDocumentProvider;
+import org.cqframework.cql.ls.fhir.FhirTextDocumentProvider;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.elm.r1.VersionedIdentifier;
 
 
 // LibrarySourceProvider implementation that pulls from a fhir server
 public class FhirServerLibrarySourceProvider implements LibrarySourceProvider {
-    private static final Logger LOG = Logger.getLogger("main");
+    // private static final Logger LOG = Logger.getLogger("main");
 
     private final FhirTextDocumentProvider textDocumentProvider;
 
