@@ -4,12 +4,13 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.cqframework.cql.ls.CqlUtilities;
 import org.cqframework.cql.cql2elm.CqlTranslator;
+import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
+import org.cqframework.cql.ls.CqlUtilities;
 import org.cqframework.cql.ls.provider.ActiveContentLibrarySourceProvider;
 import org.cqframework.cql.ls.provider.FhirServerLibrarySourceProvider;
 import org.cqframework.cql.ls.provider.WorkspaceLibrarySourceProvider;
@@ -31,12 +32,7 @@ public class CqlTranslationManager {
         ModelManager modelManager = this.createModelManager();
         LibraryManager libraryManager = this.createLibraryManager(uri, modelManager);
 
-        return CqlTranslator.fromText(content, modelManager, libraryManager,
-            CqlTranslator.Options.EnableAnnotations,
-            CqlTranslator.Options.EnableLocators,
-            CqlTranslator.Options.DisableListDemotion,
-            CqlTranslator.Options.DisableListPromotion,
-            CqlTranslator.Options.DisableMethodInvocation);
+        return CqlTranslator.fromText(content, modelManager, libraryManager, null, CqlTranslatorOptions.defaultOptions());
     }
 
     private ModelManager createModelManager() {
@@ -45,7 +41,6 @@ public class CqlTranslationManager {
 
     private LibraryManager createLibraryManager(URI uri, ModelManager modelManager) {
         LibraryManager libraryManager = new NonCachingLibraryManager(modelManager);
-        // TODO: validateUnits setting
 
         URI baseUri = CqlUtilities.getHead(uri);
 

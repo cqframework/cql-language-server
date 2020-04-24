@@ -1,16 +1,5 @@
 package org.cqframework.cql.ls;
 
-import com.google.common.collect.ImmutableList;
-
-import org.cqframework.cql.ls.manager.CqlTranslationManager;
-import org.cqframework.cql.ls.service.CqlTextDocumentService;
-import org.cqframework.cql.ls.service.CqlWorkspaceService;
-import org.eclipse.lsp4j.*;
-import org.eclipse.lsp4j.services.LanguageClient;
-import org.eclipse.lsp4j.services.LanguageServer;
-import org.eclipse.lsp4j.services.TextDocumentService;
-import org.eclipse.lsp4j.services.WorkspaceService;
-
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -20,6 +9,26 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+
+import com.google.common.collect.ImmutableList;
+
+import org.cqframework.cql.ls.manager.CqlTranslationManager;
+import org.cqframework.cql.ls.service.CqlTextDocumentService;
+import org.cqframework.cql.ls.service.CqlWorkspaceService;
+import org.eclipse.lsp4j.ExecuteCommandOptions;
+import org.eclipse.lsp4j.InitializeParams;
+import org.eclipse.lsp4j.InitializeResult;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
+import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.TextDocumentSyncKind;
+import org.eclipse.lsp4j.WorkspaceFolder;
+import org.eclipse.lsp4j.WorkspaceFoldersOptions;
+import org.eclipse.lsp4j.WorkspaceServerCapabilities;
+import org.eclipse.lsp4j.services.LanguageClient;
+import org.eclipse.lsp4j.services.LanguageServer;
+import org.eclipse.lsp4j.services.TextDocumentService;
+import org.eclipse.lsp4j.services.WorkspaceService;
 
 /*
 TODO: Formatting

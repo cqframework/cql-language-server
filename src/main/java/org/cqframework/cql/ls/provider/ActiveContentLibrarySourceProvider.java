@@ -7,9 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 // import java.util.logging.Logger;
 
-import org.cqframework.cql.ls.service.CqlTextDocumentService;
-import org.cqframework.cql.ls.CqlUtilities;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
+import org.cqframework.cql.ls.CqlUtilities;
+import org.cqframework.cql.ls.service.CqlTextDocumentService;
 import org.hl7.elm.r1.VersionedIdentifier;
 
 

@@ -2,15 +2,14 @@ package org.cqframework.cql.ls.fhir;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.cqframework.cql.ls.CqlUtilities;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
 import org.hl7.fhir.dstu3.model.Library;
-
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.client.api.IGenericClient;

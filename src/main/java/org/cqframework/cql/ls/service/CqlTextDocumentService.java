@@ -21,13 +21,13 @@ import java.util.logging.Logger;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Sets;
 
-import org.cqframework.cql.ls.CqlLanguageServer;
-import org.cqframework.cql.ls.CqlUtilities;
-import org.cqframework.cql.ls.VersionedContent;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.elm.tracking.TrackBack;
+import org.cqframework.cql.ls.CqlLanguageServer;
+import org.cqframework.cql.ls.CqlUtilities;
+import org.cqframework.cql.ls.VersionedContent;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
 import org.eclipse.lsp4j.CodeLens;
@@ -49,7 +49,6 @@ import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkedString;
-import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
@@ -73,8 +72,6 @@ import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
 
-import japa.parser.ast.expr.Expression;
-
 public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger LOG = Logger.getLogger("main");
 
@@ -87,12 +84,10 @@ public class CqlTextDocumentService implements TextDocumentService {
         this.server = server;
     }
 
-    /** Text of file, if it is in the active set */
     public Optional<String> activeContent(URI file) {
         return Optional.ofNullable(activeDocuments.get(file)).map(doc -> doc.content);
     }
 
-    /** All open files, not including things like old git-versions in a diff view */
     public Set<URI> openFiles() {
         return Sets.filter(activeDocuments.keySet(), uri -> uri.getPath().contains("Library"));
     }
@@ -394,9 +389,7 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     private boolean positionInTrackBack(Position p, TrackBack tb) {
         int startLine = tb.getStartLine() - 1;
-        int startChar = tb.getStartChar() - 1;
         int endLine = tb.getEndLine() - 1;
-        int endChar = tb.getEndChar();
 
         // Just kidding. We need intervals.
         if (p.getLine() >= startLine && p.getLine() <= endLine) {

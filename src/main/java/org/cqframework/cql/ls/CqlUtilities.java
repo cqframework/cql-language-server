@@ -1,15 +1,15 @@
 package org.cqframework.cql.ls;
 
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
+
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Logger;
 
 /**
  * Created by Bryn on 9/4/2018.
