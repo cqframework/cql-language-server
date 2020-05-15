@@ -10,7 +10,7 @@
             "name": "Debug (Attach)",
             "request": "attach",
             "hostName": "localhost",
-            "port": 5051
+            "port": 5052
         },
         {
             "type": "java",

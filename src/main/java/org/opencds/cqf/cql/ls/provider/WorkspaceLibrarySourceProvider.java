@@ -1,4 +1,4 @@
-package org.cqframework.cql.ls.provider;
+package org.opencds.cqf.cql.ls.provider;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -8,8 +8,6 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
@@ -17,13 +15,15 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.cqframework.cql.cql2elm.model.Version;
 import org.hl7.elm.r1.VersionedIdentifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // NOTE: This implementation is naive and assumes library file names will always take the form:
 // <filename>[-<version>].cql
 // And further that <version> will always be of the form <major>[.<minor>[.<patch>]]
 // Usage outside these boundaries will result in errors or incorrect behavior.
 public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
-    private static final Logger LOG = Logger.getLogger("main");
+    private static final Logger Log = LoggerFactory.getLogger(WorkspaceLibrarySourceProvider.class);
 
     private final URI baseUri;
 
@@ -38,23 +38,19 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
 
         }
 
-        File file = this.searchPath(this.baseUri, libraryIdentifier);
+        File file = searchPath(this.baseUri, libraryIdentifier);
         if (file != null && file.exists()) {
             try {
                 return new FileInputStream(file);
             } catch (FileNotFoundException e) {
-                LOG.log(Level.INFO,
-                        String.format("WorkspaceProvider attempted to load source for library %s but failed with: "
-                                + e.getMessage()),
-                        libraryIdentifier.getId());
+                Log.error("attempted to load source for library {} but failed with: {}", libraryIdentifier.getId(), e.getMessage());
             }
-
         }
 
         return null;
     }
 
-    private File searchPath(URI baseUri, VersionedIdentifier libraryIdentifier) {
+    public static File searchPath(URI baseUri, VersionedIdentifier libraryIdentifier) {
         Path path;
         try {
             path = Paths.get(baseUri);
@@ -64,7 +60,7 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
         }
 
         String libraryName = libraryIdentifier.getId();
-        Path libraryPath = path.resolve(String.format("%s%s.cql", libraryName,
+        Path libraryPath = path.resolve(String.format("{}{}.cql", libraryName,
                 libraryIdentifier.getVersion() != null ? ("-" + libraryIdentifier.getVersion()) : ""));
         File libraryFile = libraryPath.toFile();
 
@@ -102,7 +98,7 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
             if (files != null) {
                 for (File file: files) {
                     String fileName = file.getName();
-                    Pair<String,Version> nameAndVersion = this.getNameAndVersion(fileName);
+                    Pair<String,Version> nameAndVersion = getNameAndVersion(fileName);
 
                     if (!nameAndVersion.getLeft().equalsIgnoreCase(libraryName)) {
                         continue;
@@ -134,7 +130,7 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
         return libraryFile;
     }
 
-    private Version getVersion(String version) {
+    private static Version getVersion(String version) {
         try {
             return new Version(version);
         }
@@ -143,7 +139,7 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
         }
     }
 
-    private Pair<String,Version> getNameAndVersion(String fileName) {
+    private static Pair<String,Version> getNameAndVersion(String fileName) {
         int indexOfExtension = fileName.lastIndexOf(".");
         if (indexOfExtension >= 0) {
             fileName = fileName.substring(0, indexOfExtension);

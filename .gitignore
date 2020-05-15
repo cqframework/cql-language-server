@@ -19,3 +19,8 @@
 .factorypath
 .project
 .flattened-pom.xml
+
+core.*
+heapdump.*
+javacore.*
+Snap.*

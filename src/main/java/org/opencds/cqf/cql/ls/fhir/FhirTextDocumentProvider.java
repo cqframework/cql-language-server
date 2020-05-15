@@ -1,11 +1,11 @@
-package org.cqframework.cql.ls.fhir;
+package org.opencds.cqf.cql.ls.fhir;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import org.cqframework.cql.ls.CqlUtilities;
+import org.opencds.cqf.cql.ls.CqlUtilities;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
@@ -18,7 +18,7 @@ import ca.uhn.fhir.rest.client.api.IGenericClient;
  * Created by Bryn on 9/4/2018.
  */
 public class FhirTextDocumentProvider {
-    private static final Logger LOG = Logger.getLogger("main");
+    private static final Logger Log = LoggerFactory.getLogger(FhirTextDocumentProvider.class);
     protected FhirContext fhirContext;
 
     /*
@@ -60,7 +60,7 @@ public class FhirTextDocumentProvider {
             }
         }
         catch (Exception e) {
-            LOG.log(Level.SEVERE, String.format("FHIRTextDocumentProvider failed to resolve %s with error: ", uri.toString()) + e.getMessage());
+            Log.debug("failed to resolve {} with error: {}", uri.toString(), e.getMessage());
         }
 
         return null;
@@ -108,7 +108,7 @@ public class FhirTextDocumentProvider {
 
         }
         catch (Exception e) {
-            LOG.log(Level.SEVERE, String.format("FHIRTextDocumentProvider failed to resolve %s with error: ",  name) + e.getMessage());
+            Log.debug("resolve {} with error: {}",  name, e.getMessage());
         }
 
         return null;

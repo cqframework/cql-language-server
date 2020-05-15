@@ -1,4 +1,4 @@
-package org.cqframework.cql.ls;
+package org.opencds.cqf.cql.ls;
 
 public class VersionedContent {
     public final String content;

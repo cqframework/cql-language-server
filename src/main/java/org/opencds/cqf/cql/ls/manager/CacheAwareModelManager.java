@@ -1,4 +1,4 @@
-package org.cqframework.cql.ls.manager;
+package org.opencds.cqf.cql.ls.manager;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -35,7 +35,7 @@ public class CacheAwareModelManager extends ModelManager {
                 model = new Model(provider.load(), resolveModel("System"));
             }
         } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s.",
+            throw new IllegalArgumentException(String.format("Could not load model information for model {}, version {}.",
                     identifier.getId(), identifier.getVersion()));
         }
 
@@ -48,7 +48,7 @@ public class CacheAwareModelManager extends ModelManager {
         if (this.localCache.containsKey(modelIdentifier.getId())) {
             model = this.localCache.get(modelIdentifier.getId());
             if (modelIdentifier.getVersion() != null && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
-                throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s because version %s is already loaded.",
+                throw new IllegalArgumentException(String.format("Could not load model information for model {}, version {} because version {} is already loaded.",
                         modelIdentifier.getId(), modelIdentifier.getVersion(), model.getModelInfo().getVersion()));
             }
 
@@ -58,7 +58,7 @@ public class CacheAwareModelManager extends ModelManager {
         // if (model == null) {
         //     for (String name : this.localCache.keySet()) {
         //         if (!name.equals("System")) {
-        //             throw new IllegalArgumentException(String.format("Could not load model information for model %s, because model %s is already loaded.",
+        //             throw new IllegalArgumentException(String.format("Could not load model information for model {}, because model {} is already loaded.",
         //                     modelIdentifier.getId(), name));
         //         }
         //     }

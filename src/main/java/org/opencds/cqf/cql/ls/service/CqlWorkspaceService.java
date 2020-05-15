@@ -1,4 +1,4 @@
-package org.cqframework.cql.ls.service;
+package org.opencds.cqf.cql.ls.service;
 
 import java.net.URI;
 import java.util.Collection;
@@ -7,12 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-// import java.util.logging.Logger;
 
 import com.google.gson.JsonElement;
 
 import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.cqframework.cql.ls.CqlLanguageServer;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams;
@@ -22,9 +20,14 @@ import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
+import org.opencds.cqf.cql.ls.CqlLanguageServer;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CqlWorkspaceService implements WorkspaceService {
-    // private static final Logger LOG = Logger.getLogger("main");
+    private static final Logger Log = LoggerFactory.getLogger(CqlTextDocumentService.class);
+
 
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
@@ -43,6 +46,7 @@ public class CqlWorkspaceService implements WorkspaceService {
 
     @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
+        try {
             String command = params.getCommand();
             switch (command) {
                 case "Other.ViewXML":
@@ -50,15 +54,25 @@ public class CqlWorkspaceService implements WorkspaceService {
                 case "Other.ExecuteCql":
                     // return this.executeCql(params);
                 default:
-                    this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Unknown Command %s", command)));
-                    return null;
+                    this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Unknown Command {}", command)));
+                    return CompletableFuture.completedFuture(null);
             }
+        }
+        catch (Exception e) {
+            Log.error("executeCommand: {}", e.getMessage());
+            return CompletableFuture.failedFuture(e);
+        }
 	}
 
     @Override
 	public void didChangeWorkspaceFolders(DidChangeWorkspaceFoldersParams params) {
-        this.addFolders(params.getEvent().getAdded());
-        this.removeFolders(params.getEvent().getRemoved());
+        try {
+            this.addFolders(params.getEvent().getAdded());
+            this.removeFolders(params.getEvent().getRemoved());
+        }
+        catch (Exception e) {
+            Log.error("didChangeWorkspaceFolders: {}", e.getMessage());
+        }
     }
 
     @Override
@@ -104,8 +118,9 @@ public class CqlWorkspaceService implements WorkspaceService {
             return null;
         }
         catch(Exception e) {
-            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("View XML failed with: %s", e.getMessage())));
-            return null;
+            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("View XML failed with: {}", e.getMessage())));
+            Log.error("viewXml: {}", e.getMessage());
+            return CompletableFuture.failedFuture(e);
         }
     }
 
@@ -174,7 +189,7 @@ public class CqlWorkspaceService implements WorkspaceService {
     //         return CompletableFuture.completedFuture(builder.toString());
     //     }
     //     catch(Exception e) {
-    //         this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Execute CQL failed with: %s", e.getMessage())));
+    //         this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Execute CQL failed with: {}", e.getMessage())));
     //         return null;
     //     }
     // }

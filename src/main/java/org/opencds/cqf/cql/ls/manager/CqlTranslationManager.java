@@ -1,4 +1,4 @@
-package org.cqframework.cql.ls.manager;
+package org.opencds.cqf.cql.ls.manager;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -10,12 +10,12 @@ import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
-import org.cqframework.cql.ls.CqlUtilities;
-import org.cqframework.cql.ls.provider.ActiveContentLibrarySourceProvider;
-import org.cqframework.cql.ls.provider.FhirServerLibrarySourceProvider;
-import org.cqframework.cql.ls.provider.WorkspaceLibrarySourceProvider;
-import org.cqframework.cql.ls.service.CqlTextDocumentService;
 import org.hl7.elm.r1.VersionedIdentifier;
+import org.opencds.cqf.cql.ls.CqlUtilities;
+import org.opencds.cqf.cql.ls.provider.ActiveContentLibrarySourceProvider;
+import org.opencds.cqf.cql.ls.provider.FhirServerLibrarySourceProvider;
+import org.opencds.cqf.cql.ls.provider.WorkspaceLibrarySourceProvider;
+import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
 
 public class CqlTranslationManager {
 

@@ -1,4 +1,4 @@
-package org.cqframework.cql.ls;
+package org.opencds.cqf.cql.ls;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -8,13 +8,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
-import java.util.logging.Logger;
 
 import com.google.common.collect.ImmutableList;
 
-import org.cqframework.cql.ls.manager.CqlTranslationManager;
-import org.cqframework.cql.ls.service.CqlTextDocumentService;
-import org.cqframework.cql.ls.service.CqlWorkspaceService;
+import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
+import org.opencds.cqf.cql.ls.service.CqlWorkspaceService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
@@ -42,7 +43,7 @@ TODO: Completion for expressions, parameters, code systems, value sets, codes, a
  */
 
 public class CqlLanguageServer implements LanguageServer {
-    private static final Logger LOG = Logger.getLogger("main");
+    private static final Logger Log = LoggerFactory.getLogger(CqlLanguageServer.class);
 
     private final CqlWorkspaceService workspaceService;
     private final CqlTextDocumentService textDocumentService;
@@ -68,7 +69,7 @@ public class CqlLanguageServer implements LanguageServer {
             return CompletableFuture.completedFuture(result);
         }
         catch (Exception e) {
-            LOG.log(Level.SEVERE, "failed to initialize with error: " + e.getMessage());
+            Log.error("failed to initialize with error: {}", e.getMessage());
             return null;
         }
     }
@@ -146,7 +147,20 @@ public class CqlLanguageServer implements LanguageServer {
                 new Handler() {
                     @Override
                     public void publish(LogRecord record) {
+                        if (record == null) {
+                            return;
+                        }
+
                         String message = record.getMessage();
+
+                        if (message == null) {
+                            return;
+                        }
+
+                        // TODO: filter out HAPI messages
+                        if (record.getLevel().intValue() <= Level.INFO.intValue()) {
+                            return;
+                        }
 
                         if (record.getThrown() != null) {
                             StringWriter trace = new StringWriter();
@@ -174,6 +188,6 @@ public class CqlLanguageServer implements LanguageServer {
                     public void close() throws SecurityException {}
                 };
 
-        Logger.getLogger("").addHandler(sendToClient);
+        java.util.logging.Logger.getLogger("").addHandler(sendToClient);
     }
 }

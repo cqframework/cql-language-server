@@ -1,20 +1,23 @@
-package org.cqframework.cql.ls;
+package org.opencds.cqf.cql.ls;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Logger;
 
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Created by Bryn on 9/4/2018.
  */
 public class CqlUtilities {
+
+    private final static Logger Log = LoggerFactory.getLogger(CqlUtilities.class);
 
     public static URI getFhirBaseUri(URI uri) {
         // TODO: This should actually just recognize the FHIR types.
@@ -54,7 +57,7 @@ public class CqlUtilities {
         }
     }
 
-    static Diagnostic convert(CqlTranslatorException error) {
+    public static Diagnostic convert(CqlTranslatorException error) {
         if (error.getLocator() != null) {
             Range range = position(error);
             Diagnostic diagnostic = new Diagnostic();
@@ -67,7 +70,7 @@ public class CqlUtilities {
             return diagnostic;
         }
         else {
-            LOG.warning("Skipped " + error.getMessage());
+            Log.debug("Skipped " + error.getMessage());
 
             return null;
         }
@@ -109,6 +112,4 @@ public class CqlUtilities {
                 )
         );
     }
-
-    private static final Logger LOG = Logger.getLogger("main");
 }

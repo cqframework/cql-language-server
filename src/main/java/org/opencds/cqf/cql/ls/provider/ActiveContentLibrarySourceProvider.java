@@ -1,16 +1,15 @@
-package org.cqframework.cql.ls.provider;
+package org.opencds.cqf.cql.ls.provider;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
-// import java.util.logging.Logger;
 
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-import org.cqframework.cql.ls.CqlUtilities;
-import org.cqframework.cql.ls.service.CqlTextDocumentService;
 import org.hl7.elm.r1.VersionedIdentifier;
+import org.opencds.cqf.cql.ls.CqlUtilities;
+import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
 
 
 // LibrarySourceProvider implementation that pulls from the active content
