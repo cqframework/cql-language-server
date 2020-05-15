@@ -42,9 +42,11 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
+import org.eclipse.lsp4j.DocumentHighlightParams;
 import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkedString;
 import org.eclipse.lsp4j.MessageParams;
@@ -55,6 +57,7 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.SignatureHelpParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
@@ -193,6 +196,11 @@ public class CqlTextDocumentService implements TextDocumentService {
     @Override
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
         try {
+
+            if (position.getTextDocument() == null || position.getTextDocument().getUri() == null) {
+                return CompletableFuture.completedFuture(null);
+            }
+
             URI uri = URI.create(position.getTextDocument().getUri());
             // Optional<String> content = activeContent(uri);
             int line = position.getPosition().getLine() + 1;
@@ -238,7 +246,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     // This functionality should probably be part of signature help
     // So, some future work is do that and also make it work for sub-expressions.
     @Override
-    public CompletableFuture<Hover> hover(TextDocumentPositionParams position) {
+    public CompletableFuture<Hover> hover(HoverParams position) {
         try {
             URI uri = null;
             try {
@@ -273,7 +281,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     @Override
-    public CompletableFuture<SignatureHelp> signatureHelp(TextDocumentPositionParams position) {
+    public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams position) {
         return CompletableFuture.completedFuture(null);
     }
 
@@ -283,7 +291,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     @Override
-    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(TextDocumentPositionParams position) {
+    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams position) {
         return CompletableFuture.completedFuture(null);
     }
 
