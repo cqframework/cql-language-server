@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.service;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -112,9 +113,9 @@ public class CqlTextDocumentService implements TextDocumentService {
 
                 Log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
-                var baseUri = CqlUtilities.getHead(uri);
+                URI baseUri = CqlUtilities.getHead(uri);
                 // First, assign all unassociated exceptions to this library.
-                for (var exception : exceptions) {
+                for (CqlTranslatorException exception : exceptions) {
                     if (exception.getLocator() == null) {
                         exception.setLocator(
                                 new TrackBack(translator.getTranslatedLibrary().getIdentifier(), 0, 0, 0, 0));
@@ -135,7 +136,7 @@ public class CqlTextDocumentService implements TextDocumentService {
                 // Map "unknown" libraries to the current uri
                 libraryUris.put(new VersionedIdentifier().withId("unknown"), uri);
 
-                for (var exception : exceptions) {
+                for (CqlTranslatorException exception : exceptions) {
                     URI eUri = libraryUris.get(exception.getLocator().getLibrary());
                     if (eUri == null) {
                         continue;
@@ -159,14 +160,14 @@ public class CqlTextDocumentService implements TextDocumentService {
             }
         }
 
-        for (var entry : diagnostics.entrySet()) {
+        for (Map.Entry<URI, List<Diagnostic>> entry : diagnostics.entrySet()) {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(), entry.getValue());
             client.join().publishDiagnostics(params);
         }
     }
 
     private URI lookUpUri(URI baseUri, VersionedIdentifier libraryIdentifier) {
-        var f = WorkspaceLibrarySourceProvider.searchPath(baseUri, libraryIdentifier);
+        File f = WorkspaceLibrarySourceProvider.searchPath(baseUri, libraryIdentifier);
         if (f != null) {
             return f.toURI();
         }
@@ -186,7 +187,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             return;
         }
 
-        var existing = diagnostics.get(uri);
+        List<Diagnostic> existing = diagnostics.get(uri);
 
         if (!existing.contains(diagnostic)) {
             existing.add(diagnostic);
