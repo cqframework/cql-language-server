@@ -31,7 +31,7 @@ deploy:
   on:
     branch: master
 before_cache:
-- rm -rf $HOME/.m2/repository/info/cqframework/cql.ls
+- rm -rf $HOME/.m2/repository/org/opencds/cqf/cql/ls
 notifications:
   slack:
     rooms:
