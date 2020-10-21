@@ -3,7 +3,6 @@ package org.opencds.cqf.cql.ls.service;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
@@ -17,7 +16,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 import com.google.common.base.Joiner;
@@ -29,12 +27,6 @@ import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
-import org.eclipse.lsp4j.CodeLens;
-import org.eclipse.lsp4j.CodeLensParams;
-import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.CompletionList;
-import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
@@ -42,40 +34,29 @@ import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
-import org.eclipse.lsp4j.DocumentHighlight;
-import org.eclipse.lsp4j.DocumentHighlightParams;
-import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
-import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.MarkedString;
+import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.ReferenceParams;
-import org.eclipse.lsp4j.RenameParams;
-import org.eclipse.lsp4j.SignatureHelp;
-import org.eclipse.lsp4j.SignatureHelpParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
-import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
-import org.eclipse.lsp4j.WorkspaceEdit;
-import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
-import org.hl7.elm.r1.VersionedIdentifier;
 import org.hl7.elm.r1.Library.Statements;
+import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.CqlUtilities;
+import org.opencds.cqf.cql.ls.FuturesHelper;
 import org.opencds.cqf.cql.ls.VersionedContent;
 import org.opencds.cqf.cql.ls.provider.WorkspaceLibrarySourceProvider;
 import org.slf4j.Logger;
@@ -166,80 +147,38 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
     }
 
-    private URI lookUpUri(URI baseUri, VersionedIdentifier libraryIdentifier) {
-        File f = WorkspaceLibrarySourceProvider.searchPath(baseUri, libraryIdentifier);
-        if (f != null) {
-            return f.toURI();
-        }
+    // @Override
+    // public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
+    //     if (position.getTextDocument() == null || position.getTextDocument().getUri() == null) {
+    //         return CompletableFuture.completedFuture(null);
+    //     }
 
-        return null;
-    };
+    //     try {
 
-    private void addDiagnosticIfNotPresent(Map<URI, List<Diagnostic>> diagnostics, URI uri, Diagnostic diagnostic) {
-        Objects.requireNonNull(diagnostics);
-        Objects.requireNonNull(uri);
+    //         URI uri = URI.create(position.getTextDocument().getUri());
+    //         // Optional<String> content = activeContent(uri);
+    //         int line = position.getPosition().getLine() + 1;
+    //         int character = position.getPosition().getCharacter() + 1;
 
-        if (!diagnostics.containsKey(uri)) {
-            diagnostics.put(uri, new ArrayList<>());
-        }
+    //         Log.debug("completion at {} {}:{}", uri, line, character);
 
-        if (diagnostic == null) {
-            return;
-        }
+    //         List<CompletionItem> items = new ArrayList<CompletionItem>();
 
-        List<Diagnostic> existing = diagnostics.get(uri);
+    //         CompletionItem item = new CompletionItem();
+    //         item.setKind(CompletionItemKind.Keyword);
+    //         item.setLabel("declare");
 
-        if (!existing.contains(diagnostic)) {
-            existing.add(diagnostic);
-        }
-    }
+    //         items.add(item);
 
-    @Override
-    public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
-        try {
+    //         CompletionList list = new CompletionList(items);
 
-            if (position.getTextDocument() == null || position.getTextDocument().getUri() == null) {
-                return CompletableFuture.completedFuture(null);
-            }
+    //         return CompletableFuture.completedFuture(Either.forRight(list));
+    //     } catch (Exception e) {
+    //         Log.error("completion: {}", e.getMessage());
+    //         return FuturesHelper.failedFuture(e);
+    //     }
 
-            URI uri = URI.create(position.getTextDocument().getUri());
-            // Optional<String> content = activeContent(uri);
-            int line = position.getPosition().getLine() + 1;
-            int character = position.getPosition().getCharacter() + 1;
-
-            Log.debug("completion at {} {}:{}", uri, line, character);
-
-            List<CompletionItem> items = new ArrayList<CompletionItem>();
-
-            CompletionItem item = new CompletionItem();
-            item.setKind(CompletionItemKind.Keyword);
-            item.setLabel("declare");
-
-            items.add(item);
-
-            CompletionList list = new CompletionList(items);
-
-            return CompletableFuture.completedFuture(Either.forRight(list));
-        } catch (Exception e) {
-            Log.error("completion: {}", e.getMessage());
-            return CompletableFuture.failedFuture(e);
-        }
-
-    }
-
-    @Override
-    public CompletableFuture<CompletionItem> resolveCompletionItem(CompletionItem unresolved) {
-        try {
-            return CompletableFutures.computeAsync(cancel -> {
-                // server.configured().docs.resolveCompletionItem(unresolved);
-
-                return unresolved;
-            });
-        } catch (Exception e) {
-            Log.error("resolveCompletionItem: ", e.getMessage());
-            return CompletableFuture.failedFuture(e);
-        }
-    }
+    // }
 
     // TODO: Right now this just implements return type highlighting for expressions
     // only.
@@ -272,38 +211,13 @@ public class CqlTextDocumentService implements TextDocumentService {
             DataType resultType = exp.getRight().getExpression().getResultType();
 
             Hover hover = new Hover();
-            hover.setContents(Either.forLeft(List.of(Either.forRight(new MarkedString("cql", resultType.toString())))));
+            hover.setContents(Either.forRight(new MarkupContent("markdown", "```" + resultType.toString() + "```")));
             hover.setRange(exp.getLeft());
             return CompletableFuture.completedFuture(hover);
         } catch (Exception e) {
             Log.error("hover: {} ", e.getMessage());
-            return CompletableFuture.failedFuture(e);
+            return FuturesHelper.failedFuture(e);
         }
-    }
-
-    @Override
-    public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams position) {
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams position) {
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<List<? extends CodeLens>> codeLens(CodeLensParams params) {
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<CodeLens> resolveCodeLens(CodeLens unresolved) {
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -326,7 +240,7 @@ public class CqlTextDocumentService implements TextDocumentService {
                 MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
                 this.client.join().showMessage(mp);
 
-                return CompletableFuture.failedFuture(null);
+                return CompletableFuture.completedFuture(Collections.emptyList());
             } else {
                 int line = lines.length - 1;
                 int character = lines[line].length() - 1;
@@ -338,23 +252,8 @@ public class CqlTextDocumentService implements TextDocumentService {
             MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
             this.client.join().showMessage(mp);
             Log.error("formatting: {}", e.getMessage());
-            return CompletableFuture.failedFuture(e);
+            return FuturesHelper.failedFuture(e);
         }
-    }
-
-    @Override
-    public CompletableFuture<List<? extends TextEdit>> rangeFormatting(DocumentRangeFormattingParams params) {
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(DocumentOnTypeFormattingParams params) {
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<WorkspaceEdit> rename(RenameParams params) {
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -421,45 +320,6 @@ public class CqlTextDocumentService implements TextDocumentService {
             }
         } catch (Exception e) {
             Log.error("didChange for {} : {}", params.getTextDocument().getUri(), e.getMessage());
-        }
-    }
-
-    private String patch(String sourceText, TextDocumentContentChangeEvent change) {
-        try {
-            Range range = change.getRange();
-            BufferedReader reader = new BufferedReader(new StringReader(sourceText));
-            StringWriter writer = new StringWriter();
-
-            // Skip unchanged lines
-            int line = 0;
-
-            while (line < range.getStart().getLine()) {
-                writer.write(reader.readLine() + '\n');
-                line++;
-            }
-
-            // Skip unchanged chars
-            for (int character = 0; character < range.getStart().getCharacter(); character++)
-                writer.write(reader.read());
-
-            // Write replacement text
-            writer.write(change.getText());
-
-            // Skip replaced text
-            reader.skip(change.getRangeLength());
-
-            // Write remaining text
-            while (true) {
-                int next = reader.read();
-
-                if (next == -1)
-                    return writer.toString();
-                else
-                    writer.write(next);
-            }
-        } catch (Exception e) {
-            Log.error("patch: {}", e.getMessage());
-            return null;
         }
     }
 
@@ -532,6 +392,72 @@ public class CqlTextDocumentService implements TextDocumentService {
         } else {
             return false;
         }
+    }
 
+    private String patch(String sourceText, TextDocumentContentChangeEvent change) {
+        try {
+            Range range = change.getRange();
+            BufferedReader reader = new BufferedReader(new StringReader(sourceText));
+            StringWriter writer = new StringWriter();
+
+            // Skip unchanged lines
+            int line = 0;
+
+            while (line < range.getStart().getLine()) {
+                writer.write(reader.readLine() + '\n');
+                line++;
+            }
+
+            // Skip unchanged chars
+            for (int character = 0; character < range.getStart().getCharacter(); character++)
+                writer.write(reader.read());
+
+            // Write replacement text
+            writer.write(change.getText());
+
+            // Skip replaced text
+            reader.skip(change.getRangeLength());
+
+            // Write remaining text
+            while (true) {
+                int next = reader.read();
+
+                if (next == -1)
+                    return writer.toString();
+                else
+                    writer.write(next);
+            }
+        } catch (Exception e) {
+            Log.error("patch: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private URI lookUpUri(URI baseUri, VersionedIdentifier libraryIdentifier) {
+        File f = WorkspaceLibrarySourceProvider.searchPath(baseUri, libraryIdentifier);
+        if (f != null) {
+            return f.toURI();
+        }
+
+        return null;
+    };
+
+    private void addDiagnosticIfNotPresent(Map<URI, List<Diagnostic>> diagnostics, URI uri, Diagnostic diagnostic) {
+        Objects.requireNonNull(diagnostics);
+        Objects.requireNonNull(uri);
+
+        if (!diagnostics.containsKey(uri)) {
+            diagnostics.put(uri, new ArrayList<>());
+        }
+
+        if (diagnostic == null) {
+            return;
+        }
+
+        List<Diagnostic> existing = diagnostics.get(uri);
+
+        if (!existing.contains(diagnostic)) {
+            existing.add(diagnostic);
+        }
     }
 }

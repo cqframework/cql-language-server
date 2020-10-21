@@ -3,13 +3,13 @@ package org.opencds.cqf.cql.ls.fhir;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
-import org.opencds.cqf.cql.ls.CqlUtilities;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.hl7.fhir.dstu3.model.Attachment;
 import org.hl7.fhir.dstu3.model.Bundle;
 import org.hl7.fhir.dstu3.model.Library;
+import org.opencds.cqf.cql.ls.CqlUtilities;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
@@ -19,7 +19,7 @@ import ca.uhn.fhir.rest.client.api.IGenericClient;
  */
 public class FhirTextDocumentProvider {
     private static final Logger Log = LoggerFactory.getLogger(FhirTextDocumentProvider.class);
-    protected FhirContext fhirContext;
+    protected static FhirContext fhirContext = FhirContext.forDstu3();
 
     /*
          const data = {
@@ -43,16 +43,12 @@ public class FhirTextDocumentProvider {
         };
     */
 
-    public FhirTextDocumentProvider() {
-        this.fhirContext = FhirContext.forDstu3();
-    }
-
     public TextDocumentItem getDocument(URI uri) {
 
         try {
             URI baseUri = CqlUtilities.getFhirBaseUri(uri);
 
-            IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(baseUri.toString());
+            IGenericClient fhirClient = fhirContext.newRestfulGenericClient(baseUri.toString());
             Library library = fhirClient.read().resource(Library.class).withUrl(uri.toString()).elementsSubset("name", "version", "content", "type").encodedJson().execute();
 
             if (library != null) {
@@ -70,7 +66,7 @@ public class FhirTextDocumentProvider {
         try {
             URI uri = CqlUtilities.getFhirBaseUri(baseUri);
 
-            IGenericClient fhirClient = this.fhirContext.newRestfulGenericClient(uri.toString());
+            IGenericClient fhirClient = fhirContext.newRestfulGenericClient(uri.toString());
 
             Bundle result = fhirClient.search().forResource(Library.class).elementsSubset("name", "version").where(Library.NAME.matchesExactly().value(name))
                     .returnBundle(Bundle.class).encodedJson().execute();

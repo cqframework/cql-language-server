@@ -21,7 +21,7 @@ import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.opencds.cqf.cql.ls.CqlLanguageServer;
-
+import org.opencds.cqf.cql.ls.FuturesHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,7 +60,7 @@ public class CqlWorkspaceService implements WorkspaceService {
         }
         catch (Exception e) {
             Log.error("executeCommand: {}", e.getMessage());
-            return CompletableFuture.failedFuture(e);
+            return FuturesHelper.failedFuture(e);
         }
 	}
 
@@ -120,7 +120,7 @@ public class CqlWorkspaceService implements WorkspaceService {
         catch(Exception e) {
             this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("View XML failed with: {}", e.getMessage())));
             Log.error("viewXml: {}", e.getMessage());
-            return CompletableFuture.failedFuture(e);
+            return FuturesHelper.failedFuture(e);
         }
     }
 

@@ -11,11 +11,6 @@ import java.util.logging.LogRecord;
 
 import com.google.common.collect.ImmutableList;
 
-import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
-import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
-import org.opencds.cqf.cql.ls.service.CqlWorkspaceService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
@@ -27,9 +22,15 @@ import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.WorkspaceFoldersOptions;
 import org.eclipse.lsp4j.WorkspaceServerCapabilities;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
+import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
+import org.opencds.cqf.cql.ls.service.CqlWorkspaceService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /*
 TODO: Formatting
@@ -42,7 +43,7 @@ TODO: Completion for function arguments
 TODO: Completion for expressions, parameters, code systems, value sets, codes, and concepts
  */
 
-public class CqlLanguageServer implements LanguageServer {
+public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     private static final Logger Log = LoggerFactory.getLogger(CqlLanguageServer.class);
 
     private final CqlWorkspaceService workspaceService;
@@ -51,7 +52,10 @@ public class CqlLanguageServer implements LanguageServer {
 
     private CqlTranslationManager translationManager;
 
-    public CqlLanguageServer() {
+    private Object waitLock;
+
+    public CqlLanguageServer(Object waitLock) {
+        this.waitLock = waitLock;
         this.textDocumentService = new CqlTextDocumentService(client, this);
         this.workspaceService = new CqlWorkspaceService(client, this);
         this.translationManager = new CqlTranslationManager(this.textDocumentService);
@@ -124,7 +128,9 @@ public class CqlLanguageServer implements LanguageServer {
     }
 
     @Override
-    public void exit() {}
+    public void exit() {
+        waitLock.notifyAll();
+    }
 
     @Override
     public TextDocumentService getTextDocumentService() {
@@ -140,54 +146,55 @@ public class CqlLanguageServer implements LanguageServer {
         return translationManager;
     }
 
-    void installClient(LanguageClient client) {
+    @Override
+    public void connect(LanguageClient client) {
         this.client.complete(client);
 
-        Handler sendToClient =
-                new Handler() {
-                    @Override
-                    public void publish(LogRecord record) {
-                        if (record == null) {
-                            return;
-                        }
+        // Handler sendToClient =
+        //         new Handler() {
+        //             @Override
+        //             public void publish(LogRecord record) {
+        //                 if (record == null) {
+        //                     return;
+        //                 }
 
-                        String message = record.getMessage();
+        //                 String message = record.getMessage();
 
-                        if (message == null) {
-                            return;
-                        }
+        //                 if (message == null) {
+        //                     return;
+        //                 }
 
-                        // TODO: filter out HAPI messages
-                        if (record.getLevel().intValue() <= Level.INFO.intValue()) {
-                            return;
-                        }
+        //                 // TODO: filter out HAPI messages
+        //                 if (record.getLevel().intValue() <= Level.INFO.intValue()) {
+        //                     return;
+        //                 }
 
-                        if (record.getThrown() != null) {
-                            StringWriter trace = new StringWriter();
+        //                 if (record.getThrown() != null) {
+        //                     StringWriter trace = new StringWriter();
 
-                            record.getThrown().printStackTrace(new PrintWriter(trace));
-                            message += "\n" + trace;
-                        }
+        //                     record.getThrown().printStackTrace(new PrintWriter(trace));
+        //                     message += "\n" + trace;
+        //                 }
 
-                        client.logMessage(
-                                new MessageParams(
-                                        messageType(record.getLevel().intValue()), message));
-                    }
+        //                 client.logMessage(
+        //                         new MessageParams(
+        //                                 messageType(record.getLevel().intValue()), message));
+        //             }
 
-                    private MessageType messageType(int level) {
-                        if (level >= Level.SEVERE.intValue()) return MessageType.Error;
-                        else if (level >= Level.WARNING.intValue()) return MessageType.Warning;
-                        else if (level >= Level.INFO.intValue()) return MessageType.Info;
-                        else return MessageType.Log;
-                    }
+        //             private MessageType messageType(int level) {
+        //                 if (level >= Level.SEVERE.intValue()) return MessageType.Error;
+        //                 else if (level >= Level.WARNING.intValue()) return MessageType.Warning;
+        //                 else if (level >= Level.INFO.intValue()) return MessageType.Info;
+        //                 else return MessageType.Log;
+        //             }
 
-                    @Override
-                    public void flush() {}
+        //             @Override
+        //             public void flush() {}
 
-                    @Override
-                    public void close() throws SecurityException {}
-                };
+        //             @Override
+        //             public void close() throws SecurityException {}
+        //         };
 
-        java.util.logging.Logger.getLogger("").addHandler(sendToClient);
+        // java.util.logging.Logger.getLogger("").addHandler(sendToClient);
     }
 }
