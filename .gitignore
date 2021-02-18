@@ -20,6 +20,8 @@
 .project
 .flattened-pom.xml
 
+pom.xml.versionsBackup
+
 core.*
 heapdump.*
 javacore.*

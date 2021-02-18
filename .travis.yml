@@ -9,9 +9,23 @@ cache:
 install:
 - ./scripts/install.sh
 script:
-- ./scripts/build.sh
+- ./scripts/test.sh
 before_cache:
 - rm -rf $HOME/.m2/repository/org/opencds/cqf/cql
+after_success:
+- ./scripts/deploy.sh
+deploy:
+  provider: releases
+  api_key:
+    secure: O6kK3bjPokEmIbigP+smS/ORYthxU5VxLLBxkx9yHJ9fooHolsFhlG/Qvr22KsfaXvvxgMV4f5VAj5X4zHxX6YZhGN/o+dWCfAGpuSUwohgxIKBfJl7Vwj/R29auxnSqRQvs6mokuMcXH+RbbddLydaqsVcClNc7DKRPFiGwCJly29zoSS73pYA5JAQXxS2dG+uwjeDS4iNlrQikJE7zXwqH48wLcwhcHqE2lWELYauMAAzWNPuP/et2ZbsMH04VEke4CR/nH0gc8tZmOJ5M1nlnyEWl40OGt+fuRmiDWcM2q1nlcsRPO1aRwSNOMTelUGlnCeBJ6eP1v4mur+L2r+G4GPZrbs6bjlcZc6UgHzLPiwR5wUUekmKUP3CfZJQijjlILLPfyTDEMYtx7NW+Odo2tqkt+MINp0d+aavMjeeNkh6UQSBuX2L5O1NIwI87tNTLGhd9NIaRgfTULBO3fWjWA6tgUXHtplgLkRhist6Zh26vjf0tCTzgPS5CMxtjwUPRl03LVNNyDYvnNQ1XTcYAAkmH/841oNmQovC/wqNrNzDiKNDdrAubrRtGZI4P91WRhEjaJOSK7TVwpWq3JqLisMimQarCyalTUZzPBudwWsjb6gZBKs3qzrRpGtR8QXASV73Cok0W4fPKgL5Hg4/HWINMkjfOICMNCSK6fHc=
+  file_glob: true
+  file: "target/*.jar"
+  skip_cleanup: true
+  name: CQL Language Server $TRAVIS_TAG
+  overwrite: true
+  target_commitish: $TRAVIS_COMMIT
+  on:
+    tags: true
 notifications:
   slack:
     - rooms:
