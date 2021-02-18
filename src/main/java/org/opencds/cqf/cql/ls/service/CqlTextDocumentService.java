@@ -394,6 +394,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private String patch(String sourceText, TextDocumentContentChangeEvent change) {
         try {
             Range range = change.getRange();
