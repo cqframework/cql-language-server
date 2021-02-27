@@ -2,9 +2,8 @@ package org.opencds.cqf.cql.ls;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
-
-import com.google.common.collect.ImmutableList;
 
 import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
@@ -20,6 +19,9 @@ import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.plugin.CommandContribution;
+import org.opencds.cqf.cql.ls.plugin.CqlLanguageServerPlugin;
+import org.opencds.cqf.cql.ls.plugin.CqlLanguageServerPluginFactory;
 import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
 import org.opencds.cqf.cql.ls.service.CqlWorkspaceService;
 import org.slf4j.Logger;
@@ -47,25 +49,29 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     private Object waitLock;
 
+    private List<CqlLanguageServerPlugin> plugins;
+    private CompletableFuture<List<CommandContribution>> commandContributions = new CompletableFuture<>();
+
     public CqlLanguageServer(Object waitLock) {
         this.waitLock = waitLock;
         this.textDocumentService = new CqlTextDocumentService(client, this);
-        this.workspaceService = new CqlWorkspaceService(client, this);
+        this.workspaceService = new CqlWorkspaceService(client, this, this.commandContributions);
         this.translationManager = new CqlTranslationManager(this.textDocumentService);
+        this.plugins = new ArrayList<>();
+        this.loadPlugins();
     }
 
     @Override
-    public CompletableFuture<InitializeResult> initialize(InitializeParams params) { 
-        try {  
+    public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
+        try {
             this.initializeWorkspaceService(params);
             this.initializeTextDocumentService(params);
-            
+
             InitializeResult result = new InitializeResult();
             result.setCapabilities(this.getServerCapabilities());
 
             return CompletableFuture.completedFuture(result);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             Log.error("failed to initialize with error: {}", e.getMessage());
             return null;
         }
@@ -77,8 +83,7 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     private void initializeWorkspaceService(InitializeParams params) {
         List<WorkspaceFolder> workspaceFolders = new ArrayList<WorkspaceFolder>();
-        if (params.getWorkspaceFolders() != null)
-        {
+        if (params.getWorkspaceFolders() != null) {
             workspaceFolders.addAll(params.getWorkspaceFolders());
         }
 
@@ -99,20 +104,38 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         c.setWorkspace(wsc);
 
         c.setTextDocumentSync(TextDocumentSyncKind.Full);
-        //c.setDefinitionProvider(true);
-        //c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
+        // c.setDefinitionProvider(true);
+        // c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
         c.setDocumentFormattingProvider(true);
         c.setDocumentRangeFormattingProvider(false);
         c.setHoverProvider(true);
-        //c.setWorkspaceSymbolProvider(true);
-        //c.setReferencesProvider(true);
-        //c.setDocumentSymbolProvider(true);
+        // c.setWorkspaceSymbolProvider(true);
+        // c.setReferencesProvider(true);
+        // c.setDocumentSymbolProvider(true);
         // c.setCodeActionProvider(true);
-        c.setExecuteCommandProvider(
-               new ExecuteCommandOptions(ImmutableList.of("Other.ViewXML")));
-        //c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(", ",")));
+        c.setExecuteCommandProvider(new ExecuteCommandOptions(this.workspaceService.getSupportedCommands()));
+        // c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(",
+        // ",")));
 
         return c;
+    }
+
+    protected void loadPlugins() {
+        ServiceLoader<CqlLanguageServerPluginFactory> pluginFactories = ServiceLoader
+                .load(CqlLanguageServerPluginFactory.class);
+
+        List<CommandContribution> commandContributions = new ArrayList<>();
+
+        for (CqlLanguageServerPluginFactory pluginFactory : pluginFactories) {
+            CqlLanguageServerPlugin plugin = pluginFactory.createPlugin(this.client, this.workspaceService, this.textDocumentService, this.translationManager);
+            this.plugins.add(plugin);
+            Log.debug("Loading plugin {}", plugin.getName());
+            if (plugin.getCommandContribution() != null) {
+                commandContributions.add(plugin.getCommandContribution());
+            }
+        }
+
+        this.commandContributions.complete(commandContributions);
     }
 
     @Override
@@ -144,49 +167,49 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         this.client.complete(client);
 
         // Handler sendToClient =
-        //         new Handler() {
-        //             @Override
-        //             public void publish(LogRecord record) {
-        //                 if (record == null) {
-        //                     return;
-        //                 }
+        // new Handler() {
+        // @Override
+        // public void publish(LogRecord record) {
+        // if (record == null) {
+        // return;
+        // }
 
-        //                 String message = record.getMessage();
+        // String message = record.getMessage();
 
-        //                 if (message == null) {
-        //                     return;
-        //                 }
+        // if (message == null) {
+        // return;
+        // }
 
-        //                 // TODO: filter out HAPI messages
-        //                 if (record.getLevel().intValue() <= Level.INFO.intValue()) {
-        //                     return;
-        //                 }
+        // // TODO: filter out HAPI messages
+        // if (record.getLevel().intValue() <= Level.INFO.intValue()) {
+        // return;
+        // }
 
-        //                 if (record.getThrown() != null) {
-        //                     StringWriter trace = new StringWriter();
+        // if (record.getThrown() != null) {
+        // StringWriter trace = new StringWriter();
 
-        //                     record.getThrown().printStackTrace(new PrintWriter(trace));
-        //                     message += "\n" + trace;
-        //                 }
+        // record.getThrown().printStackTrace(new PrintWriter(trace));
+        // message += "\n" + trace;
+        // }
 
-        //                 client.logMessage(
-        //                         new MessageParams(
-        //                                 messageType(record.getLevel().intValue()), message));
-        //             }
+        // client.logMessage(
+        // new MessageParams(
+        // messageType(record.getLevel().intValue()), message));
+        // }
 
-        //             private MessageType messageType(int level) {
-        //                 if (level >= Level.SEVERE.intValue()) return MessageType.Error;
-        //                 else if (level >= Level.WARNING.intValue()) return MessageType.Warning;
-        //                 else if (level >= Level.INFO.intValue()) return MessageType.Info;
-        //                 else return MessageType.Log;
-        //             }
+        // private MessageType messageType(int level) {
+        // if (level >= Level.SEVERE.intValue()) return MessageType.Error;
+        // else if (level >= Level.WARNING.intValue()) return MessageType.Warning;
+        // else if (level >= Level.INFO.intValue()) return MessageType.Info;
+        // else return MessageType.Log;
+        // }
 
-        //             @Override
-        //             public void flush() {}
+        // @Override
+        // public void flush() {}
 
-        //             @Override
-        //             public void close() throws SecurityException {}
-        //         };
+        // @Override
+        // public void close() throws SecurityException {}
+        // };
 
         // java.util.logging.Logger.getLogger("").addHandler(sendToClient);
     }

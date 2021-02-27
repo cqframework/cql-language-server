@@ -1,0 +1,59 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.opencds.cqf.cql.ls</groupId>
+  <artifactId>cql-ls-plugin-debug</artifactId>
+  <packaging>jar</packaging>
+
+  <description>A plugin the CQL language server with a debug server implementing the DAP</description>
+
+  <parent>
+    <groupId>org.opencds.cqf.cql.ls</groupId>
+    <artifactId>cql-ls-parent</artifactId>
+    <version>1.5.1</version>
+  </parent>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.opencds.cqf.cql.ls</groupId>
+      <artifactId>cql-ls</artifactId>
+      <version>1.5.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.lsp4j</groupId>
+      <artifactId>org.eclipse.lsp4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.lsp4j</groupId>
+      <artifactId>org.eclipse.lsp4j.debug</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.auto.service</groupId>
+      <artifactId>auto-service-annotations</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>com.google.auto.service</groupId>
+              <artifactId>auto-service</artifactId>
+              <version>${auto-service.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

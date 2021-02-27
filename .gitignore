@@ -1,11 +1,11 @@
-/out
-/node_modules
-/target
+out
+node_modules
+target
 
-/dependency-reduced-pom.xml
-/classpath.txt
-/test-classpath.txt
-/docpath.txt
+dependency-reduced-pom.xml
+classpath.txt
+test-classpath.txt
+docpath.txt
 
 *.log
 *.log.*

@@ -14,14 +14,14 @@ public class Main {
 
     public static void main(String[] args) {
         try {
+            Log.info("java.version is {}", System.getProperty("java.version"));
+            Log.info("cql-language-server version is {}", Main.class.getPackage().getImplementationVersion());
+            
             CqlLanguageServer server = new CqlLanguageServer(waitLock);
             Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, System.in, System.out);
 
             server.connect(launcher.getRemoteProxy());
             launcher.startListening();
-            Log.info("java.version is {}", System.getProperty("java.version"));
-            Log.info("cql-language-server version is {}", Main.class.getPackage().getImplementationVersion());
-
             synchronized(waitLock) {
                 waitLock.wait();
             }
