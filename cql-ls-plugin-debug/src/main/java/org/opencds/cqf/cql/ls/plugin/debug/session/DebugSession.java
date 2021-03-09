@@ -23,6 +23,8 @@ public class DebugSession {
 
     private DebugServer debugServer;
 
+    private Boolean isActive = false;
+
     private final CompletableFuture<Integer> port = new CompletableFuture<>();
 
     public DebugSession() {
@@ -34,12 +36,17 @@ public class DebugSession {
     }
 
     public CompletableFuture<Integer> start() {
+            this.isActive = true;
             startListening();
             return this.port;
     }
 
     public DebugServer getDebugServer() {
         return this.debugServer;
+    }
+
+    public Boolean isActive() {
+        return this.isActive;
     }
 
     private void startListening() {
@@ -68,6 +75,9 @@ public class DebugSession {
                 if (!this.port.isDone()) {
                     this.port.completeExceptionally(e);
                 }
+            }
+            synchronized(this.isActive) {
+                this.isActive = false;
             }
         });
     }

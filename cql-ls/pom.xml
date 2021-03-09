@@ -8,7 +8,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls-parent</artifactId>
-        <version>1.5.1</version>
+        <version>1.5.2-SNAPSHOT</version>
     </parent>
 
     <!-- Import for thin jar stuff -->
@@ -64,6 +64,15 @@
             <artifactId>slf4j-simple</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- CQL Evaluator dependencies-->
+        <!--TODO: These are being migrated out to the debug server plugin eventually,
+         as well as going to be part of the thin jar deployment so the dependencies can be
+         shared. In the meantime, the language server implements part of this directly-->
+         <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.cli</artifactId>
+         </dependency>
     </dependencies>
 
     <build>

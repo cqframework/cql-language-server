@@ -1,5 +1,9 @@
 package org.opencds.cqf.cql.ls.service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.net.URI;
 import java.util.Collection;
 import java.util.Collections;
@@ -10,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableList;
 import com.google.gson.JsonElement;
@@ -24,6 +29,7 @@ import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
+import org.opencds.cqf.cql.evaluator.cli.Main;
 import org.opencds.cqf.cql.ls.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.FuturesHelper;
 import org.opencds.cqf.cql.ls.plugin.CommandContribution;
@@ -38,6 +44,9 @@ public class CqlWorkspaceService implements WorkspaceService {
     private final CqlLanguageServer server;
 
     private static final String VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm";
+
+    // TODO: Delete once the plugin is fully supported
+    public static final String START_DEBUG_COMMAND = "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
 
     private Map<String,WorkspaceFolder> workspaceFolders = new HashMap<String, WorkspaceFolder>();
     private CompletableFuture<List<CommandContribution>> commandContributions;
@@ -60,6 +69,8 @@ public class CqlWorkspaceService implements WorkspaceService {
             switch (command) {
                 case VIEW_ELM_COMMAND:
                     return this.viewElm(params);
+                case START_DEBUG_COMMAND:
+                    return this.executeCql(params);
                 default:
                     return this.executeCommandFromContributions(params);
             }
@@ -128,6 +139,41 @@ public class CqlWorkspaceService implements WorkspaceService {
             Log.error("viewElm: {}", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
+    }
+
+    // TODO: To be moved to the debug plugin once fully baked.
+    private CompletableFuture<Object> executeCql(ExecuteCommandParams params) {
+        try {
+            List<String> arguments = params.getArguments().stream().map(x -> (JsonElement)x).map(x -> x.getAsString()).collect(Collectors.toList());
+
+            // Temporarily redirect std out, because uh... I didn't do that very smart.
+            ByteArrayOutputStream baosOut = new ByteArrayOutputStream();
+            System.setOut(new PrintStream(baosOut));
+
+            ByteArrayOutputStream baosErr = new ByteArrayOutputStream();
+            System.setErr(new PrintStream(baosErr));
+
+            Main.run(arguments.toArray(new String[arguments.size()]));
+
+            String out = baosOut.toString();
+            String err = baosErr.toString();
+
+            if (err.length() > 0) {
+                out += "\nThe following errors were encountered during evaluation:\n";
+                out += err;
+            }
+
+            return CompletableFuture.completedFuture(out);
+        }
+        catch(Exception e) {
+            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Execute CQL failed with: {}", e.getMessage())));
+            Log.error("startDebugSession / executeCql: {}", e.getMessage());
+            return FuturesHelper.failedFuture(e);
+        }
+        finally {
+            System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out)));
+            System.setErr(new PrintStream(new FileOutputStream(FileDescriptor.err)));
+        }   
     }
 
     protected Collection<String> getLanguageServerCommands() {
