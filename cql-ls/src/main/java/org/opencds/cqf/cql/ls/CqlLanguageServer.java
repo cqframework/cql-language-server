@@ -81,11 +81,15 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         // Nothing to do for the moment.
     }
 
+    // getRootUri is deprecated, will keep for a few revision until the client
+    // is updated.
+    @SuppressWarnings("deprecation")
     private void initializeWorkspaceService(InitializeParams params) {
         List<WorkspaceFolder> workspaceFolders = new ArrayList<WorkspaceFolder>();
         if (params.getWorkspaceFolders() != null) {
             workspaceFolders.addAll(params.getWorkspaceFolders());
         }
+
 
         if (params.getRootUri() != null) {
             workspaceFolders.add(new WorkspaceFolder(params.getRootUri()));

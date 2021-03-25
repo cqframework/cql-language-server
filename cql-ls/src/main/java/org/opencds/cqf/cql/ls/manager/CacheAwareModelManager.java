@@ -4,11 +4,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.cqframework.cql.cql2elm.ModelInfoLoader;
-import org.cqframework.cql.cql2elm.ModelInfoProvider;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
 import org.cqframework.cql.cql2elm.model.SystemModel;
 import org.hl7.elm.r1.VersionedIdentifier;
+import org.hl7.elm_modelinfo.r1.ModelInfo;
 
 /**
  * Created by Bryn on 12/29/2016.
@@ -25,14 +25,15 @@ public class CacheAwareModelManager extends ModelManager {
     }
 
 	private Model buildModel(VersionedIdentifier identifier) {
+        ModelInfoLoader loader = new ModelInfoLoader();
         Model model = null;
         try {
-            ModelInfoProvider provider = ModelInfoLoader.getModelInfoProvider(identifier);
+            ModelInfo modelInfo = loader.getModelInfo(identifier);
             if (identifier.getId().equals("System")) {
-                model = new SystemModel(provider.load());
+                model = new SystemModel(modelInfo);
             }
             else {
-                model = new Model(provider.load(), resolveModel("System"));
+                model = new Model(modelInfo, this);
             }
         } catch (ClassNotFoundException e) {
             throw new IllegalArgumentException(String.format("Could not load model information for model {}, version {}.",
