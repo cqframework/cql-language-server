@@ -1,8 +1,5 @@
 package org.opencds.cqf.cql.ls.plugin.debug.session;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-
 import java.net.Socket;
 
 import org.eclipse.lsp4j.debug.launch.DSPLauncher;
@@ -10,7 +7,10 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.opencds.cqf.cql.ls.plugin.debug.client.TestDebugClient;
 import org.opencds.cqf.cql.ls.plugin.debug.server.TestDebugServer;
+
 import org.testng.annotations.Test;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 
 public class DebugSessionTest {
 
