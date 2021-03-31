@@ -57,7 +57,7 @@ public class NonCachingLibraryManager extends LibraryManager {
         }
 
         if (librarySource == null) {
-            throw new CqlTranslatorIncludeException(String.format("Could not load source for library {}, version {}.",
+            throw new CqlTranslatorIncludeException(String.format("Could not load source for library %s, version %s.",
                     libraryIdentifier.getId(), libraryIdentifier.getVersion()), libraryIdentifier.getSystem(), libraryIdentifier.getId(), libraryIdentifier.getVersion());
         }
 
@@ -70,14 +70,14 @@ public class NonCachingLibraryManager extends LibraryManager {
 
             TranslatedLibrary result = translator.getTranslatedLibrary();
             if (libraryIdentifier.getVersion() != null && !libraryIdentifier.getVersion().equals(result.getIdentifier().getVersion())) {
-                throw new CqlTranslatorIncludeException(String.format("Library {} was included as version {}, but version {} of the library was found.",
+                throw new CqlTranslatorIncludeException(String.format("Library %s was included as version %s, but version %s of the library was found.",
                         libraryIdentifier.getId(), libraryIdentifier.getVersion(), result.getIdentifier().getVersion()),
                         libraryIdentifier.getSystem(), libraryIdentifier.getId(), libraryIdentifier.getVersion());
             }
 
             return result;
         } catch (IOException e) {
-            throw new CqlTranslatorIncludeException(String.format("Errors occurred translating library {}, version {}.",
+            throw new CqlTranslatorIncludeException(String.format("Errors occurred translating library %s, version %s.",
                     libraryIdentifier.getId(), libraryIdentifier.getVersion()), libraryIdentifier.getSystem(), libraryIdentifier.getId(), libraryIdentifier.getVersion(), e);
         }
     }
@@ -120,7 +120,7 @@ class CopiedLibrarySourceLoader implements LibrarySourceLoader {
         }
 
         if (source == null) {
-            throw new IllegalArgumentException(String.format("Could not load source for library {}, version {}.",
+            throw new IllegalArgumentException(String.format("Could not load source for library %s, version %s.",
                     libraryIdentifier.getId(), libraryIdentifier.getVersion()));
         }
 

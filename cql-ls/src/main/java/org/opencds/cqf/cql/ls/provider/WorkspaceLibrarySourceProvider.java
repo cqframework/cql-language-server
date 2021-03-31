@@ -60,7 +60,7 @@ public class WorkspaceLibrarySourceProvider implements LibrarySourceProvider {
         }
 
         String libraryName = libraryIdentifier.getId();
-        Path libraryPath = path.resolve(String.format("{}{}.cql", libraryName,
+        Path libraryPath = path.resolve(String.format("%s%s.cql", libraryName,
                 libraryIdentifier.getVersion() != null ? ("-" + libraryIdentifier.getVersion()) : ""));
         File libraryFile = libraryPath.toFile();
 

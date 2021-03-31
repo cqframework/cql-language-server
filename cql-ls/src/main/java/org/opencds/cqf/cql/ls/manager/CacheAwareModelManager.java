@@ -36,7 +36,7 @@ public class CacheAwareModelManager extends ModelManager {
                 model = new Model(modelInfo, this);
             }
         } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException(String.format("Could not load model information for model {}, version {}.",
+            throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s.",
                     identifier.getId(), identifier.getVersion()));
         }
 
@@ -49,21 +49,11 @@ public class CacheAwareModelManager extends ModelManager {
         if (this.localCache.containsKey(modelIdentifier.getId())) {
             model = this.localCache.get(modelIdentifier.getId());
             if (modelIdentifier.getVersion() != null && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
-                throw new IllegalArgumentException(String.format("Could not load model information for model {}, version {} because version {} is already loaded.",
+                throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s because version %s is already loaded.",
                         modelIdentifier.getId(), modelIdentifier.getVersion(), model.getModelInfo().getVersion()));
             }
 
         }
-
-        // Wasn't in the local cache. Let's check and see if it's valid to load it.
-        // if (model == null) {
-        //     for (String name : this.localCache.keySet()) {
-        //         if (!name.equals("System")) {
-        //             throw new IllegalArgumentException(String.format("Could not load model information for model {}, because model {} is already loaded.",
-        //                     modelIdentifier.getId(), name));
-        //         }
-        //     }
-        // }
 
         if (model == null && this.globalCache.containsKey(modelIdentifier)) {
             model = this.globalCache.get(modelIdentifier);

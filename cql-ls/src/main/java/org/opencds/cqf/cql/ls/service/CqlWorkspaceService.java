@@ -135,7 +135,7 @@ public class CqlWorkspaceService implements WorkspaceService {
             return null;
         }
         catch(Exception e) {
-            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("View ELM failed with: {}", e.getMessage())));
+            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("View ELM failed with: %s", e.getMessage())));
             Log.error("viewElm: {}", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
@@ -166,7 +166,7 @@ public class CqlWorkspaceService implements WorkspaceService {
             return CompletableFuture.completedFuture(out);
         }
         catch(Exception e) {
-            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Execute CQL failed with: {}", e.getMessage())));
+            this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Execute CQL failed with: %s", e.getMessage())));
             Log.error("startDebugSession / executeCql: {}", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
@@ -189,7 +189,7 @@ public class CqlWorkspaceService implements WorkspaceService {
             }
         }
 
-        this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Unknown Command {}", command)));
+        this.client.join().showMessage(new MessageParams(MessageType.Error, String.format("Unknown Command %s", command)));
         return CompletableFuture.completedFuture(null);
     }
 
