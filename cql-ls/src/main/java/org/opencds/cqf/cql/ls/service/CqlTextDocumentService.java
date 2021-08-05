@@ -61,6 +61,7 @@ import org.slf4j.LoggerFactory;
 
 public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger Log = LoggerFactory.getLogger(CqlTextDocumentService.class);
+    private static final long BOUNCE_DELAY = 200;
 
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
@@ -321,7 +322,7 @@ public class CqlTextDocumentService implements TextDocumentService {
                     }
                 }
 
-                getDebouncer().debounce(500, () -> doLint(Collections.singleton(uri)));
+                getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(Collections.singleton(uri)));
             } else {
                 Log.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(), existing.version);
             }
@@ -359,7 +360,7 @@ public class CqlTextDocumentService implements TextDocumentService {
 
         try {
             // Re-lint all active documents
-            doLint(openFiles());
+            getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(openFiles()));
 
         }
         catch (Exception e) {
