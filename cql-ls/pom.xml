@@ -34,6 +34,10 @@
             <groupId>info.cqframework</groupId>
             <artifactId>cql-formatter</artifactId>
         </dependency>
+        <dependency>
+            <groupId>info.cqframework</groupId>
+            <artifactId>elm-fhir</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
