@@ -54,20 +54,26 @@ import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
 import org.hl7.elm.r1.VersionedIdentifier;
-import org.opencds.cqf.cql.ls.CqlLanguageServer;
-import org.opencds.cqf.cql.ls.CqlUtilities;
-import org.opencds.cqf.cql.ls.FuturesHelper;
-import org.opencds.cqf.cql.ls.VersionedContent;
+import org.opencds.cqf.cql.ls.*;
 import org.opencds.cqf.cql.ls.provider.WorkspaceLibrarySourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger Log = LoggerFactory.getLogger(CqlTextDocumentService.class);
+    private static final long BOUNCE_DELAY = 200;
 
     private final CompletableFuture<LanguageClient> client;
     private final CqlLanguageServer server;
     private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
+
+    private DebounceExecutor debouncer;
+    private DebounceExecutor getDebouncer() {
+        if (debouncer == null) {
+            debouncer = new DebounceExecutor();
+        }
+        return debouncer;
+    }
 
     public CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
         this.client = client;
@@ -82,7 +88,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         return Sets.filter(activeDocuments.keySet(), uri -> uri.getPath().contains("Library"));
     }
 
-    void doLint(Collection<URI> paths) {
+    Object doLint(Collection<URI> paths) {
         Log.debug("Lint " + Joiner.on(", ").join(paths));
 
         Map<URI, List<Diagnostic>> diagnostics = new HashMap<>();
@@ -145,6 +151,8 @@ public class CqlTextDocumentService implements TextDocumentService {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(), entry.getValue());
             client.join().publishDiagnostics(params);
         }
+
+        return null;
     }
 
     // @Override
@@ -314,7 +322,7 @@ public class CqlTextDocumentService implements TextDocumentService {
                     }
                 }
 
-                doLint(Collections.singleton(uri));
+                getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(Collections.singleton(uri)));
             } else {
                 Log.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(), existing.version);
             }
@@ -352,7 +360,7 @@ public class CqlTextDocumentService implements TextDocumentService {
 
         try {
             // Re-lint all active documents
-            doLint(openFiles());
+            getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(openFiles()));
 
         }
         catch (Exception e) {

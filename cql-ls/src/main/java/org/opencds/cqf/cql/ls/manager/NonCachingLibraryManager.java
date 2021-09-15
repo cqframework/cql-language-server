@@ -5,14 +5,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.cqframework.cql.cql2elm.CqlTranslatorException;
-import org.cqframework.cql.cql2elm.CqlTranslatorIncludeException;
-import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
-import org.cqframework.cql.cql2elm.LibraryManager;
-import org.cqframework.cql.cql2elm.LibrarySourceLoader;
-import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-import org.cqframework.cql.cql2elm.ModelManager;
+import org.cqframework.cql.cql2elm.*;
 import org.cqframework.cql.cql2elm.model.TranslatedLibrary;
 import org.hl7.elm.r1.VersionedIdentifier;
 
@@ -31,6 +24,27 @@ public class NonCachingLibraryManager extends LibraryManager {
     @Override
     public LibrarySourceLoader getLibrarySourceLoader() {
         return librarySourceLoader;
+    }
+
+    @Override
+    public boolean canResolveLibrary(VersionedIdentifier libraryIdentifier) {
+        if (libraryIdentifier == null) {
+            throw new IllegalArgumentException("libraryIdentifier is null.");
+        }
+
+        if (libraryIdentifier.getId() == null || libraryIdentifier.getId().equals("")) {
+            throw new IllegalArgumentException("libraryIdentifier Id is null");
+        }
+
+        InputStream librarySource = null;
+        try {
+            librarySource = librarySourceLoader.getLibrarySource(libraryIdentifier);
+        }
+        catch (Exception e) {
+            throw new CqlTranslatorIncludeException(e.getMessage(), libraryIdentifier.getSystem(), libraryIdentifier.getId(), libraryIdentifier.getVersion(), e);
+        }
+
+        return librarySource != null;
     }
 
     @Override
@@ -83,13 +97,17 @@ public class NonCachingLibraryManager extends LibraryManager {
     }
 }
 
-class CopiedLibrarySourceLoader implements LibrarySourceLoader {
+class CopiedLibrarySourceLoader implements LibrarySourceLoader, NamespaceAware {
     private final List<LibrarySourceProvider> PROVIDERS = new ArrayList<>();
 
   @Override
     public void registerProvider(LibrarySourceProvider provider) {
         if (provider == null) {
             throw new IllegalArgumentException("provider is null.");
+        }
+
+        if (provider instanceof NamespaceAware) {
+            ((NamespaceAware)provider).setNamespaceManager(namespaceManager);
         }
 
         PROVIDERS.add(provider);
@@ -125,5 +143,18 @@ class CopiedLibrarySourceLoader implements LibrarySourceLoader {
         }
 
         return source;
+    }
+
+    private NamespaceManager namespaceManager;
+
+    @Override
+    public void setNamespaceManager(NamespaceManager namespaceManager) {
+        this.namespaceManager = namespaceManager;
+
+        for (LibrarySourceProvider provider : PROVIDERS) {
+            if (provider instanceof NamespaceAware) {
+                ((NamespaceAware)provider).setNamespaceManager(namespaceManager);
+            }
+        }
     }
 }
