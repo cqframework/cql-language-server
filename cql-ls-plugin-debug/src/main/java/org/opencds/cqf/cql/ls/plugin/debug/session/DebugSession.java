@@ -7,6 +7,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.eclipse.lsp4j.debug.launch.DSPLauncher;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
@@ -29,10 +30,6 @@ public class DebugSession {
 
     public DebugSession() {
         this.debugServer = new DebugServer();
-    }
-
-    public DebugSession(DebugServer debugServer) {
-        this.debugServer = debugServer;
     }
 
     public CompletableFuture<Integer> start() {
@@ -61,20 +58,16 @@ public class DebugSession {
                 this.getDebugServer().connect(launcher.getRemoteProxy());
 
                 // We'll exit the server when the client disconnects.
-                launcher.startListening().get();
+                Future<Void> serverThread = launcher.startListening();
+                this.getDebugServer().exited().get();
+                serverThread.cancel(true);
             } catch (IOException e) {
                 logger.error("failed to launch debug server for debug session", e);
                 this.port.completeExceptionally(e);
             } catch (CancellationException e) {
                 logger.debug("debug session cancelled", e);
-                if (!this.port.isDone()) {
-                    this.port.completeExceptionally(e);
-                }
             } catch (Exception e) {
                 logger.error("error in debug session", e);
-                if (!this.port.isDone()) {
-                    this.port.completeExceptionally(e);
-                }
             }
             synchronized(this.isActive) {
                 this.isActive = false;

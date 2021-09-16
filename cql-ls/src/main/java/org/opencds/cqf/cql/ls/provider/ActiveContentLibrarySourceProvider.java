@@ -4,12 +4,11 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.hl7.elm.r1.VersionedIdentifier;
+import org.opencds.cqf.cql.ls.ActiveContent;
 import org.opencds.cqf.cql.ls.CqlUtilities;
-import org.opencds.cqf.cql.ls.service.CqlTextDocumentService;
 
 
 // LibrarySourceProvider implementation that pulls from the active content
@@ -17,11 +16,11 @@ public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider
     // private static final Logger LOG = Logger.getLogger("main");
 
     private final URI baseUri;
-    private final CqlTextDocumentService textDocumentService;
+    private final ActiveContent activeContent;
 
-    public ActiveContentLibrarySourceProvider(URI baseUri, CqlTextDocumentService textDocumentService) {
+    public ActiveContentLibrarySourceProvider(URI baseUri, ActiveContent activeContent) {
         this.baseUri = baseUri;
-        this.textDocumentService = textDocumentService;
+        this.activeContent = activeContent;
     }
 
     @Override
@@ -37,17 +36,17 @@ public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider
             matchText += "'\\s+(?s).*";
         }
 
-        for(URI uri : this.textDocumentService.openFiles()){
+        for(URI uri : this.activeContent.keySet()){
 
             URI root = CqlUtilities.getHead(uri);
             if (!root.equals(this.baseUri)) {
                 continue;
             }
             
-            Optional<String> content = this.textDocumentService.activeContent(uri);
+            String content = this.activeContent.get(uri).content;
             // This will match if the content contains the library definition is present.
-            if (content.isPresent() && content.get().matches(matchText)){
-                return new ByteArrayInputStream(content.get().getBytes(StandardCharsets.UTF_8));
+            if (content.matches(matchText)){
+                return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
             }
         }
 

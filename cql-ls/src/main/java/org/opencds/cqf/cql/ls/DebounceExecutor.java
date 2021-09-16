@@ -15,7 +15,7 @@ import java.lang.Thread;
 public class DebounceExecutor
 {
     private ScheduledExecutorService executor;
-    private ScheduledFuture<Object> future;
+    private ScheduledFuture<?> future;
 
     public DebounceExecutor()
     {
@@ -31,7 +31,15 @@ public class DebounceExecutor
         });
     }
 
-    public ScheduledFuture<Object> debounce(long delay, Callable<Object> task)
+    public ScheduledFuture<?> debounce(long delay, Callable<?> task)
+    {
+        if (this.future != null && !this.future.isDone())
+            this.future.cancel(false);
+
+        return this.future = this.executor.schedule(task, delay, TimeUnit.MILLISECONDS);
+    }
+
+    public ScheduledFuture<?> debounce(long delay, Runnable task)
     {
         if (this.future != null && !this.future.isDone())
             this.future.cancel(false);
