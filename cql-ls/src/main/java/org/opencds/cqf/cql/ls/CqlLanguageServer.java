@@ -27,15 +27,6 @@ import org.opencds.cqf.cql.ls.service.CqlWorkspaceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/*
-TODO: Error messsages
-TODO: Completion for types in a retrieve
-TODO: Completion for properties
-TODO: Completion for operators
-TODO: Completion for functions
-TODO: Completion for function arguments
-TODO: Completion for expressions, parameters, code systems, value sets, codes, and concepts
- */
 
 public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     private static final Logger Log = LoggerFactory.getLogger(CqlLanguageServer.class);
@@ -75,7 +66,7 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
             return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
             Log.error("failed to initialize with error: {}", e.getMessage());
-            return null;
+            return FuturesHelper.failedFuture(e);
         }
     }
 

@@ -68,9 +68,8 @@ public class CqlTextDocumentService implements TextDocumentService {
     private final ActiveContent activeContent;
     private final CqlTranslationManager cqlTranslationManager;
 
-    private static final String VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm";
-
     private DebounceExecutor debouncer;
+
     private DebounceExecutor getDebouncer() {
         if (debouncer == null) {
             debouncer = new DebounceExecutor();
@@ -78,7 +77,8 @@ public class CqlTextDocumentService implements TextDocumentService {
         return debouncer;
     }
 
-    public CqlTextDocumentService(CompletableFuture<LanguageClient> client, ActiveContent activeContent, CqlTranslationManager cqlTranslationManager) {
+    public CqlTextDocumentService(CompletableFuture<LanguageClient> client, ActiveContent activeContent,
+            CqlTranslationManager cqlTranslationManager) {
         this.client = client;
         this.activeContent = activeContent;
         this.cqlTranslationManager = cqlTranslationManager;
@@ -94,41 +94,44 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
 
         for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
-            PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(), new ArrayList<>(entry.getValue()));
+            PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(),
+                    new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
         }
     }
 
     // @Override
-    // public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
-    //     if (position.getTextDocument() == null || position.getTextDocument().getUri() == null) {
-    //         return CompletableFuture.completedFuture(null);
-    //     }
+    // public CompletableFuture<Either<List<CompletionItem>, CompletionList>>
+    // completion(CompletionParams position) {
+    // if (position.getTextDocument() == null || position.getTextDocument().getUri()
+    // == null) {
+    // return CompletableFuture.completedFuture(null);
+    // }
 
-    //     try {
+    // try {
 
-    //         URI uri = URI.create(position.getTextDocument().getUri());
-    //         // Optional<String> content = activeContent(uri);
-    //         int line = position.getPosition().getLine() + 1;
-    //         int character = position.getPosition().getCharacter() + 1;
+    // URI uri = URI.create(position.getTextDocument().getUri());
+    // // Optional<String> content = activeContent(uri);
+    // int line = position.getPosition().getLine() + 1;
+    // int character = position.getPosition().getCharacter() + 1;
 
-    //         Log.debug("completion at {} {}:{}", uri, line, character);
+    // Log.debug("completion at {} {}:{}", uri, line, character);
 
-    //         List<CompletionItem> items = new ArrayList<CompletionItem>();
+    // List<CompletionItem> items = new ArrayList<CompletionItem>();
 
-    //         CompletionItem item = new CompletionItem();
-    //         item.setKind(CompletionItemKind.Keyword);
-    //         item.setLabel("declare");
+    // CompletionItem item = new CompletionItem();
+    // item.setKind(CompletionItemKind.Keyword);
+    // item.setLabel("declare");
 
-    //         items.add(item);
+    // items.add(item);
 
-    //         CompletionList list = new CompletionList(items);
+    // CompletionList list = new CompletionList(items);
 
-    //         return CompletableFuture.completedFuture(Either.forRight(list));
-    //     } catch (Exception e) {
-    //         Log.error("completion: {}", e.getMessage());
-    //         return FuturesHelper.failedFuture(e);
-    //     }
+    // return CompletableFuture.completedFuture(Either.forRight(list));
+    // } catch (Exception e) {
+    // Log.error("completion: {}", e.getMessage());
+    // return FuturesHelper.failedFuture(e);
+    // }
 
     // }
 
@@ -151,6 +154,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             if (translator == null) {
                 return CompletableFuture.completedFuture(null);
             }
+
 
             Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
                     translator.getTranslatedLibrary().getLibrary().getStatements());
@@ -264,7 +268,8 @@ public class CqlTextDocumentService implements TextDocumentService {
 
                 getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(Collections.singleton(uri)));
             } else {
-                logger.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(), existing.version);
+                logger.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(),
+                        existing.version);
             }
         } catch (Exception e) {
             logger.error("didChange for {} : {}", params.getTextDocument().getUri(), e.getMessage());
@@ -273,37 +278,37 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     @Override
     public void didClose(DidCloseTextDocumentParams params) {
-        if(params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
+        if (params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
             return;
         }
 
         try {
-        TextDocumentIdentifier document = params.getTextDocument();
-        URI uri = URI.create(document.getUri());
+            TextDocumentIdentifier document = params.getTextDocument();
+            URI uri = URI.create(document.getUri());
 
-        // Remove from source cache
-        activeContent.remove(uri);
+            // Remove from source cache
+            activeContent.remove(uri);
 
-        // Clear diagnostics
-        client.join().publishDiagnostics(new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
-        }
-        catch (Exception e) {
+            // Clear diagnostics
+            client.join().publishDiagnostics(new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
+        } catch (Exception e) {
             logger.error("didClose: {}", e.getMessage());
         }
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
-        if(params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
+        if (params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
             return;
         }
 
         try {
-            // TODO: What we really want here is to lint documents that depended on this one.
-            // To do that effectively requires an index of the inter-dependencies in the workspace.
+            // TODO: What we really want here is to lint documents that depended on this
+            // one.
+            // To do that effectively requires an index of the inter-dependencies in the
+            // workspace.
             doLint(Collections.list(this.activeContent.keys()));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             logger.error("didSave: {}", e.getMessage());
         }
     }
@@ -382,7 +387,8 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
     }
 
-    private void mergeDiagnostics(Map<URI, Set<Diagnostic>> currentDiagnostics, Map<URI, Set<Diagnostic>> newDiagnostics) {
+    private void mergeDiagnostics(Map<URI, Set<Diagnostic>> currentDiagnostics,
+            Map<URI, Set<Diagnostic>> newDiagnostics) {
         Objects.requireNonNull(currentDiagnostics);
         Objects.requireNonNull(newDiagnostics);
 
@@ -399,6 +405,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     private class TextDocumentServiceCommandContribution implements CommandContribution {
+        private static final String VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm";
 
         @Override
         public Set<String> getCommands() {
@@ -407,7 +414,7 @@ public class CqlTextDocumentService implements TextDocumentService {
 
         @Override
         public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
-            switch(params.getCommand()) {
+            switch (params.getCommand()) {
                 case VIEW_ELM_COMMAND:
                     return this.viewElm(params);
                 default:
@@ -416,17 +423,18 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
 
         // There's currently not a "show text file" or similar command in the LSP spec,
-        // So it's not client agnostic. The client has to know that the result of this command
+        // So it's not client agnostic. The client has to know that the result of this
+        // command
         // is XML and display it accordingly.
         private CompletableFuture<Object> viewElm(ExecuteCommandParams params) {
-            String uriString = ((JsonElement)params.getArguments().get(0)).getAsString();
+            String uriString = ((JsonElement) params.getArguments().get(0)).getAsString();
             URI uri = URI.create(uriString);
             CqlTranslator translator = CqlTextDocumentService.this.cqlTranslationManager.translate(uri);
             if (translator != null) {
                 return CompletableFuture.completedFuture(translator.toXml());
             }
 
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
     }
 }

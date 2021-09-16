@@ -1,4 +1,4 @@
-package org.opencds.cqf.cql.ls.plugin.debug.server;
+package org.opencds.cqf.cql.ls.debug.server;
 
 import java.util.concurrent.CompletableFuture;
 

@@ -1,13 +1,15 @@
-package org.opencds.cqf.cql.ls.plugin.debug.server;
+package org.opencds.cqf.cql.ls.debug.server;
 
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
 import org.eclipse.lsp4j.debug.DisconnectArguments;
+import org.eclipse.lsp4j.debug.ExitedEventArguments;
 import org.eclipse.lsp4j.debug.InitializeRequestArguments;
-import org.opencds.cqf.cql.ls.plugin.debug.client.TestDebugClient;
+import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.testng.annotations.Test;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
+import org.mockito.Mockito;
+
+import static org.mockito.ArgumentMatchers.any;
 
 public class DebugServerTest {
 
@@ -17,7 +19,7 @@ public class DebugServerTest {
     public void simpleServerTest() throws Exception {
 
         DebugServer server = new DebugServer();
-        TestDebugClient client = new TestDebugClient();
+        IDebugProtocolClient client = Mockito.mock(IDebugProtocolClient.class);
 
         server.connect(client);
 
@@ -25,8 +27,7 @@ public class DebugServerTest {
         server.configurationDone(new ConfigurationDoneArguments()).get();
         server.disconnect(new DisconnectArguments()).get();
 
-        assertNotNull(client.getServerOutput());
-        assertEquals("got exited", client.getServerOutput());
+        Mockito.verify(client).exited(any(ExitedEventArguments.class));
     }
     
 }
