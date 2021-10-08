@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.ls.service;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
@@ -10,30 +9,29 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
+import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.Sets;
+import com.google.gson.JsonElement;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
+import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.MarkupContent;
@@ -53,21 +51,25 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
-import org.hl7.elm.r1.VersionedIdentifier;
-import org.opencds.cqf.cql.ls.*;
-import org.opencds.cqf.cql.ls.provider.WorkspaceLibrarySourceProvider;
+import org.opencds.cqf.cql.ls.ActiveContent;
+import org.opencds.cqf.cql.ls.DebounceExecutor;
+import org.opencds.cqf.cql.ls.FuturesHelper;
+import org.opencds.cqf.cql.ls.VersionedContent;
+import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.plugin.CommandContribution;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CqlTextDocumentService implements TextDocumentService {
-    private static final Logger Log = LoggerFactory.getLogger(CqlTextDocumentService.class);
+    private static final Logger logger = LoggerFactory.getLogger(CqlTextDocumentService.class);
     private static final long BOUNCE_DELAY = 200;
 
     private final CompletableFuture<LanguageClient> client;
-    private final CqlLanguageServer server;
-    private final Map<URI, VersionedContent> activeDocuments = new HashMap<>();
+    private final ActiveContent activeContent;
+    private final CqlTranslationManager cqlTranslationManager;
 
     private DebounceExecutor debouncer;
+
     private DebounceExecutor getDebouncer() {
         if (debouncer == null) {
             debouncer = new DebounceExecutor();
@@ -75,116 +77,61 @@ public class CqlTextDocumentService implements TextDocumentService {
         return debouncer;
     }
 
-    public CqlTextDocumentService(CompletableFuture<LanguageClient> client, CqlLanguageServer server) {
+    public CqlTextDocumentService(CompletableFuture<LanguageClient> client, ActiveContent activeContent,
+            CqlTranslationManager cqlTranslationManager) {
         this.client = client;
-        this.server = server;
+        this.activeContent = activeContent;
+        this.cqlTranslationManager = cqlTranslationManager;
     }
 
-    public Optional<String> activeContent(URI file) {
-        return Optional.ofNullable(activeDocuments.get(file)).map(doc -> doc.content);
-    }
+    protected void doLint(Collection<URI> paths) {
+        logger.debug("Lint " + Joiner.on(", ").join(paths));
 
-    public Set<URI> openFiles() {
-        return Sets.filter(activeDocuments.keySet(), uri -> uri.getPath().contains("Library"));
-    }
-
-    Object doLint(Collection<URI> paths) {
-        Log.debug("Lint " + Joiner.on(", ").join(paths));
-
-        Map<URI, List<Diagnostic>> diagnostics = new HashMap<>();
+        Map<URI, Set<Diagnostic>> allDiagnostics = new HashMap<>();
         for (URI uri : paths) {
-            Optional<String> content = activeContent(uri);
-            if (content.isPresent() && content.get().length() > 0) {
-                CqlTranslator translator = server.getTranslationManager().translate(uri, content.get());
-                List<CqlTranslatorException> exceptions = translator.getExceptions();
-
-                Log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
-
-                URI baseUri = CqlUtilities.getHead(uri);
-                // First, assign all unassociated exceptions to this library.
-                for (CqlTranslatorException exception : exceptions) {
-                    if (exception.getLocator() == null) {
-                        exception.setLocator(
-                                new TrackBack(translator.getTranslatedLibrary().getIdentifier(), 0, 0, 0, 0));
-                    }
-                }
-
-                List<VersionedIdentifier> uniqueLibraries = exceptions.stream().map(x -> x.getLocator().getLibrary())
-                        .distinct().filter(x -> x != null).collect(Collectors.toList());
-                List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
-                        .map(x -> Pair.of(x, this.lookUpUri(baseUri, x))).collect(Collectors.toList());
-
-
-                Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();
-                for (Pair<VersionedIdentifier, URI> p : libraryUriList) {
-                    libraryUris.put(p.getLeft(), p.getRight());
-                }
-
-                // Map "unknown" libraries to the current uri
-                libraryUris.put(new VersionedIdentifier().withId("unknown"), uri);
-
-                for (CqlTranslatorException exception : exceptions) {
-                    URI eUri = libraryUris.get(exception.getLocator().getLibrary());
-                    if (eUri == null) {
-                        continue;
-                    }
-
-                    Diagnostic d = CqlUtilities.convert(exception);
-
-                    Log.debug("diagnostic: {} {}:{}-{}:{}: {}", eUri, d.getRange().getStart().getLine(),
-                            d.getRange().getStart().getCharacter(), d.getRange().getEnd().getLine(),
-                            d.getRange().getEnd().getCharacter(), d.getMessage());
-
-                    this.addDiagnosticIfNotPresent(diagnostics, eUri, d);
-                }
-
-                this.addDiagnosticIfNotPresent(diagnostics, uri, null);
-            } else {
-                Diagnostic d = new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
-                        "Library does not contain CQL content.", DiagnosticSeverity.Warning, "lint");
-
-                this.addDiagnosticIfNotPresent(diagnostics, uri, d);
-            }
+            Map<URI, Set<Diagnostic>> currentDiagnostics = this.cqlTranslationManager.lint(uri);
+            this.mergeDiagnostics(allDiagnostics, currentDiagnostics);
         }
 
-        for (Map.Entry<URI, List<Diagnostic>> entry : diagnostics.entrySet()) {
-            PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(), entry.getValue());
+        for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
+            PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(),
+                    new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
         }
-
-        return null;
     }
 
     // @Override
-    // public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams position) {
-    //     if (position.getTextDocument() == null || position.getTextDocument().getUri() == null) {
-    //         return CompletableFuture.completedFuture(null);
-    //     }
+    // public CompletableFuture<Either<List<CompletionItem>, CompletionList>>
+    // completion(CompletionParams position) {
+    // if (position.getTextDocument() == null || position.getTextDocument().getUri()
+    // == null) {
+    // return CompletableFuture.completedFuture(null);
+    // }
 
-    //     try {
+    // try {
 
-    //         URI uri = URI.create(position.getTextDocument().getUri());
-    //         // Optional<String> content = activeContent(uri);
-    //         int line = position.getPosition().getLine() + 1;
-    //         int character = position.getPosition().getCharacter() + 1;
+    // URI uri = URI.create(position.getTextDocument().getUri());
+    // // Optional<String> content = activeContent(uri);
+    // int line = position.getPosition().getLine() + 1;
+    // int character = position.getPosition().getCharacter() + 1;
 
-    //         Log.debug("completion at {} {}:{}", uri, line, character);
+    // Log.debug("completion at {} {}:{}", uri, line, character);
 
-    //         List<CompletionItem> items = new ArrayList<CompletionItem>();
+    // List<CompletionItem> items = new ArrayList<CompletionItem>();
 
-    //         CompletionItem item = new CompletionItem();
-    //         item.setKind(CompletionItemKind.Keyword);
-    //         item.setLabel("declare");
+    // CompletionItem item = new CompletionItem();
+    // item.setKind(CompletionItemKind.Keyword);
+    // item.setLabel("declare");
 
-    //         items.add(item);
+    // items.add(item);
 
-    //         CompletionList list = new CompletionList(items);
+    // CompletionList list = new CompletionList(items);
 
-    //         return CompletableFuture.completedFuture(Either.forRight(list));
-    //     } catch (Exception e) {
-    //         Log.error("completion: {}", e.getMessage());
-    //         return FuturesHelper.failedFuture(e);
-    //     }
+    // return CompletableFuture.completedFuture(Either.forRight(list));
+    // } catch (Exception e) {
+    // Log.error("completion: {}", e.getMessage());
+    // return FuturesHelper.failedFuture(e);
+    // }
 
     // }
 
@@ -203,11 +150,11 @@ public class CqlTextDocumentService implements TextDocumentService {
                 return CompletableFuture.completedFuture(null);
             }
 
-            Optional<String> content = activeContent(uri);
-            if (!content.isPresent() || content.get().length() == 0) {
+            CqlTranslator translator = this.cqlTranslationManager.translate(uri);
+            if (translator == null) {
                 return CompletableFuture.completedFuture(null);
             }
-            CqlTranslator translator = server.getTranslationManager().translate(uri, content.get());
+
 
             Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
                     translator.getTranslatedLibrary().getLibrary().getStatements());
@@ -223,7 +170,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             hover.setRange(exp.getLeft());
             return CompletableFuture.completedFuture(hover);
         } catch (Exception e) {
-            Log.error("hover: {} ", e.getMessage());
+            logger.error("hover: {} ", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
     }
@@ -231,17 +178,17 @@ public class CqlTextDocumentService implements TextDocumentService {
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
         try {
-            Optional<String> content = this.activeContent(new URI(params.getTextDocument().getUri()));
 
-            if (!content.isPresent()) {
-                return null;
+            URI uri = URI.create(params.getTextDocument().getUri());
+            if (!this.activeContent.contains(uri)) {
+                return CompletableFuture.completedFuture(null);
             }
 
-            String text = content.get();
+            String content = this.activeContent.get(uri).content;
             // Get lines from the text;
-            String[] lines = text.split("[\n|\r]");
+            String[] lines = content.split("[\n|\r]");
 
-            FormatResult fr = CqlFormatterVisitor.getFormattedOutput(new ByteArrayInputStream(text.getBytes()));
+            FormatResult fr = CqlFormatterVisitor.getFormattedOutput(new ByteArrayInputStream(content.getBytes()));
 
             // Only update the content if it's valid CQL.
             if (fr.getErrors().size() != 0) {
@@ -259,7 +206,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         } catch (Exception e) {
             MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
             this.client.join().showMessage(mp);
-            Log.error("formatting: {}", e.getMessage());
+            logger.error("formatting: {}", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
     }
@@ -281,14 +228,11 @@ public class CqlTextDocumentService implements TextDocumentService {
                 return;
             }
 
-            activeDocuments.put(uri, new VersionedContent(document.getText(), document.getVersion()));
-
-            // TODO: Only load documents not already loaded
-            // TODO: Lint documents in the workspace but not currently active
+            activeContent.put(uri, new VersionedContent(document.getText(), document.getVersion()));
             doLint(Collections.singleton(uri));
 
         } catch (Exception e) {
-            Log.error("didOpen for {} : {}", params.getTextDocument().getUri(), e.getMessage());
+            logger.error("didOpen for {} : {}", params.getTextDocument().getUri(), e.getMessage());
         }
 
     }
@@ -309,62 +253,63 @@ public class CqlTextDocumentService implements TextDocumentService {
                 return;
             }
 
-            VersionedContent existing = activeDocuments.get(uri);
+            VersionedContent existing = activeContent.get(uri);
             String newText = existing.content;
 
             if (document.getVersion() > existing.version) {
                 for (TextDocumentContentChangeEvent change : params.getContentChanges()) {
                     if (change.getRange() == null) {
-                        activeDocuments.put(uri, new VersionedContent(change.getText(), document.getVersion()));
+                        activeContent.put(uri, new VersionedContent(change.getText(), document.getVersion()));
                     } else {
                         newText = patch(newText, change);
-                        activeDocuments.put(uri, new VersionedContent(newText, document.getVersion()));
+                        activeContent.put(uri, new VersionedContent(newText, document.getVersion()));
                     }
                 }
 
                 getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(Collections.singleton(uri)));
             } else {
-                Log.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(), existing.version);
+                logger.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(),
+                        existing.version);
             }
         } catch (Exception e) {
-            Log.error("didChange for {} : {}", params.getTextDocument().getUri(), e.getMessage());
+            logger.error("didChange for {} : {}", params.getTextDocument().getUri(), e.getMessage());
         }
     }
 
     @Override
     public void didClose(DidCloseTextDocumentParams params) {
-        if(params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
+        if (params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
             return;
         }
 
         try {
-        TextDocumentIdentifier document = params.getTextDocument();
-        URI uri = URI.create(document.getUri());
+            TextDocumentIdentifier document = params.getTextDocument();
+            URI uri = URI.create(document.getUri());
 
-        // Remove from source cache
-        activeDocuments.remove(uri);
+            // Remove from source cache
+            activeContent.remove(uri);
 
-        // Clear diagnostics
-        client.join().publishDiagnostics(new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
-        }
-        catch (Exception e) {
-            Log.error("didClose: {}", e.getMessage());
+            // Clear diagnostics
+            client.join().publishDiagnostics(new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
+        } catch (Exception e) {
+            logger.error("didClose: {}", e.getMessage());
         }
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
-        if(params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
+        if (params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
             return;
         }
 
         try {
-            // Re-lint all active documents
-            getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(openFiles()));
-
-        }
-        catch (Exception e) {
-            Log.error("didSave: {}", e.getMessage());
+            // TODO: What we really want here is to lint documents that depended on this
+            // one.
+            // To do that effectively requires an index of the inter-dependencies in the
+            // workspace.
+            doLint(Collections.list(this.activeContent.keys()));
+        } catch (Exception e) {
+            logger.error("didSave: {}", e.getMessage());
         }
     }
 
@@ -437,36 +382,59 @@ public class CqlTextDocumentService implements TextDocumentService {
                     writer.write(next);
             }
         } catch (Exception e) {
-            Log.error("patch: {}", e.getMessage());
+            logger.error("patch: {}", e.getMessage());
             return null;
         }
     }
 
-    private URI lookUpUri(URI baseUri, VersionedIdentifier libraryIdentifier) {
-        File f = WorkspaceLibrarySourceProvider.searchPath(baseUri, libraryIdentifier);
-        if (f != null) {
-            return f.toURI();
+    private void mergeDiagnostics(Map<URI, Set<Diagnostic>> currentDiagnostics,
+            Map<URI, Set<Diagnostic>> newDiagnostics) {
+        Objects.requireNonNull(currentDiagnostics);
+        Objects.requireNonNull(newDiagnostics);
+
+        for (Entry<URI, Set<Diagnostic>> entry : newDiagnostics.entrySet()) {
+            Set<Diagnostic> currentSet = currentDiagnostics.computeIfAbsent(entry.getKey(), k -> new HashSet<>());
+            for (Diagnostic d : entry.getValue()) {
+                currentSet.add(d);
+            }
+        }
+    }
+
+    public CommandContribution getCommandContribution() {
+        return new TextDocumentServiceCommandContribution();
+    }
+
+    private class TextDocumentServiceCommandContribution implements CommandContribution {
+        private static final String VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm";
+
+        @Override
+        public Set<String> getCommands() {
+            return Collections.singleton(VIEW_ELM_COMMAND);
         }
 
-        return null;
-    };
-
-    private void addDiagnosticIfNotPresent(Map<URI, List<Diagnostic>> diagnostics, URI uri, Diagnostic diagnostic) {
-        Objects.requireNonNull(diagnostics);
-        Objects.requireNonNull(uri);
-
-        if (!diagnostics.containsKey(uri)) {
-            diagnostics.put(uri, new ArrayList<>());
+        @Override
+        public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
+            switch (params.getCommand()) {
+                case VIEW_ELM_COMMAND:
+                    return this.viewElm(params);
+                default:
+                    return CommandContribution.super.executeCommand(params);
+            }
         }
 
-        if (diagnostic == null) {
-            return;
-        }
+        // There's currently not a "show text file" or similar command in the LSP spec,
+        // So it's not client agnostic. The client has to know that the result of this
+        // command
+        // is XML and display it accordingly.
+        private CompletableFuture<Object> viewElm(ExecuteCommandParams params) {
+            String uriString = ((JsonElement) params.getArguments().get(0)).getAsString();
+            URI uri = URI.create(uriString);
+            CqlTranslator translator = CqlTextDocumentService.this.cqlTranslationManager.translate(uri);
+            if (translator != null) {
+                return CompletableFuture.completedFuture(translator.toXml());
+            }
 
-        List<Diagnostic> existing = diagnostics.get(uri);
-
-        if (!existing.contains(diagnostic)) {
-            existing.add(diagnostic);
+            return CompletableFuture.completedFuture(null);
         }
     }
 }

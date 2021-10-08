@@ -29,7 +29,8 @@
 
     <modules>
         <module>cql-ls</module>
-        <module>cql-ls-plugin-debug</module>
+        <module>cql-debug</module>
+        <module>plugins/cql-ls-plugin-debug</module>
     </modules>
     <licenses>
         <license>

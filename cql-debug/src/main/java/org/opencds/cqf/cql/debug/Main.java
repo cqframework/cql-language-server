@@ -1,10 +1,11 @@
-package org.opencds.cqf.cql.ls;
+package org.opencds.cqf.cql.ls.debug;
 
 import java.util.concurrent.Future;
 
+import org.eclipse.lsp4j.debug.launch.DSPLauncher;
+import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
-import org.eclipse.lsp4j.launch.LSPLauncher;
-import org.eclipse.lsp4j.services.LanguageClient;
+import org.opencds.cqf.cql.ls.debug.server.DebugServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,10 +16,10 @@ public class Main {
     public static void main(String[] args) {
         try {
             logger.info("java.version is {}", System.getProperty("java.version"));
-            logger.info("cql-language-server version is {}", Main.class.getPackage().getImplementationVersion());
+            logger.info("cql-debug-server-version is {}", Main.class.getPackage().getImplementationVersion());
             
-            CqlLanguageServer server = new CqlLanguageServer();
-            Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, System.in, System.out);
+            DebugServer server = new DebugServer();
+            Launcher<IDebugProtocolClient> launcher = DSPLauncher.createServerLauncher(server, System.in, System.out);
 
             server.connect(launcher.getRemoteProxy());
             Future<Void> serverThread = launcher.startListening();

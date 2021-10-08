@@ -11,19 +11,6 @@
         <version>1.5.3-SNAPSHOT</version>
     </parent>
 
-    <!-- Import for thin jar stuff -->
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
     <dependencies>
         <!-- CQL-to-ELM Translator -->
         <dependency>
@@ -39,14 +26,6 @@
             <artifactId>elm-fhir</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>ca.uhn.hapi.fhir</groupId>
-            <artifactId>hapi-fhir-structures-dstu3</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>ca.uhn.hapi.fhir</groupId>
-            <artifactId>hapi-fhir-structures-r4</artifactId>
-        </dependency>
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-client</artifactId>
@@ -71,8 +50,7 @@
 
         <!-- CQL Evaluator dependencies-->
         <!--TODO: These are being migrated out to the debug server plugin eventually,
-         as well as going to be part of the thin jar deployment so the dependencies can be
-         shared. In the meantime, the language server implements part of this directly-->
+         In the meantime, the language server implements part of this directly-->
          <dependency>
                 <groupId>org.opencds.cqf.cql</groupId>
                 <artifactId>evaluator.cli</artifactId>
@@ -87,45 +65,14 @@
                 <configuration>
                     <archive>
                         <manifest>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                            <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
                             <addClasspath>true</addClasspath>
                             <mainClass>org.opencds.cqf.cql.ls.Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
             </plugin>
-            <!-- <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>${spring-boot.version}</version>
-                <executions>
-                    <execution>
-                        <id>repackage</id>
-                        <goals>
-                            <goal>repackage</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.springframework.boot.experimental</groupId>
-                        <artifactId>spring-boot-thin-layout</artifactId>
-                        <version>${spring-boot-thin-layout.version}</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-            <plugin>
-                <groupId>org.springframework.boot.experimental</groupId>
-                <artifactId>spring-boot-thin-maven-plugin</artifactId>
-                <version>${spring-boot-thin-layout.version}</version>
-                <executions>
-                    <execution>
-                        <id>resolve</id>
-                        <goals>
-                            <goal>resolve</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin> -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>

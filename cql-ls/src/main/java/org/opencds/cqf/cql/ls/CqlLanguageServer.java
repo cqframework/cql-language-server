@@ -27,16 +27,6 @@ import org.opencds.cqf.cql.ls.service.CqlWorkspaceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/*
-TODO: Formatting
-TODO: Error messsages
-TODO: Completion for types in a retrieve
-TODO: Completion for properties
-TODO: Completion for operators
-TODO: Completion for functions
-TODO: Completion for function arguments
-TODO: Completion for expressions, parameters, code systems, value sets, codes, and concepts
- */
 
 public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     private static final Logger Log = LoggerFactory.getLogger(CqlLanguageServer.class);
@@ -47,16 +37,19 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     private CqlTranslationManager translationManager;
 
-    private Object waitLock;
-
     private List<CqlLanguageServerPlugin> plugins;
     private CompletableFuture<List<CommandContribution>> commandContributions = new CompletableFuture<>();
 
-    public CqlLanguageServer(Object waitLock) {
-        this.waitLock = waitLock;
-        this.textDocumentService = new CqlTextDocumentService(client, this);
-        this.workspaceService = new CqlWorkspaceService(client, this, this.commandContributions);
-        this.translationManager = new CqlTranslationManager(this.textDocumentService);
+    private CompletableFuture<Void> exited;
+
+    private ActiveContent activeContent;
+
+    public CqlLanguageServer() {
+        this.exited = new CompletableFuture<>();
+        this.activeContent = new ActiveContent();
+        this.translationManager = new CqlTranslationManager(activeContent);
+        this.textDocumentService = new CqlTextDocumentService(client, this.activeContent, this.translationManager);
+        this.workspaceService = new CqlWorkspaceService(client, this.commandContributions);
         this.plugins = new ArrayList<>();
         this.loadPlugins();
     }
@@ -73,7 +66,7 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
             return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
             Log.error("failed to initialize with error: {}", e.getMessage());
-            return null;
+            return FuturesHelper.failedFuture(e);
         }
     }
 
@@ -139,6 +132,8 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
             }
         }
 
+        commandContributions.add(this.textDocumentService.getCommandContribution());
+
         this.commandContributions.complete(commandContributions);
     }
 
@@ -149,7 +144,11 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     @Override
     public void exit() {
-        waitLock.notifyAll();
+        this.exited.complete(null);
+    }
+
+    public CompletableFuture<Void> exited() {
+        return this.exited;
     }
 
     @Override
