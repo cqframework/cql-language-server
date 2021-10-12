@@ -1,4 +1,4 @@
-package org.opencds.cqf.cql.ls.debug.server;
+package org.opencds.cqf.cql.debug.server;
 
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 

@@ -12,6 +12,7 @@ public class Main {
 
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
+    // TODO: Options for starting with a socket or pipe
     public static void main(String[] args) {
         try {
             logger.info("java.version is {}", System.getProperty("java.version"));

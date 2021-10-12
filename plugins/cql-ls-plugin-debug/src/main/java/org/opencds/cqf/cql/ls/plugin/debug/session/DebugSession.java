@@ -12,7 +12,7 @@ import java.util.concurrent.Future;
 import org.eclipse.lsp4j.debug.launch.DSPLauncher;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
-import org.opencds.cqf.cql.ls.debug.server.DebugServer;
+import org.opencds.cqf.cql.debug.server.DebugServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

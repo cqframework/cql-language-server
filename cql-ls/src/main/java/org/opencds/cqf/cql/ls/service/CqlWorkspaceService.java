@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,10 +14,15 @@ import com.google.common.collect.ImmutableList;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams;
+import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
+import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.WorkspaceFolder;
+import org.eclipse.lsp4j.WorkspaceFoldersOptions;
+import org.eclipse.lsp4j.WorkspaceServerCapabilities;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.opencds.cqf.cql.ls.FuturesHelper;
@@ -38,8 +44,41 @@ public class CqlWorkspaceService implements WorkspaceService {
         this.commandContributions = commandContributions;
     }
 
-    public void initialize(List<WorkspaceFolder> folders) {
-        this.addFolders(folders);
+    @SuppressWarnings("deprecation")
+    public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
+
+        List<WorkspaceFolder> workspaceFolders = new ArrayList<WorkspaceFolder>();
+        if (params.getWorkspaceFolders() != null) {
+            workspaceFolders.addAll(params.getWorkspaceFolders());
+        }
+
+
+        if (params.getRootUri() != null) {
+            workspaceFolders.add(new WorkspaceFolder(params.getRootUri()));
+        }
+
+        this.addFolders(workspaceFolders);
+
+        WorkspaceServerCapabilities wsc = new WorkspaceServerCapabilities();
+
+        // Register for workspace change notifications
+        WorkspaceFoldersOptions wfo = new WorkspaceFoldersOptions();
+        wfo.setChangeNotifications(true);
+        wsc.setWorkspaceFolders(wfo);
+
+        // Register for file change notifications
+        // FileOperationsServerCapabilities fosc = new FileOperationsServerCapabilities();
+        // wsc.setFileOperations(fosc);
+
+        // Project symbol search
+        // serverCapabilities.setWorkspaceSymbolProvider(true);
+
+        // Set workspace capabilities
+        serverCapabilities.setWorkspace(wsc);
+
+
+        // Register commands
+        serverCapabilities.setExecuteCommandProvider(new ExecuteCommandOptions(this.getSupportedCommands()));
     }
 
     @Override

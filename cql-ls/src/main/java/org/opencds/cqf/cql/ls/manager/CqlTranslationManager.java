@@ -26,7 +26,6 @@ import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.ActiveContent;
 import org.opencds.cqf.cql.ls.CqlUtilities;
 import org.opencds.cqf.cql.ls.provider.ActiveContentLibrarySourceProvider;
-import org.opencds.cqf.cql.ls.provider.FhirServerLibrarySourceProvider;
 import org.opencds.cqf.cql.ls.provider.WorkspaceLibrarySourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,7 +68,6 @@ public class CqlTranslationManager {
 
         libraryManager.getLibrarySourceLoader().registerProvider(new ActiveContentLibrarySourceProvider(baseUri, this.activeContent));
         libraryManager.getLibrarySourceLoader().registerProvider(new WorkspaceLibrarySourceProvider(baseUri));
-        libraryManager.getLibrarySourceLoader().registerProvider(new FhirServerLibrarySourceProvider(baseUri));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
 
         return libraryManager;

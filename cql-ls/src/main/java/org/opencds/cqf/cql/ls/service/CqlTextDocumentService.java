@@ -34,15 +34,18 @@ import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -82,6 +85,21 @@ public class CqlTextDocumentService implements TextDocumentService {
         this.client = client;
         this.activeContent = activeContent;
         this.cqlTranslationManager = cqlTranslationManager;
+    }
+
+    public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
+        serverCapabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
+        // c.setDefinitionProvider(true);
+        // c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
+        serverCapabilities.setDocumentFormattingProvider(true);
+        //serverCapabilities.setDocumentRangeFormattingProvider(false);
+        serverCapabilities.setHoverProvider(true);
+        // c.setReferencesProvider(true);
+        // c.setDocumentSymbolProvider(true);
+        // c.setCodeActionProvider(true);
+        // c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(",
+        // ",")));
+
     }
 
     protected void doLint(Collection<URI> paths) {
