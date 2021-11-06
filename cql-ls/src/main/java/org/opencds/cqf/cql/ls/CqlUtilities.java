@@ -1,10 +1,14 @@
 package org.opencds.cqf.cql.ls;
 
+import java.io.File;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
+import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
+import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -46,6 +50,29 @@ public class CqlUtilities {
         }
 
         return uri;
+    }
+
+    public static CqlTranslatorOptions getTranslatorOptions(URI uri) {
+        CqlTranslatorOptions options = null;
+        URI baseUri = getHead(uri);
+        if (!baseUri.getScheme().startsWith("http")) {
+            String optionsFileName = baseUri + File.separator + "cql-options.json";
+            File file = new File(optionsFileName);
+            if (file.exists()) {
+                options = CqlTranslatorOptionsMapper.fromFile(file.getAbsolutePath());
+                Log.info(String.format("cql-options loaded from: %s", file.getAbsolutePath()));
+            }
+        }
+
+        if (options == null) {
+            options = CqlTranslatorOptions.defaultOptions();
+            if (!options.getFormats().contains(CqlTranslator.Format.XML)) {
+                options.getFormats().add(CqlTranslator.Format.XML);
+            }
+            Log.info("cql-options not found. Using default options.");
+        }
+
+        return options;
     }
 
     private static URI withPath(URI uri, String path) {

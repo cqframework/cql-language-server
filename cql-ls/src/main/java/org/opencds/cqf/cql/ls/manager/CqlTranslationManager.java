@@ -53,8 +53,9 @@ public class CqlTranslationManager {
     public CqlTranslator translate(URI uri, String content) {
         ModelManager modelManager = this.createModelManager();
         LibraryManager libraryManager = this.createLibraryManager(uri, modelManager);
+        CqlTranslatorOptions options = CqlUtilities.getTranslatorOptions(uri);
 
-        return CqlTranslator.fromText(content, modelManager, libraryManager, null, CqlTranslatorOptions.defaultOptions());
+        return CqlTranslator.fromText(content, modelManager, libraryManager, null, options);
     }
 
     private ModelManager createModelManager() {
