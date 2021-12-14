@@ -37,6 +37,11 @@
             <artifactId>org.eclipse.lsp4j</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.greenrobot</groupId>
+            <artifactId>eventbus-java</artifactId>
+        </dependency>
+
         <!--Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -51,10 +56,10 @@
         <!-- CQL Evaluator dependencies-->
         <!--TODO: These are being migrated out to the debug server plugin eventually,
          In the meantime, the language server implements part of this directly-->
-         <dependency>
-                <groupId>org.opencds.cqf.cql</groupId>
-                <artifactId>evaluator.cli</artifactId>
-         </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.cli</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

@@ -51,6 +51,7 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
+import org.greenrobot.eventbus.EventBus;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
@@ -99,7 +100,10 @@ public class CqlTextDocumentService implements TextDocumentService {
         // c.setCodeActionProvider(true);
         // c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(",
         // ",")));
+    }
 
+    public void initialized() {
+        EventBus.getDefault().register(this);
     }
 
     protected void doLint(Collection<URI> paths) {
@@ -454,5 +458,9 @@ public class CqlTextDocumentService implements TextDocumentService {
 
             return CompletableFuture.completedFuture(null);
         }
+    }
+
+    public void stop() {
+        EventBus.getDefault().unregister(this);
     }
 }
