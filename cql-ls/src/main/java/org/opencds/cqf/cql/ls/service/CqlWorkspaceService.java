@@ -42,7 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CqlWorkspaceService implements WorkspaceService {
-    private static final Logger Log = LoggerFactory.getLogger(CqlTextDocumentService.class);
+    private static final Logger Log = LoggerFactory.getLogger(CqlWorkspaceService.class);
 
     private static final List<String> basicWatchers = Arrays.asList(
             "**/cql-options.json",
@@ -100,8 +100,8 @@ public class CqlWorkspaceService implements WorkspaceService {
 
         this.client.join()
                 .unregisterCapability(new UnregistrationParams(
-                        Arrays.asList(new Unregistration(Constants.WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS_ID,
-                                Constants.WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS_METHOD))));
+                        Arrays.asList(new Unregistration(Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
+                                Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD))));
 
 
         List<FileSystemWatcher> watchers = basicWatchers.stream().map(x -> new FileSystemWatcher(x))
@@ -110,8 +110,8 @@ public class CqlWorkspaceService implements WorkspaceService {
 
         this.client.join()
                 .registerCapability(new RegistrationParams(
-                        Arrays.asList(new Registration(Constants.WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS_ID,
-                                Constants.WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS_METHOD, dcfro))));
+                        Arrays.asList(new Registration(Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
+                                Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD, dcfro))));
 
     }
 

@@ -52,6 +52,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
@@ -59,6 +60,7 @@ import org.opencds.cqf.cql.ls.ActiveContent;
 import org.opencds.cqf.cql.ls.DebounceExecutor;
 import org.opencds.cqf.cql.ls.FuturesHelper;
 import org.opencds.cqf.cql.ls.VersionedContent;
+import org.opencds.cqf.cql.ls.event.DidChangeWatchedFilesEvent;
 import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.plugin.CommandContribution;
 import org.slf4j.Logger;
@@ -462,5 +464,12 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     public void stop() {
         EventBus.getDefault().unregister(this);
+    }
+
+    @Subscribe
+    public void onDidChangeWatchedFiles(DidChangeWatchedFilesEvent event) {
+        if (cqlTranslationManager != null) {
+            cqlTranslationManager.clearCachedTranslatorOptions();
+        }
     }
 }
