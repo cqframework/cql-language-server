@@ -105,13 +105,13 @@ public class CqlTextDocumentService implements TextDocumentService {
     protected void doLint(Collection<URI> paths) {
         logger.debug("Lint " + Joiner.on(", ").join(paths));
 
-        Map<URI, Set<Diagnostic>> allDiagnostics = new HashMap<>();
+        Map<URI, List<Diagnostic>> allDiagnostics = new HashMap<>();
         for (URI uri : paths) {
-            Map<URI, Set<Diagnostic>> currentDiagnostics = this.cqlTranslationManager.lint(uri);
+            Map<URI, List<Diagnostic>> currentDiagnostics = this.cqlTranslationManager.lint(uri);
             this.mergeDiagnostics(allDiagnostics, currentDiagnostics);
         }
 
-        for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
+        for (Map.Entry<URI, List<Diagnostic>> entry : allDiagnostics.entrySet()) {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(),
                     new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
@@ -405,13 +405,13 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
     }
 
-    private void mergeDiagnostics(Map<URI, Set<Diagnostic>> currentDiagnostics,
-            Map<URI, Set<Diagnostic>> newDiagnostics) {
+    private void mergeDiagnostics(Map<URI, List<Diagnostic>> currentDiagnostics,
+            Map<URI, List<Diagnostic>> newDiagnostics) {
         Objects.requireNonNull(currentDiagnostics);
         Objects.requireNonNull(newDiagnostics);
 
-        for (Entry<URI, Set<Diagnostic>> entry : newDiagnostics.entrySet()) {
-            Set<Diagnostic> currentSet = currentDiagnostics.computeIfAbsent(entry.getKey(), k -> new HashSet<>());
+        for (Entry<URI, List<Diagnostic>> entry : newDiagnostics.entrySet()) {
+            List<Diagnostic> currentSet = currentDiagnostics.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
             for (Diagnostic d : entry.getValue()) {
                 currentSet.add(d);
             }
