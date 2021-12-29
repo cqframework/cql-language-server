@@ -2,6 +2,8 @@ package org.opencds.cqf.cql.ls;
 
 import java.io.File;
 import java.net.URI;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -56,8 +58,17 @@ public class CqlUtilities {
         CqlTranslatorOptions options = null;
         URI baseUri = getHead(uri);
         if (!baseUri.getScheme().startsWith("http")) {
-            String optionsFileName = baseUri + File.separator + "cql-options.json";
-            File file = new File(optionsFileName);
+
+            Path path;
+            try {
+                path = Paths.get(baseUri);
+            }
+            catch (Exception e) {
+                return null;
+            }
+
+            Path optionsPath = path.resolve("cql-options.json");
+            File file = optionsPath.toFile();
             if (file.exists()) {
                 options = CqlTranslatorOptionsMapper.fromFile(file.getAbsolutePath());
                 Log.info(String.format("cql-options loaded from: %s", file.getAbsolutePath()));
