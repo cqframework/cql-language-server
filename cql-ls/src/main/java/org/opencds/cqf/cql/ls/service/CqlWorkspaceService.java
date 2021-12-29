@@ -98,6 +98,7 @@ public class CqlWorkspaceService implements WorkspaceService {
     public void initialized() {
         EventBus.getDefault().register(this);
 
+        /*
         this.client.join()
                 .unregisterCapability(new UnregistrationParams(
                         Arrays.asList(new Unregistration(Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
@@ -112,7 +113,7 @@ public class CqlWorkspaceService implements WorkspaceService {
                 .registerCapability(new RegistrationParams(
                         Arrays.asList(new Registration(Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
                                 Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD, dcfro))));
-
+        */
     }
 
     @Override

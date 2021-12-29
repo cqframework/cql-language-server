@@ -72,7 +72,9 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     @Subscribe(threadMode = ThreadMode.BACKGROUND) 
     public void onMessageEvent(DidChangeWatchedFilesEvent event) {
-        // TODO: Update project options....
+        if (translationManager != null) {
+            translationManager.clearCachedTranslatorOptions();
+        }
     }
 
     @Override

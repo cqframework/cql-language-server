@@ -105,7 +105,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     public void initialized() {
-        EventBus.getDefault().register(this);
+        //EventBus.getDefault().register(this);
     }
 
     protected void doLint(Collection<URI> paths) {
@@ -463,13 +463,6 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     public void stop() {
-        EventBus.getDefault().unregister(this);
-    }
-
-    @Subscribe
-    public void onDidChangeWatchedFiles(DidChangeWatchedFilesEvent event) {
-        if (cqlTranslationManager != null) {
-            cqlTranslationManager.clearCachedTranslatorOptions();
-        }
+        //EventBus.getDefault().unregister(this);
     }
 }
