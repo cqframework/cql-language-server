@@ -50,7 +50,18 @@ public class CqlTranslationManager {
         ModelManager modelManager = this.createModelManager();
         LibraryManager libraryManager = this.createLibraryManager(uri, modelManager);
 
-        return CqlTranslator.fromText(content, modelManager, libraryManager, null, CqlTranslatorOptions.defaultOptions());
+        return CqlTranslator.fromText(content, modelManager, libraryManager, null, getTranslatorOptions(uri));
+    }
+
+    private CqlTranslatorOptions cachedOptions = null;
+    private CqlTranslatorOptions getTranslatorOptions(URI uri) {
+        if (cachedOptions == null) {
+            cachedOptions = CqlUtilities.getTranslatorOptions(uri);
+        }
+        return cachedOptions;
+    }
+    public void clearCachedTranslatorOptions() {
+        cachedOptions = null;
     }
 
     private ModelManager createModelManager() {

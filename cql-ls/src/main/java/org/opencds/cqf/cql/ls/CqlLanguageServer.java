@@ -7,12 +7,16 @@ import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
+import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
+import org.opencds.cqf.cql.ls.event.DidChangeWatchedFilesEvent;
 import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.plugin.CqlLanguageServerPlugin;
@@ -30,12 +34,12 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     private final CqlTextDocumentService textDocumentService;
     private final CompletableFuture<LanguageClient> client = new CompletableFuture<>();
 
-    private CqlTranslationManager translationManager;
+    private final CqlTranslationManager translationManager;
 
-    private List<CqlLanguageServerPlugin> plugins;
-    private CompletableFuture<List<CommandContribution>> commandContributions = new CompletableFuture<>();
+    private final List<CqlLanguageServerPlugin> plugins;
+    private final CompletableFuture<List<CommandContribution>> commandContributions = new CompletableFuture<>();
 
-    private CompletableFuture<Void> exited;
+    private final CompletableFuture<Void> exited;
 
     private ActiveContent activeContent;
 
@@ -59,12 +63,24 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
             InitializeResult result = new InitializeResult();
             result.setCapabilities(serverCapabilities);
-
             return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
             Log.error("failed to initialize with error: {}", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
+    }
+
+    @Subscribe(threadMode = ThreadMode.BACKGROUND) 
+    public void onMessageEvent(DidChangeWatchedFilesEvent event) {
+        if (translationManager != null) {
+            translationManager.clearCachedTranslatorOptions();
+        }
+    }
+
+    @Override
+    public void initialized(InitializedParams params) {
+        this.textDocumentService.initialized();
+        this.workspaceService.initialized();
     }
 
     private void initializeTextDocumentService(InitializeParams params, ServerCapabilities serverCapabilities) {
@@ -97,6 +113,9 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     @Override
     public CompletableFuture<Object> shutdown() {
+        this.workspaceService.stop();
+        this.textDocumentService.stop();
+
         return CompletableFuture.completedFuture(null);
     }
 
