@@ -70,13 +70,6 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.BACKGROUND) 
-    public void onMessageEvent(DidChangeWatchedFilesEvent event) {
-        if (translationManager != null) {
-            translationManager.clearCachedTranslatorOptions();
-        }
-    }
-
     @Override
     public void initialized(InitializedParams params) {
         this.textDocumentService.initialized();
