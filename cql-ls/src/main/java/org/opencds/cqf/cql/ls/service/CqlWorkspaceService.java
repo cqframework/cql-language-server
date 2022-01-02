@@ -97,11 +97,7 @@ public class CqlWorkspaceService implements WorkspaceService {
 
     public void initialized() {
         // Don't need to subscribe, only post to the bus at this point
-        //EventBus.getDefault().register(this);
-
-        /*
-        BTR: This should be working, but doesn't in Atom or VSCode, not sure whym but it results in some
-        error that makes the language server unresponsive once it has received a notification of change on a watched file
+        // EventBus.getDefault().register(this);
 
         this.client.join()
                 .unregisterCapability(new UnregistrationParams(
@@ -117,8 +113,6 @@ public class CqlWorkspaceService implements WorkspaceService {
                 .registerCapability(new RegistrationParams(
                         Arrays.asList(new Registration(Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
                                 Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD, dcfro))));
-
-        */
     }
 
     @Override
@@ -145,6 +139,7 @@ public class CqlWorkspaceService implements WorkspaceService {
 
     @Override
     public void didChangeConfiguration(DidChangeConfigurationParams params) {
+        // No support for changing cql extension config as of yet
     }
 
     @Override
@@ -203,6 +198,6 @@ public class CqlWorkspaceService implements WorkspaceService {
     }
 
     public void stop() {
-        //EventBus.getDefault().unregister(this);
+        // EventBus.getDefault().unregister(this);
     }
 }

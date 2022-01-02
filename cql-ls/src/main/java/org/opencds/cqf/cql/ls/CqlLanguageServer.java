@@ -14,9 +14,6 @@ import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
-import org.greenrobot.eventbus.Subscribe;
-import org.greenrobot.eventbus.ThreadMode;
-import org.opencds.cqf.cql.ls.event.DidChangeWatchedFilesEvent;
 import org.opencds.cqf.cql.ls.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.plugin.CqlLanguageServerPlugin;
@@ -70,13 +67,6 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.BACKGROUND) 
-    public void onMessageEvent(DidChangeWatchedFilesEvent event) {
-        if (translationManager != null) {
-            translationManager.clearCachedTranslatorOptions();
-        }
-    }
-
     @Override
     public void initialized(InitializedParams params) {
         this.textDocumentService.initialized();
@@ -107,6 +97,7 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         }
 
         commandContributions.add(this.textDocumentService.getCommandContribution());
+        commandContributions.add(new DebugCqlCommandContribution());
 
         this.commandContributions.complete(commandContributions);
     }

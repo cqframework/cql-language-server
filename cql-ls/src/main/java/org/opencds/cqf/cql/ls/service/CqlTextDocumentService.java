@@ -53,6 +53,7 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
@@ -105,7 +106,7 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     public void initialized() {
-        //EventBus.getDefault().register(this);
+        EventBus.getDefault().register(this);
     }
 
     protected void doLint(Collection<URI> paths) {
@@ -121,6 +122,15 @@ public class CqlTextDocumentService implements TextDocumentService {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(),
                     new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.ASYNC) 
+    public void onMessageEvent(DidChangeWatchedFilesEvent event) {
+        if (cqlTranslationManager != null) {
+            cqlTranslationManager.clearCachedTranslatorOptions();
+            doLint(Collections.list(this.activeContent.keys()));
+
         }
     }
 
@@ -463,6 +473,6 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     public void stop() {
-        //EventBus.getDefault().unregister(this);
+        EventBus.getDefault().unregister(this);
     }
 }
