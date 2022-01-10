@@ -2,7 +2,11 @@ package org.opencds.cqf.cql.ls.manager;
 
 import java.io.File;
 import java.net.URI;
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -80,14 +84,14 @@ public class CqlTranslationManager {
         return libraryManager;
     }
 
-    public Map<URI, List<Diagnostic>> lint(URI uri) {
-        Map<URI, List<Diagnostic>> diagnostics = new HashMap<>();
+    public Map<URI, Set<Diagnostic>> lint(URI uri) {
+        Map<URI, Set<Diagnostic>> diagnostics = new HashMap<>();
         CqlTranslator translator = this.translate(uri);
         if (translator == null) {
             Diagnostic d = new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
                     "Library does not contain CQL content.", DiagnosticSeverity.Warning, "lint");
 
-            diagnostics.computeIfAbsent(uri, k -> new ArrayList<>()).add(d);
+            diagnostics.computeIfAbsent(uri, k -> new HashSet<>()).add(d);
 
             return diagnostics;
         }
@@ -132,11 +136,11 @@ public class CqlTranslationManager {
                     d.getRange().getEnd().getCharacter(), d.getMessage());
 
 
-            diagnostics.computeIfAbsent(eUri, k -> new ArrayList<>()).add(d);
+            diagnostics.computeIfAbsent(eUri, k -> new HashSet<>()).add(d);
         }
 
         // Ensure there is an entry for the library in the case that there are no exceptions
-        diagnostics.computeIfAbsent(uri, k -> new ArrayList<>());
+        diagnostics.computeIfAbsent(uri, k -> new HashSet<>());
 
         return diagnostics;
     }

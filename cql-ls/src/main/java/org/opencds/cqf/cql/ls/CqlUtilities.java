@@ -4,13 +4,14 @@ import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
+import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -23,13 +24,20 @@ import org.slf4j.LoggerFactory;
  */
 public class CqlUtilities {
 
-    private final static Logger Log = LoggerFactory.getLogger(CqlUtilities.class);
+    private CqlUtilities() {
+    }
+
+    private static final Logger Log = LoggerFactory.getLogger(CqlUtilities.class);
 
     public static URI getFhirBaseUri(URI uri) {
         // TODO: This should actually just recognize the FHIR types.
         int index = uri.getPath().lastIndexOf("Library/");
         if (index > -1) {
             uri = getHead(uri);
+        }
+
+        if (uri == null) {
+            return null;
         }
 
         index = uri.getPath().lastIndexOf("/Library");
@@ -57,13 +65,16 @@ public class CqlUtilities {
     public static CqlTranslatorOptions getTranslatorOptions(URI uri) {
         CqlTranslatorOptions options = null;
         URI baseUri = getHead(uri);
+        if (baseUri == null) {
+            return null;
+        }
+
         if (!baseUri.getScheme().startsWith("http")) {
 
             Path path;
             try {
                 path = Paths.get(baseUri);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 return null;
             }
 
@@ -71,7 +82,7 @@ public class CqlUtilities {
             File file = optionsPath.toFile();
             if (file.exists()) {
                 options = CqlTranslatorOptionsMapper.fromFile(file.getAbsolutePath());
-                Log.info(String.format("cql-options loaded from: %s", file.getAbsolutePath()));
+                Log.info("cql-options loaded from: {}", file.getAbsolutePath());
             }
         }
 
@@ -83,14 +94,19 @@ public class CqlUtilities {
             Log.info("cql-options not found. Using default options.");
         }
 
-        return options;
+        // For the purposes of debugging and authoring support, always add detailed
+        // translation information.
+
+        return options
+                .withOptions(CqlTranslator.Options.EnableLocators, CqlTranslator.Options.EnableResultTypes, CqlTranslator.Options.EnableAnnotations)
+                .withSignatureLevel(SignatureLevel.All);
     }
 
     private static URI withPath(URI uri, String path) {
         try {
-            return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path, uri.getFragment(), uri.getQuery());
-        }
-        catch (Exception e) {
+            return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path, uri.getFragment(),
+                    uri.getQuery());
+        } catch (Exception e) {
             return null;
         }
     }
@@ -106,16 +122,15 @@ public class CqlUtilities {
             diagnostic.setMessage(error.getMessage());
 
             return diagnostic;
-        }
-        else {
-            Log.debug("Skipped " + error.getMessage());
+        } else {
+            Log.debug("Skipped {}", error.getMessage());
 
             return null;
         }
     }
 
-    public static List<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
-        ArrayList<Diagnostic> result = new ArrayList<>();
+    public static Set<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
+        Set<Diagnostic> result = new HashSet<>();
         for (CqlTranslatorException error : errors) {
             Diagnostic diagnostic = convert(error);
             if (diagnostic != null) {
@@ -142,12 +157,9 @@ public class CqlUtilities {
         return new Range(
                 new Position(
                         error.getLocator().getStartLine() - 1,
-                        error.getLocator().getStartChar() - 1
-                ),
+                        Math.max(error.getLocator().getStartChar() - 1, 0)),
                 new Position(
                         error.getLocator().getEndLine() - 1,
-                        error.getLocator().getEndChar()
-                )
-        );
+                        error.getLocator().getEndChar()));
     }
 }
