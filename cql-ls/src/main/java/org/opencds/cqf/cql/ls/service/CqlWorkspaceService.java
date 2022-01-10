@@ -62,16 +62,16 @@ public class CqlWorkspaceService implements WorkspaceService {
     @SuppressWarnings("deprecation")
     public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
 
-        List<WorkspaceFolder> workspaceFolders = new ArrayList<WorkspaceFolder>();
+        List<WorkspaceFolder> newWorkspaceFolders = new ArrayList<WorkspaceFolder>();
         if (params.getWorkspaceFolders() != null) {
-            workspaceFolders.addAll(params.getWorkspaceFolders());
+            newWorkspaceFolders.addAll(params.getWorkspaceFolders());
         }
 
         if (params.getRootUri() != null) {
-            workspaceFolders.add(new WorkspaceFolder(params.getRootUri()));
+            newWorkspaceFolders.add(new WorkspaceFolder(params.getRootUri()));
         }
 
-        this.addFolders(workspaceFolders);
+        this.addFolders(newWorkspaceFolders);
 
         WorkspaceServerCapabilities wsc = new WorkspaceServerCapabilities();
 

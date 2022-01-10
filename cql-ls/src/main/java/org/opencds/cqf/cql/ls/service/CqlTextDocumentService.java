@@ -12,9 +12,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
 
 import com.google.common.base.Joiner;
@@ -96,7 +96,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         // c.setDefinitionProvider(true);
         // c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
         serverCapabilities.setDocumentFormattingProvider(true);
-        //serverCapabilities.setDocumentRangeFormattingProvider(false);
+        // serverCapabilities.setDocumentRangeFormattingProvider(false);
         serverCapabilities.setHoverProvider(true);
         // c.setReferencesProvider(true);
         // c.setDocumentSymbolProvider(true);
@@ -110,22 +110,24 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     protected void doLint(Collection<URI> paths) {
-        logger.debug("Lint " + Joiner.on(", ").join(paths));
+        if (logger.isDebugEnabled()) {
+            logger.debug("Lint: {}", Joiner.on(", ").join(paths));
+        }
 
-        Map<URI, List<Diagnostic>> allDiagnostics = new HashMap<>();
+        Map<URI, Set<Diagnostic>> allDiagnostics = new HashMap<>();
         for (URI uri : paths) {
-            Map<URI, List<Diagnostic>> currentDiagnostics = this.cqlTranslationManager.lint(uri);
+            Map<URI, Set<Diagnostic>> currentDiagnostics = this.cqlTranslationManager.lint(uri);
             this.mergeDiagnostics(allDiagnostics, currentDiagnostics);
         }
 
-        for (Map.Entry<URI, List<Diagnostic>> entry : allDiagnostics.entrySet()) {
+        for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(entry.getKey().toString(),
                     new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.ASYNC) 
+    @Subscribe(threadMode = ThreadMode.ASYNC)
     public void onMessageEvent(DidChangeWatchedFilesEvent event) {
         if (cqlTranslationManager != null) {
             cqlTranslationManager.clearCachedTranslatorOptions();
@@ -177,10 +179,8 @@ public class CqlTextDocumentService implements TextDocumentService {
     @Override
     public CompletableFuture<Hover> hover(HoverParams position) {
         try {
-            URI uri = null;
-            try {
-                uri = new URI(position.getTextDocument().getUri());
-            } catch (Exception e) {
+            URI uri = safeParseUri(position.getTextDocument().toString());
+            if (uri == null) {
                 return CompletableFuture.completedFuture(null);
             }
 
@@ -188,7 +188,6 @@ public class CqlTextDocumentService implements TextDocumentService {
             if (translator == null) {
                 return CompletableFuture.completedFuture(null);
             }
-
 
             Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
                     translator.getTranslatedLibrary().getLibrary().getStatements());
@@ -198,6 +197,9 @@ public class CqlTextDocumentService implements TextDocumentService {
             }
 
             DataType resultType = exp.getRight().getExpression().getResultType();
+            if (resultType == null) {
+                return CompletableFuture.completedFuture(null);
+            }
 
             Hover hover = new Hover();
             hover.setContents(Either.forRight(new MarkupContent("markdown", "```" + resultType.toString() + "```")));
@@ -209,17 +211,23 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
     }
 
+    private URI safeParseUri(String uriString) {
+        try {
+            return new URI(uriString);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
+        URI uri = safeParseUri(params.getTextDocument().getUri());
+        if (uri == null || !this.activeContent.contains(uri)) {
+            return CompletableFuture.completedFuture(null);
+        }
+
         try {
-
-            URI uri = URI.create(params.getTextDocument().getUri());
-            if (!this.activeContent.contains(uri)) {
-                return CompletableFuture.completedFuture(null);
-            }
-
             String content = this.activeContent.get(uri).content;
-            // Get lines from the text;
             String[] lines = content.split("[\n|\r]");
 
             FormatResult fr = CqlFormatterVisitor.getFormattedOutput(new ByteArrayInputStream(content.getBytes()));
@@ -247,7 +255,6 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     @Override
     public void didOpen(DidOpenTextDocumentParams params) {
-
         try {
 
             if (params.getTextDocument() == null || params.getTextDocument().getUri() == null) {
@@ -421,13 +428,13 @@ public class CqlTextDocumentService implements TextDocumentService {
         }
     }
 
-    private void mergeDiagnostics(Map<URI, List<Diagnostic>> currentDiagnostics,
-            Map<URI, List<Diagnostic>> newDiagnostics) {
+    private void mergeDiagnostics(Map<URI, Set<Diagnostic>> currentDiagnostics,
+            Map<URI, Set<Diagnostic>> newDiagnostics) {
         Objects.requireNonNull(currentDiagnostics);
         Objects.requireNonNull(newDiagnostics);
 
-        for (Entry<URI, List<Diagnostic>> entry : newDiagnostics.entrySet()) {
-            List<Diagnostic> currentSet = currentDiagnostics.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
+        for (Entry<URI, Set<Diagnostic>> entry : newDiagnostics.entrySet()) {
+            Set<Diagnostic> currentSet = currentDiagnostics.computeIfAbsent(entry.getKey(), k -> new HashSet<>());
             for (Diagnostic d : entry.getValue()) {
                 currentSet.add(d);
             }
@@ -462,13 +469,19 @@ public class CqlTextDocumentService implements TextDocumentService {
         // is XML and display it accordingly.
         private CompletableFuture<Object> viewElm(ExecuteCommandParams params) {
             String uriString = ((JsonElement) params.getArguments().get(0)).getAsString();
-            URI uri = URI.create(uriString);
-            CqlTranslator translator = CqlTextDocumentService.this.cqlTranslationManager.translate(uri);
-            if (translator != null) {
-                return CompletableFuture.completedFuture(translator.toXml());
-            }
+            try {
 
-            return CompletableFuture.completedFuture(null);
+                URI uri = URI.create(uriString);
+                CqlTranslator translator = CqlTextDocumentService.this.cqlTranslationManager.translate(uri);
+                if (translator != null) {
+                    return CompletableFuture.completedFuture(translator.toXml());
+                }
+
+                return CompletableFuture.completedFuture(null);
+            }
+            catch(Exception e) {
+                return CompletableFuture.completedFuture(null);
+            }
         }
     }
 
