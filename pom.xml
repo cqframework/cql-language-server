@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls-parent</artifactId>
     <packaging>pom</packaging>
-    <version>1.5.5-SNAPSHOT</version>
+    <version>1.5.5</version>
 
     <name>CQL Language Server</name>
     <description>A Languager Server for CQL implementing the LSP</description>
