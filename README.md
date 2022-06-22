@@ -14,7 +14,7 @@ Build the project with:
 mvn package
 ```
 
-The language server itself is designed to be used by IDE plugins, such as the [CQL Support for Atom](https://atom.io/packages/language-cql) package.
+The language server itself is designed to be used by IDE plugins, such as the [CQL Support for VS Code]([https://atom.io/packages/language-cql](https://marketplace.visualstudio.com/items?itemName=cqframework.cql)) package.
 
 ## Getting Help
 
