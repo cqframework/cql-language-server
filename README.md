@@ -32,8 +32,6 @@ Inquires for commercial support can be directed to [info@alphora.com](info@alpho
 
 [CQL Evaluator](https://github.com/DBCG/cql-evaluator) - Integrates the CQL Translator and CQL Engine into an execution environment, and provides implementations of operations defined by FHIR IGs.
 
-[CQL Support for Atom](https://atom.io/packages/language-cql) - Open source CQL IDE with syntax highlighting, linting, and local CQL evaluation.
-
 ## Commit Policy
 
 All new development takes place on `<feature>` branches off `master`. Once feature development on the branch is complete, the feature branch is submitted to `master` as a PR. The PR is reviewed by maintainers and regression testing by the CI build occurs.
