@@ -17,7 +17,7 @@
             "name": "Launch Main",
             "request": "launch",
             "mainClass": "org.opencds.cqf.cql.ls.Main",
-            "projectName": "cql-ls"
+            "projectName": "cql-ls-service"
         },
         {
             "type": "java",
@@ -25,7 +25,7 @@
             "request": "attach",
             "hostName": "localhost",
             "port": 1044,
-            "projectName": "cql-ls"
+            "projectName": "cql-ls-service"
         }
     ]
 }
