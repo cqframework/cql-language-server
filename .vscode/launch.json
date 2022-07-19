@@ -9,14 +9,14 @@
             "type": "java",
             "name": "Launch Main w/ Plugin",
             "request": "launch",
-            "mainClass": "org.opencds.cqf.cql.ls.Main",
+            "mainClass": "org.opencds.cqf.cql.ls.service.Main",
             "projectName": "cql-ls-plugin-debug",
         },
         {
             "type": "java",
             "name": "Launch Main",
             "request": "launch",
-            "mainClass": "org.opencds.cqf.cql.ls.Main",
+            "mainClass": "org.opencds.cqf.cql.ls..service.Main",
             "projectName": "cql-ls-service"
         },
         {

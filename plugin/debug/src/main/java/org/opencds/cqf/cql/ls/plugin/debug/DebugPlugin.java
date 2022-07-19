@@ -9,24 +9,28 @@ import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.plugin.CqlLanguageServerPlugin;
 
+@SuppressWarnings("unused") // TODO: Remove once this class is completed
 public class DebugPlugin implements CqlLanguageServerPlugin {
 
     @Override
     public String getName() {
         return "org.opencds.cqf.cql.ls.plugin.debug.DebugPlugin";
     }
-    // private CompletableFuture<LanguageClient> client;
-    // private WorkspaceService workspaceService;
-    // private TextDocumentService textDocumentService;
+
+
+    private CompletableFuture<LanguageClient> client;
+    private WorkspaceService workspaceService;
+    private TextDocumentService textDocumentService;
+
     private CqlTranslationManager translationManager;
     private CommandContribution commandContribution;
 
 
     public DebugPlugin(CompletableFuture<LanguageClient> client, WorkspaceService workspaceService,
     TextDocumentService textDocumentService, CqlTranslationManager translationManager) {
-        // this.client = client;
-        // this.workspaceService = workspaceService;
-        // this.textDocumentService = textDocumentService;
+        this.client = client;
+        this.workspaceService = workspaceService;
+        this.textDocumentService = textDocumentService;
         this.translationManager = translationManager;
 
         this.commandContribution = new DebugCommandContribution(this.translationManager);

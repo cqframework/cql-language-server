@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.cqframework.cql.cql2elm.CqlInternalException;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
@@ -58,12 +59,14 @@ public class CqlTranslationManager {
     }
 
     private CqlTranslatorOptions cachedOptions = null;
+
     private CqlTranslatorOptions getTranslatorOptions(URI uri) {
         if (cachedOptions == null) {
             cachedOptions = CqlUtilities.getTranslatorOptions(uri);
         }
         return cachedOptions;
     }
+
     public void clearCachedTranslatorOptions() {
         cachedOptions = null;
     }
@@ -77,7 +80,8 @@ public class CqlTranslationManager {
 
         URI baseUri = CqlUtilities.getHead(uri);
 
-        libraryManager.getLibrarySourceLoader().registerProvider(new ActiveContentLibrarySourceProvider(baseUri, this.activeContent));
+        libraryManager.getLibrarySourceLoader()
+                .registerProvider(new ActiveContentLibrarySourceProvider(baseUri, this.activeContent));
         libraryManager.getLibrarySourceLoader().registerProvider(new WorkspaceLibrarySourceProvider(baseUri));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
 
@@ -103,6 +107,10 @@ public class CqlTranslationManager {
         URI baseUri = CqlUtilities.getHead(uri);
         // First, assign all unassociated exceptions to this library.
         for (CqlTranslatorException exception : exceptions) {
+            if (exception instanceof CqlInternalException) {
+                continue;
+            }
+
             if (exception.getLocator() == null) {
                 exception.setLocator(
                         new TrackBack(translator.getTranslatedLibrary().getIdentifier(), 0, 0, 0, 0));
@@ -113,7 +121,6 @@ public class CqlTranslationManager {
                 .distinct().filter(x -> x != null).collect(Collectors.toList());
         List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
                 .map(x -> Pair.of(x, this.lookUpUri(baseUri, x))).collect(Collectors.toList());
-
 
         Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();
         for (Pair<VersionedIdentifier, URI> p : libraryUriList) {
@@ -135,11 +142,11 @@ public class CqlTranslationManager {
                     d.getRange().getStart().getCharacter(), d.getRange().getEnd().getLine(),
                     d.getRange().getEnd().getCharacter(), d.getMessage());
 
-
             diagnostics.computeIfAbsent(eUri, k -> new HashSet<>()).add(d);
         }
 
-        // Ensure there is an entry for the library in the case that there are no exceptions
+        // Ensure there is an entry for the library in the case that there are no
+        // exceptions
         diagnostics.computeIfAbsent(uri, k -> new HashSet<>());
 
         return diagnostics;

@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -91,6 +92,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         this.cqlTranslationManager = cqlTranslationManager;
     }
 
+    @SuppressWarnings("java:S125") // Keeping the commented code for future reference
     public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
         serverCapabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
         // c.setDefinitionProvider(true);
@@ -135,41 +137,6 @@ public class CqlTextDocumentService implements TextDocumentService {
 
         }
     }
-
-    // @Override
-    // public CompletableFuture<Either<List<CompletionItem>, CompletionList>>
-    // completion(CompletionParams position) {
-    // if (position.getTextDocument() == null || position.getTextDocument().getUri()
-    // == null) {
-    // return CompletableFuture.completedFuture(null);
-    // }
-
-    // try {
-
-    // URI uri = URI.create(position.getTextDocument().getUri());
-    // // Optional<String> content = activeContent(uri);
-    // int line = position.getPosition().getLine() + 1;
-    // int character = position.getPosition().getCharacter() + 1;
-
-    // Log.debug("completion at {} {}:{}", uri, line, character);
-
-    // List<CompletionItem> items = new ArrayList<CompletionItem>();
-
-    // CompletionItem item = new CompletionItem();
-    // item.setKind(CompletionItemKind.Keyword);
-    // item.setLabel("declare");
-
-    // items.add(item);
-
-    // CompletionList list = new CompletionList(items);
-
-    // return CompletableFuture.completedFuture(Either.forRight(list));
-    // } catch (Exception e) {
-    // Log.error("completion: {}", e.getMessage());
-    // return FuturesHelper.failedFuture(e);
-    // }
-
-    // }
 
     // TODO: Right now this just implements return type highlighting for expressions
     // only.
@@ -233,7 +200,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             FormatResult fr = CqlFormatterVisitor.getFormattedOutput(new ByteArrayInputStream(content.getBytes()));
 
             // Only update the content if it's valid CQL.
-            if (fr.getErrors().size() != 0) {
+            if (!fr.getErrors().isEmpty()) {
                 MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
                 this.client.join().showMessage(mp);
 
@@ -264,12 +231,9 @@ public class CqlTextDocumentService implements TextDocumentService {
             TextDocumentItem document = params.getTextDocument();
             URI uri = URI.create(document.getUri());
 
-            // TODO: filter this correctly on the client side
-            if (uri.toString().contains("metadata") || uri.toString().contains("_history")) {
-                return;
-            }
+            String encodedText = new String(document.getText().getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
 
-            activeContent.put(uri, new VersionedContent(document.getText(), document.getVersion()));
+            activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
             doLint(Collections.singleton(uri));
 
         } catch (Exception e) {
@@ -289,20 +253,16 @@ public class CqlTextDocumentService implements TextDocumentService {
             VersionedTextDocumentIdentifier document = params.getTextDocument();
             URI uri = URI.create(document.getUri());
 
-            // TODO: filter this correctly on the client side
-            if (uri.toString().contains("metadata") || uri.toString().contains("_history")) {
-                return;
-            }
-
             VersionedContent existing = activeContent.get(uri);
-            String newText = existing.content;
+            String existingText = existing.content;
 
             if (document.getVersion() > existing.version) {
                 for (TextDocumentContentChangeEvent change : params.getContentChanges()) {
                     if (change.getRange() == null) {
-                        activeContent.put(uri, new VersionedContent(change.getText(), document.getVersion()));
+                        String encodedText = new String(change.getText().getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+                        activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
                     } else {
-                        newText = patch(newText, change);
+                        String newText = patch(existingText, change);
                         activeContent.put(uri, new VersionedContent(newText, document.getVersion()));
                     }
                 }
@@ -355,12 +315,12 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position, Statements statements) {
-        if (statements == null || statements.getDef() == null || statements.getDef().size() == 0) {
+        if (statements == null || statements.getDef() == null || statements.getDef().isEmpty()) {
             return null;
         }
 
         for (ExpressionDef def : statements.getDef()) {
-            if (def.getTrackbacks() == null || def.getTrackbacks().size() == 0) {
+            if (def.getTrackbacks() == null || def.getTrackbacks().isEmpty()) {
                 continue;
             }
 
@@ -408,7 +368,8 @@ public class CqlTextDocumentService implements TextDocumentService {
                 writer.write(reader.read());
 
             // Write replacement text
-            writer.write(change.getText());
+            String encodedText = new String(change.getText().getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+            writer.write(encodedText);
 
             // Skip replaced text
             reader.skip(change.getRangeLength());

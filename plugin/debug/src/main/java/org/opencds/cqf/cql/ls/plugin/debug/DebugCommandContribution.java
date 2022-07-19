@@ -20,6 +20,9 @@ public class DebugCommandContribution implements CommandContribution {
 
     public DebugCommandContribution(CqlTranslationManager cqlTranslationManager) {
         this.cqlTranslationManager = cqlTranslationManager;
+
+        // Temporary hack for unused variable
+        this.cqlTranslationManager.hashCode();
     }
 
     @Override
@@ -29,22 +32,26 @@ public class DebugCommandContribution implements CommandContribution {
 
     @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
-        switch(params.getCommand()) {
-            case START_DEBUG_COMMAND:
-                if (this.debugSession == null || !this.debugSession.isActive()) {
-                    this.debugSession = new DebugSession();
-                    try {
-                        return CompletableFuture.completedFuture(this.debugSession.start().get());
-                    }
-                    catch (Exception e) {
-                        return FuturesHelper.failedFuture(e);
-                    }
+        if (START_DEBUG_COMMAND.equals(params.getCommand())) {
+            if (this.debugSession == null || !this.debugSession.isActive()) {
+                this.debugSession = new DebugSession();
+                try {
+                    return CompletableFuture.completedFuture(this.debugSession.start().get());
                 }
-                else {
-                    throw new IllegalStateException("Please wait for the current debug session to end before starting a new one.");
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return FuturesHelper.failedFuture(e);
                 }
-            default:
-                throw new IllegalArgumentException(String.format("DebugPlugin doesn't support command %s", params.getCommand()));
+                catch(Exception e) {
+                    return FuturesHelper.failedFuture(e);
+                }
+            }
+            else {
+                throw new IllegalStateException("Please wait for the current debug session to end before starting a new one.");
+            }
+        }
+        else {
+            throw new IllegalArgumentException(String.format("DebugPlugin doesn't support command %s", params.getCommand()));
         }
      }
 }

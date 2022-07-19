@@ -33,7 +33,9 @@ public class DebugSession {
     }
 
     public CompletableFuture<Integer> start() {
-            this.isActive = true;
+            synchronized(this) {
+                this.isActive = true;
+            }
             startListening();
             return this.port;
     }
@@ -49,7 +51,6 @@ public class DebugSession {
     private void startListening() {
         threadService.submit(() -> {
             try(ServerSocket serverSocket = new ServerSocket(0)) {
-                // Wait for 10 seconds for a client to connect before closing;
                 serverSocket.setSoTimeout(10000);
                 this.port.complete(serverSocket.getLocalPort());
                 Socket s = serverSocket.accept();
@@ -66,10 +67,13 @@ public class DebugSession {
                 this.port.completeExceptionally(e);
             } catch (CancellationException e) {
                 logger.debug("debug session cancelled", e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.debug("debug session interrupted");
             } catch (Exception e) {
                 logger.error("error in debug session", e);
             }
-            synchronized(this.isActive) {
+            synchronized(this) {
                 this.isActive = false;
             }
         });

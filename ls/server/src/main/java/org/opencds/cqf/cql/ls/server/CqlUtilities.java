@@ -96,9 +96,9 @@ public class CqlUtilities {
 
         // For the purposes of debugging and authoring support, always add detailed
         // translation information.
-
         return options
-                .withOptions(CqlTranslator.Options.EnableLocators, CqlTranslator.Options.EnableResultTypes, CqlTranslator.Options.EnableAnnotations)
+                .withOptions(CqlTranslator.Options.EnableLocators, CqlTranslator.Options.EnableResultTypes,
+                        CqlTranslator.Options.EnableAnnotations)
                 .withSignatureLevel(SignatureLevel.All);
     }
 

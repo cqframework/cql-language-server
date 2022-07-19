@@ -50,7 +50,7 @@ public class CqlWorkspaceService implements WorkspaceService {
 
     private final CompletableFuture<LanguageClient> client;
 
-    private Map<String, WorkspaceFolder> workspaceFolders = new HashMap<String, WorkspaceFolder>();
+    private Map<String, WorkspaceFolder> workspaceFolders = new HashMap<>();
     private CompletableFuture<List<CommandContribution>> commandContributions;
 
     public CqlWorkspaceService(CompletableFuture<LanguageClient> client,
@@ -59,16 +59,13 @@ public class CqlWorkspaceService implements WorkspaceService {
         this.commandContributions = commandContributions;
     }
 
-    @SuppressWarnings("deprecation")
+
+    @SuppressWarnings("java:S125") // Keeping the commented code for future reference
     public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
 
         List<WorkspaceFolder> newWorkspaceFolders = new ArrayList<>();
         if (params.getWorkspaceFolders() != null) {
             newWorkspaceFolders.addAll(params.getWorkspaceFolders());
-        }
-
-        if (params.getRootUri() != null) {
-            newWorkspaceFolders.add(new WorkspaceFolder(params.getRootUri()));
         }
 
         this.addFolders(newWorkspaceFolders);
