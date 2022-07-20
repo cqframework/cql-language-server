@@ -15,6 +15,12 @@
     </parent>
 
     <dependencies>
+        <dependency>
+            <groupId>org.opencds.cqf.cql.ls</groupId>
+            <artifactId>cql-ls-core</artifactId>
+            <version>1.5.7-SNAPSHOT</version>
+        </dependency>
+
         <!-- CQL-to-ELM Translator -->
         <dependency>
             <groupId>info.cqframework</groupId>
@@ -45,12 +51,6 @@
             <artifactId>eventbus-java</artifactId>
         </dependency>
 
-        <!--Logging -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-        </dependency>
-        
         <!-- CQL Evaluator dependencies-->
         <!--TODO: These are being migrated out to the debug server plugin eventually,
          In the meantime, the language server implements part of this directly-->

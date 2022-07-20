@@ -1,11 +1,11 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
-import java.io.File;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -24,22 +24,28 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.hl7.elm.r1.VersionedIdentifier;
+import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.ActiveContent;
 import org.opencds.cqf.cql.ls.server.CqlUtilities;
 import org.opencds.cqf.cql.ls.server.provider.ActiveContentLibrarySourceProvider;
-import org.opencds.cqf.cql.ls.server.provider.WorkspaceLibrarySourceProvider;
+import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
+import org.opencds.cqf.cql.ls.server.utility.Diagnostics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CqlTranslationManager {
+    private static final Logger log = LoggerFactory.getLogger(CqlTranslationManager.class);
+
     private final Map<VersionedIdentifier, Model> globalCache;
     private final ActiveContent activeContent;
+    private final ContentService contentService;
 
-    private static final Logger logger = LoggerFactory.getLogger(CqlTranslationManager.class);
-
-    public CqlTranslationManager(ActiveContent activeContent) {
+    public CqlTranslationManager(
+            ActiveContent activeContent, ContentService contentService) {
         this.globalCache = new HashMap<>();
         this.activeContent = activeContent;
+        this.contentService = contentService;
+
     }
 
     public CqlTranslator translate(URI uri) {
@@ -53,7 +59,8 @@ public class CqlTranslationManager {
 
     public CqlTranslator translate(URI uri, String content) {
         ModelManager modelManager = this.createModelManager();
-        LibraryManager libraryManager = this.createLibraryManager(uri, modelManager);
+
+        LibraryManager libraryManager = this.createLibraryManager(modelManager);
 
         return CqlTranslator.fromText(content, modelManager, libraryManager, null, getTranslatorOptions(uri));
     }
@@ -62,7 +69,7 @@ public class CqlTranslationManager {
 
     private CqlTranslatorOptions getTranslatorOptions(URI uri) {
         if (cachedOptions == null) {
-            cachedOptions = CqlUtilities.getTranslatorOptions(uri);
+            cachedOptions = CqlUtilities.getTranslatorOptions(contentService, uri);
         }
         return cachedOptions;
     }
@@ -75,14 +82,12 @@ public class CqlTranslationManager {
         return new CacheAwareModelManager(this.globalCache);
     }
 
-    private LibraryManager createLibraryManager(URI uri, ModelManager modelManager) {
+    private LibraryManager createLibraryManager(ModelManager modelManager) {
         LibraryManager libraryManager = new LibraryManager(modelManager);
 
-        URI baseUri = CqlUtilities.getHead(uri);
-
         libraryManager.getLibrarySourceLoader()
-                .registerProvider(new ActiveContentLibrarySourceProvider(baseUri, this.activeContent));
-        libraryManager.getLibrarySourceLoader().registerProvider(new WorkspaceLibrarySourceProvider(baseUri));
+                .registerProvider(new ActiveContentLibrarySourceProvider(this.activeContent));
+        libraryManager.getLibrarySourceLoader().registerProvider(new ContentServiceSourceProvider(this.contentService));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
 
         return libraryManager;
@@ -102,9 +107,8 @@ public class CqlTranslationManager {
 
         List<CqlTranslatorException> exceptions = translator.getExceptions();
 
-        logger.debug("lint completed on {} with {} messages.", uri, exceptions.size());
+        log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
-        URI baseUri = CqlUtilities.getHead(uri);
         // First, assign all unassociated exceptions to this library.
         for (CqlTranslatorException exception : exceptions) {
             if (exception instanceof CqlInternalException) {
@@ -118,9 +122,9 @@ public class CqlTranslationManager {
         }
 
         List<VersionedIdentifier> uniqueLibraries = exceptions.stream().map(x -> x.getLocator().getLibrary())
-                .distinct().filter(x -> x != null).collect(Collectors.toList());
+                .distinct().filter(Objects::nonNull).collect(Collectors.toList());
         List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
-                .map(x -> Pair.of(x, this.lookUpUri(baseUri, x))).collect(Collectors.toList());
+                .map(x -> Pair.of(x, this.contentService.locate(x))).collect(Collectors.toList());
 
         Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();
         for (Pair<VersionedIdentifier, URI> p : libraryUriList) {
@@ -136,9 +140,9 @@ public class CqlTranslationManager {
                 continue;
             }
 
-            Diagnostic d = CqlUtilities.convert(exception);
+            Diagnostic d = Diagnostics.convert(exception);
 
-            logger.debug("diagnostic: {} {}:{}-{}:{}: {}", eUri, d.getRange().getStart().getLine(),
+            log.debug("diagnostic: {} {}:{}-{}:{}: {}", eUri, d.getRange().getStart().getLine(),
                     d.getRange().getStart().getCharacter(), d.getRange().getEnd().getLine(),
                     d.getRange().getEnd().getCharacter(), d.getMessage());
 
@@ -151,13 +155,4 @@ public class CqlTranslationManager {
 
         return diagnostics;
     }
-
-    private URI lookUpUri(URI baseUri, VersionedIdentifier libraryIdentifier) {
-        File f = WorkspaceLibrarySourceProvider.searchPath(baseUri, libraryIdentifier);
-        if (f != null) {
-            return f.toURI();
-        }
-
-        return null;
-    };
 }

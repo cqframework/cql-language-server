@@ -17,17 +17,17 @@ import org.slf4j.LoggerFactory;
  */
 public class Main {
 
-    private static final Logger logger = LoggerFactory.getLogger(Main.class);
+    private static final Logger log = LoggerFactory.getLogger(Main.class);
 
     /**
      * Entrypoint for the cql-debug-service
      * @param args the commandline parameters (none supported currently)
-     * @throws InterruptedException
-     * @throws ExecutionException
+     * @throws InterruptedException if server thread is cancelled
+     * @throws ExecutionException  if server thread errors
      */
     public static void main(String[] args) throws InterruptedException, ExecutionException {
-        logger.info("java.version is {}", System.getProperty("java.version"));
-        logger.info("cql-debug version is {}", CqlDebugServer.class.getPackage().getImplementationVersion());
+        log.info("java.version is {}", System.getProperty("java.version"));
+        log.info("cql-debug version is {}", CqlDebugServer.class.getPackage().getImplementationVersion());
 
         CqlDebugServer server = new CqlDebugServer();
 

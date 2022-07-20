@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 
 public class DebugSession {
 
-    private static Logger logger = LoggerFactory.getLogger(DebugSession.class);
+    private static Logger log = LoggerFactory.getLogger(DebugSession.class);
 
     private static ExecutorService threadService = Executors.newCachedThreadPool();
 
@@ -55,7 +55,7 @@ public class DebugSession {
                 this.port.complete(serverSocket.getLocalPort());
                 Socket s = serverSocket.accept();
                 Launcher<IDebugProtocolClient> launcher = DSPLauncher.createServerLauncher(this.getDebugServer(),
-                        s.getInputStream(), s.getOutputStream());               
+                        s.getInputStream(), s.getOutputStream());
                 this.getDebugServer().connect(launcher.getRemoteProxy());
 
                 // We'll exit the server when the client disconnects.
@@ -63,15 +63,15 @@ public class DebugSession {
                 this.getDebugServer().exited().get();
                 serverThread.cancel(true);
             } catch (IOException e) {
-                logger.error("failed to launch debug server for debug session", e);
+                log.error("failed to launch debug server for debug session", e);
                 this.port.completeExceptionally(e);
             } catch (CancellationException e) {
-                logger.debug("debug session cancelled", e);
+                log.debug("debug session cancelled", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.debug("debug session interrupted");
+                log.debug("debug session interrupted");
             } catch (Exception e) {
-                logger.error("error in debug session", e);
+                log.error("error in debug session", e);
             }
             synchronized(this) {
                 this.isActive = false;

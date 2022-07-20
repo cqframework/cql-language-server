@@ -25,11 +25,10 @@ import org.slf4j.LoggerFactory;
 
 
 public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
-    private static final Logger Log = LoggerFactory.getLogger(CqlLanguageServer.class);
+    private static final Logger log = LoggerFactory.getLogger(CqlLanguageServer.class);
 
     private final CqlWorkspaceService workspaceService;
     private final CqlTextDocumentService textDocumentService;
-    private final CompletableFuture<LanguageClient> client = new CompletableFuture<>();
 
     private final CqlTranslationManager translationManager;
 
@@ -38,14 +37,18 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     private final CompletableFuture<Void> exited;
 
-    private ActiveContent activeContent;
+    private final ServerContext serverContext;
 
     public CqlLanguageServer() {
+        this(new ServerContext(new CompletableFuture<>(), new ActiveContent(), new ArrayList<>()));
+    }
+
+    public CqlLanguageServer(ServerContext serverContext) {
+        this.serverContext = serverContext;
         this.exited = new CompletableFuture<>();
-        this.activeContent = new ActiveContent();
-        this.translationManager = new CqlTranslationManager(activeContent);
-        this.textDocumentService = new CqlTextDocumentService(client, this.activeContent, this.translationManager);
-        this.workspaceService = new CqlWorkspaceService(client, this.commandContributions);
+        this.translationManager = new CqlTranslationManager(this.serverContext.activeContent(), this.serverContext.contentService());
+        this.textDocumentService = new CqlTextDocumentService(this.serverContext.client(), this.serverContext.activeContent(), this.translationManager);
+        this.workspaceService = new CqlWorkspaceService(this.serverContext.client(), this.commandContributions, this.serverContext.workspaceFolders());
         this.plugins = new ArrayList<>();
         this.loadPlugins();
     }
@@ -62,7 +65,7 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
             result.setCapabilities(serverCapabilities);
             return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
-            Log.error("failed to initialize with error: {}", e.getMessage());
+            log.error("failed to initialize with error: {}", e.getMessage());
             return FuturesHelper.failedFuture(e);
         }
     }
@@ -88,9 +91,9 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
         List<CommandContribution> pluginCommandContributions = new ArrayList<>();
 
         for (CqlLanguageServerPluginFactory pluginFactory : pluginFactories) {
-            CqlLanguageServerPlugin plugin = pluginFactory.createPlugin(this.client, this.workspaceService, this.textDocumentService, this.translationManager);
+            CqlLanguageServerPlugin plugin = pluginFactory.createPlugin(this.serverContext.client(), this.workspaceService, this.textDocumentService, this.translationManager);
             this.plugins.add(plugin);
-            Log.debug("Loading plugin {}", plugin.getName());
+            log.debug("Loading plugin {}", plugin.getName());
             if (plugin.getCommandContribution() != null) {
                 pluginCommandContributions.add(plugin.getCommandContribution());
             }
@@ -135,6 +138,6 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     @Override
     public void connect(LanguageClient client) {
-        this.client.complete(client);
+        this.serverContext.client().complete(client);
     }
 }

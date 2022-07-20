@@ -16,7 +16,7 @@
             "type": "java",
             "name": "Launch Main",
             "request": "launch",
-            "mainClass": "org.opencds.cqf.cql.ls..service.Main",
+            "mainClass": "org.opencds.cqf.cql.ls.service.Main",
             "projectName": "cql-ls-service"
         },
         {

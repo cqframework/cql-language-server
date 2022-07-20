@@ -9,19 +9,14 @@ import java.util.Map.Entry;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.server.ActiveContent;
-import org.opencds.cqf.cql.ls.server.CqlUtilities;
 import org.opencds.cqf.cql.ls.server.VersionedContent;
 
 
 // LibrarySourceProvider implementation that pulls from the active content
 public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider {
-    // private static final Logger LOG = Logger.getLogger("main");
-
-    private final URI baseUri;
     private final ActiveContent activeContent;
 
-    public ActiveContentLibrarySourceProvider(URI baseUri, ActiveContent activeContent) {
-        this.baseUri = baseUri;
+    public ActiveContentLibrarySourceProvider(ActiveContent activeContent) {
         this.activeContent = activeContent;
     }
 
@@ -39,12 +34,6 @@ public class ActiveContentLibrarySourceProvider implements LibrarySourceProvider
         }
 
         for(Entry<URI, VersionedContent> uri : this.activeContent.entrySet()){
-
-            URI root = CqlUtilities.getHead(uri.getKey());
-            if (!root.equals(this.baseUri)) {
-                continue;
-            }
-            
             String content = uri.getValue().content;
             // This will match if the content contains the library definition is present.
             if (content.matches(matchText)){

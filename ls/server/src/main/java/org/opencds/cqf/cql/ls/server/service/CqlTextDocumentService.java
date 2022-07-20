@@ -69,7 +69,7 @@ import com.google.common.base.Joiner;
 import com.google.gson.JsonElement;
 
 public class CqlTextDocumentService implements TextDocumentService {
-    private static final Logger logger = LoggerFactory.getLogger(CqlTextDocumentService.class);
+    private static final Logger log = LoggerFactory.getLogger(CqlTextDocumentService.class);
     private static final long BOUNCE_DELAY = 200;
 
     private final CompletableFuture<LanguageClient> client;
@@ -112,8 +112,8 @@ public class CqlTextDocumentService implements TextDocumentService {
     }
 
     protected void doLint(Collection<URI> paths) {
-        if (logger.isDebugEnabled()) {
-            logger.debug("Lint: {}", Joiner.on(", ").join(paths));
+        if (log.isDebugEnabled()) {
+            log.debug("Lint: {}", Joiner.on(", ").join(paths));
         }
 
         Map<URI, Set<Diagnostic>> allDiagnostics = new HashMap<>();
@@ -173,7 +173,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             hover.setRange(exp.getLeft());
             return CompletableFuture.completedFuture(hover);
         } catch (Exception e) {
-            logger.error("hover: {} ", e.getMessage());
+            log.error(String.format("hover for %s", position.getTextDocument().getUri()), e);
             return FuturesHelper.failedFuture(e);
         }
     }
@@ -215,7 +215,7 @@ public class CqlTextDocumentService implements TextDocumentService {
         } catch (Exception e) {
             MessageParams mp = new MessageParams(MessageType.Error, "Unable to format CQL");
             this.client.join().showMessage(mp);
-            logger.error("formatting: {}", e.getMessage());
+            log.error(String.format("formatting for %s", params.getTextDocument().getUri()), e);
             return FuturesHelper.failedFuture(e);
         }
     }
@@ -237,7 +237,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             doLint(Collections.singleton(uri));
 
         } catch (Exception e) {
-            logger.error("didOpen for {} : {}", params.getTextDocument().getUri(), e.getMessage());
+            log.error(String.format("didOpen for %s", params.getTextDocument().getUri()), e);
         }
 
     }
@@ -269,11 +269,11 @@ public class CqlTextDocumentService implements TextDocumentService {
 
                 getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(Collections.singleton(uri)));
             } else {
-                logger.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(),
+                log.debug("Ignored change for {} with version {} <=  {}", uri, document.getVersion(),
                         existing.version);
             }
         } catch (Exception e) {
-            logger.error("didChange for {} : {}", params.getTextDocument().getUri(), e.getMessage());
+            log.error(String.format("didChange for %s", params.getTextDocument().getUri()), e);
         }
     }
 
@@ -293,7 +293,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             // Clear diagnostics
             client.join().publishDiagnostics(new PublishDiagnosticsParams(uri.toString(), new ArrayList<>()));
         } catch (Exception e) {
-            logger.error("didClose: {}", e.getMessage());
+            log.error(String.format("didClose for %s", params.getTextDocument().getUri()), e);
         }
     }
 
@@ -310,7 +310,7 @@ public class CqlTextDocumentService implements TextDocumentService {
             // workspace.
             doLint(Collections.list(this.activeContent.keys()));
         } catch (Exception e) {
-            logger.error("didSave: {}", e.getMessage());
+            log.error(String.format("didSave for %s", params.getTextDocument().getUri()), e);
         }
     }
 
@@ -384,7 +384,7 @@ public class CqlTextDocumentService implements TextDocumentService {
                     writer.write(next);
             }
         } catch (Exception e) {
-            logger.error("patch: {}", e.getMessage());
+            log.error("patch: {}", e.getMessage());
             return null;
         }
     }

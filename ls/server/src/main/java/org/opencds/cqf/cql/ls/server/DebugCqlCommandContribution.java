@@ -24,7 +24,8 @@ public class DebugCqlCommandContribution implements CommandContribution {
 
     private CompletableFuture<Object> executeCql(ExecuteCommandParams params) {
         try {
-            List<String> arguments = params.getArguments().stream().map(x -> (JsonElement) x).map(x -> x.getAsString())
+            List<String> arguments = params.getArguments().stream().map(JsonElement.class::cast)
+                    .map(JsonElement::getAsString)
                     .collect(Collectors.toList());
 
             // Temporarily redirect std out, because uh... I didn't do that very smart.
@@ -58,11 +59,10 @@ public class DebugCqlCommandContribution implements CommandContribution {
 
     @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
-        switch (params.getCommand()) {
-            case START_DEBUG_COMMAND:
-                return this.executeCql(params);
-            default:
-                return CommandContribution.super.executeCommand(params);
+        if (START_DEBUG_COMMAND.equals(params.getCommand())) {
+            return this.executeCql(params);
+        } else {
+            return CommandContribution.super.executeCommand(params);
         }
     }
 }

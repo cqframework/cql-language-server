@@ -1,12 +1,8 @@
 package org.opencds.cqf.cql.ls.server.service;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -42,33 +38,27 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.ImmutableList;
 
 public class CqlWorkspaceService implements WorkspaceService {
-    private static final Logger Log = LoggerFactory.getLogger(CqlWorkspaceService.class);
+    private static final Logger log = LoggerFactory.getLogger(CqlWorkspaceService.class);
 
     private static final List<String> basicWatchers = Arrays.asList(
             "**/cql-options.json",
             "ig.ini");
 
     private final CompletableFuture<LanguageClient> client;
-
-    private Map<String, WorkspaceFolder> workspaceFolders = new HashMap<>();
-    private CompletableFuture<List<CommandContribution>> commandContributions;
+    private final CompletableFuture<List<CommandContribution>> commandContributions;
+    private final List<WorkspaceFolder> workspaceFolders;
 
     public CqlWorkspaceService(CompletableFuture<LanguageClient> client,
-            CompletableFuture<List<CommandContribution>> commandContributions) {
+            CompletableFuture<List<CommandContribution>> commandContributions, List<WorkspaceFolder> workspaceFolders) {
         this.client = client;
         this.commandContributions = commandContributions;
+        this.workspaceFolders = workspaceFolders;
     }
 
 
     @SuppressWarnings("java:S125") // Keeping the commented code for future reference
     public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
-
-        List<WorkspaceFolder> newWorkspaceFolders = new ArrayList<>();
-        if (params.getWorkspaceFolders() != null) {
-            newWorkspaceFolders.addAll(params.getWorkspaceFolders());
-        }
-
-        this.addFolders(newWorkspaceFolders);
+        this.addFolders(params.getWorkspaceFolders());
 
         WorkspaceServerCapabilities wsc = new WorkspaceServerCapabilities();
 
@@ -101,14 +91,14 @@ public class CqlWorkspaceService implements WorkspaceService {
                                 Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD))));
 
 
-        List<FileSystemWatcher> watchers = basicWatchers.stream().map(x -> new FileSystemWatcher(x))
+        List<FileSystemWatcher> watchers = basicWatchers.stream().map(FileSystemWatcher::new)
                 .collect(Collectors.toList());
-        DidChangeWatchedFilesRegistrationOptions dcfro = new DidChangeWatchedFilesRegistrationOptions(watchers);
+        DidChangeWatchedFilesRegistrationOptions registrationOptions = new DidChangeWatchedFilesRegistrationOptions(watchers);
 
         this.client.join()
                 .registerCapability(new RegistrationParams(
                         Arrays.asList(new Registration(Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
-                                Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD, dcfro))));
+                                Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD, registrationOptions))));
     }
 
     @Override
@@ -116,6 +106,7 @@ public class CqlWorkspaceService implements WorkspaceService {
         try {
             return this.executeCommandFromContributions(params);
         } catch (Exception e) {
+            log.error(String.format("executeCommand for %s", params.getCommand()), e);
             this.client.join().showMessage(
                     new MessageParams(MessageType.Error,
                             String.format("Command %s failed with: %s", params.getCommand(), e.getMessage())));
@@ -129,7 +120,7 @@ public class CqlWorkspaceService implements WorkspaceService {
             this.addFolders(params.getEvent().getAdded());
             this.removeFolders(params.getEvent().getRemoved());
         } catch (Exception e) {
-            Log.error("didChangeWorkspaceFolders: {}", e.getMessage());
+            log.error("didChangeWorkspaceFolders", e);
         }
     }
 
@@ -143,21 +134,23 @@ public class CqlWorkspaceService implements WorkspaceService {
         EventBus.getDefault().post(new DidChangeWatchedFilesEvent(params));
     }
 
-    public Collection<WorkspaceFolder> getWorkspaceFolders() {
-        return this.workspaceFolders.values();
-    }
-
     private void addFolders(List<WorkspaceFolder> folders) {
+        if (folders == null) {
+            return;
+        }
+
         for (WorkspaceFolder f : folders) {
-            workspaceFolders.putIfAbsent(f.getUri(), f);
+            workspaceFolders.add(f);
         }
     }
 
     private void removeFolders(List<WorkspaceFolder> folders) {
+        if (folders == null) {
+            return;
+        }
+
         for (WorkspaceFolder f : folders) {
-            if (workspaceFolders.containsKey(f.getUri())) {
-                workspaceFolders.remove(f.getUri());
-            }
+            this.workspaceFolders.remove(f);
         }
     }
 

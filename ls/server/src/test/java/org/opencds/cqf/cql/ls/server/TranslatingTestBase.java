@@ -43,7 +43,7 @@ public abstract class TranslatingTestBase {
     }
 
     @BeforeClass
-    public void beforeEachTestMethod() throws JAXBException, IOException, UcumException {
+    public void before() throws JAXBException, IOException, UcumException {
         String fileName = this.getClass().getSimpleName();
         UcumService ucumService = new UcumEssenceService(
                 UcumEssenceService.class.getResourceAsStream("/ucum-essence.xml"));
