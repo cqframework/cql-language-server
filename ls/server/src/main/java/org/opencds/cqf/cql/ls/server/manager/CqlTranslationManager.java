@@ -1,6 +1,9 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -9,8 +12,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.cqframework.cql.cql2elm.CqlInternalException;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorException;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
@@ -23,6 +26,8 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.fhir.ucum.UcumEssenceService;
+import org.fhir.ucum.UcumService;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.ActiveContent;
@@ -39,22 +44,44 @@ public class CqlTranslationManager {
     private final Map<VersionedIdentifier, Model> globalCache;
     private final ActiveContent activeContent;
     private final ContentService contentService;
+    private static UcumService ucumService = null;
+
+    static {
+        try {
+            ucumService = new UcumEssenceService(
+                UcumEssenceService.class.getResourceAsStream("/ucum-essence.xml"));
+        }
+        catch(Exception e) {
+            log.warn("error initializing UcumService", e);
+        }
+    }
 
     public CqlTranslationManager(
             ActiveContent activeContent, ContentService contentService) {
         this.globalCache = new HashMap<>();
         this.activeContent = activeContent;
         this.contentService = contentService;
-
     }
 
     public CqlTranslator translate(URI uri) {
-        // TODO: Support translating from disk
         if (this.activeContent.containsKey(uri)) {
             return this.translate(uri, this.activeContent.get(uri).content);
         }
 
-        return null;
+        InputStream input = contentService.read(uri);
+        if (input == null) {
+            return null;
+        }
+
+        String content;
+        try {
+            content = IOUtils.toString(input, StandardCharsets.UTF_8.name());
+        } catch (IOException e) {
+            log.warn(String.format("error converting content to string for uri: %s", uri.toString()), e);
+            return null;
+        }
+
+        return this.translate(uri, content);
     }
 
     public CqlTranslator translate(URI uri, String content) {
@@ -62,7 +89,7 @@ public class CqlTranslationManager {
 
         LibraryManager libraryManager = this.createLibraryManager(modelManager);
 
-        return CqlTranslator.fromText(content, modelManager, libraryManager, null, getTranslatorOptions(uri));
+        return CqlTranslator.fromText(content, modelManager, libraryManager, ucumService, getTranslatorOptions(uri));
     }
 
     private CqlTranslatorOptions cachedOptions = null;
@@ -111,10 +138,6 @@ public class CqlTranslationManager {
 
         // First, assign all unassociated exceptions to this library.
         for (CqlTranslatorException exception : exceptions) {
-            if (exception instanceof CqlInternalException) {
-                continue;
-            }
-
             if (exception.getLocator() == null) {
                 exception.setLocator(
                         new TrackBack(translator.getTranslatedLibrary().getIdentifier(), 0, 0, 0, 0));
@@ -123,8 +146,12 @@ public class CqlTranslationManager {
 
         List<VersionedIdentifier> uniqueLibraries = exceptions.stream().map(x -> x.getLocator().getLibrary())
                 .distinct().filter(Objects::nonNull).collect(Collectors.toList());
+
+        // TODO: Due to the way the content service is implemented, this will scan the entire project
+        // to locate a given versioned identifier for every library in the list here. Thats ~N^2
+        // file accesses, so that's bad.
         List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
-                .map(x -> Pair.of(x, this.contentService.locate(x))).collect(Collectors.toList());
+                .map(x -> Pair.of(x, this.contentService.locate(x).get(0))).collect(Collectors.toList());
 
         Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();
         for (Pair<VersionedIdentifier, URI> p : libraryUriList) {
