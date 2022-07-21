@@ -5,6 +5,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.commons.io.FileUtils;
@@ -32,15 +33,22 @@ public class FileContentService implements ContentService {
     }
 
     @Override
-    public URI locate(VersionedIdentifier identifier) {
+    public List<URI> locate(VersionedIdentifier identifier) {
+        // TODO: Actually, the content service here just needs to search through folders
+        // that have CQL files in them. It should also explode if two or more
+        // matches for a given versioned identifier are found.
+        //
+        // One way we could implement the "search only CQL folders" behavior is to register
+        // file watchers with the language client to notify us. Then we could limit searches
+        // to the appropriate folders, or keep a registry.
         for (WorkspaceFolder w : this.workspaceFolders) {
             File file = searchFolder(w.getUri(), identifier);
             if (file != null && file.exists()) {
-                return file.toURI();
+                return Collections.singletonList(file.toURI());
             }
         }
 
-        return null;
+        return Collections.emptyList();
     }
 
     public static File searchFolder(String directory, VersionedIdentifier libraryIdentifier) {
