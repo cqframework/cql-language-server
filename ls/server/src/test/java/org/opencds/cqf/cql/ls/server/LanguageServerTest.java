@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.server;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,7 +53,7 @@ public class LanguageServerTest {
     }
 
     @Test
-    public void hover() throws Exception {
+    public void hoverInt() throws Exception {
         LanguageClient client = Mockito.mock(LanguageClient.class);
         ActiveContent content = new ActiveContent();
         List<WorkspaceFolder> folders = new ArrayList<>();
@@ -64,16 +65,60 @@ public class LanguageServerTest {
 
         Hover hover = server.getTextDocumentService().hover(new HoverParams(new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(5, 2))).get();
 
-
         server.shutdown().get(100, TimeUnit.MILLISECONDS);
         server.exit();
         server.exited().get(100, TimeUnit.MILLISECONDS);
-
 
         assertNotNull(hover);
         assertNotNull(hover.getContents().getRight());
 
         MarkupContent markup = hover.getContents().getRight();
+        assertEquals(markup.getKind(), "markdown");
         assertEquals(markup.getValue(), "```System.Integer```");
+    }
+
+    @Test
+    public void hoverNothing() throws Exception {
+        LanguageClient client = Mockito.mock(LanguageClient.class);
+        ActiveContent content = new ActiveContent();
+        List<WorkspaceFolder> folders = new ArrayList<>();
+        CqlLanguageServer server = new CqlLanguageServer(new ServerContext(CompletableFuture.completedFuture(client), content, folders, new TestContentService()));
+        server.connect(client);
+        InitializeResult initializeResult = server.initialize(new InitializeParams()).get();
+        assertNotNull(initializeResult);
+        server.initialized(new InitializedParams());
+
+        Hover hover = server.getTextDocumentService().hover(new HoverParams(new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(2, 0))).get();
+
+        server.shutdown().get(100, TimeUnit.MILLISECONDS);
+        server.exit();
+        server.exited().get(100, TimeUnit.MILLISECONDS);
+
+        assertNull(hover);
+    }
+
+    @Test
+    public void hoverList() throws Exception {
+        LanguageClient client = Mockito.mock(LanguageClient.class);
+        ActiveContent content = new ActiveContent();
+        List<WorkspaceFolder> folders = new ArrayList<>();
+        CqlLanguageServer server = new CqlLanguageServer(new ServerContext(CompletableFuture.completedFuture(client), content, folders, new TestContentService()));
+        server.connect(client);
+        InitializeResult initializeResult = server.initialize(new InitializeParams()).get();
+        assertNotNull(initializeResult);
+        server.initialized(new InitializedParams());
+
+        Hover hover = server.getTextDocumentService().hover(new HoverParams(new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(8, 2))).get();
+
+        server.shutdown().get(100, TimeUnit.MILLISECONDS);
+        server.exit();
+        server.exited().get(100, TimeUnit.MILLISECONDS);
+
+        assertNotNull(hover);
+        assertNotNull(hover.getContents().getRight());
+
+        MarkupContent markup = hover.getContents().getRight();
+        assertEquals(markup.getKind(), "markdown");
+        assertEquals(markup.getValue(), "```list<System.Integer>```");
     }
 }
