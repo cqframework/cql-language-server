@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.debug.service;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-
 import org.eclipse.lsp4j.debug.launch.DSPLauncher;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
@@ -11,9 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This class starts a CqlDebugServer listening on std-in and std-out.
- * NOTE: This stand-alone server is not the primary way the CqlDebugServer is expected to be used.
- * Rather, the typically usage will be as a plugin to the CqlLanguageServer to add debug capabilities
+ * This class starts a CqlDebugServer listening on std-in and std-out. NOTE: This stand-alone server
+ * is not the primary way the CqlDebugServer is expected to be used. Rather, the typically usage
+ * will be as a plugin to the CqlLanguageServer to add debug capabilities
  */
 public class Main {
 
@@ -21,18 +20,21 @@ public class Main {
 
     /**
      * Entrypoint for the cql-debug-service
+     *
      * @param args the commandline parameters (none supported currently)
      * @throws InterruptedException if server thread is cancelled
-     * @throws ExecutionException  if server thread errors
+     * @throws ExecutionException if server thread errors
      */
     public static void main(String[] args) throws InterruptedException, ExecutionException {
         log.info("java.version is {}", System.getProperty("java.version"));
-        log.info("cql-debug version is {}", CqlDebugServer.class.getPackage().getImplementationVersion());
+        log.info("cql-debug version is {}",
+                CqlDebugServer.class.getPackage().getImplementationVersion());
 
         CqlDebugServer server = new CqlDebugServer();
 
         @SuppressWarnings("java:S106")
-        Launcher<IDebugProtocolClient> launcher = DSPLauncher.createServerLauncher(server, System.in, System.out);
+        Launcher<IDebugProtocolClient> launcher =
+                DSPLauncher.createServerLauncher(server, System.in, System.out);
 
         server.connect(launcher.getRemoteProxy());
         Future<Void> serverThread = launcher.startListening();

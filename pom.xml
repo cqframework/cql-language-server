@@ -22,6 +22,7 @@
         <cql-evaluator.version>1.4.4</cql-evaluator.version>
         <auto-service.version>1.0</auto-service.version>
         <slf4j.version>1.7.29</slf4j.version>
+        <spring.boot.version>2.7.2</spring.boot.version>
     </properties>
 
     <modules>
@@ -81,6 +82,14 @@
     </distributionManagement>
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Boot-->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-parent</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!-- CQL-to-ELM Translator -->
             <dependency>
                 <groupId>info.cqframework</groupId>
@@ -242,7 +251,7 @@
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
-                    <version>2.7.1</version>
+                    <version>${spring.boot.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

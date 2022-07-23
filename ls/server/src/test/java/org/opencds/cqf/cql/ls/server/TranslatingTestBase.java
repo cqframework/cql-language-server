@@ -4,9 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
-
 import javax.xml.bind.JAXBException;
-
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibraryManager;
@@ -35,8 +33,10 @@ public abstract class TranslatingTestBase {
     protected static LibraryManager getLibraryManager() {
         if (libraryManager == null) {
             libraryManager = new LibraryManager(getModelManager());
-            libraryManager.getLibrarySourceLoader().registerProvider(new TestLibrarySourceProvider());
-            libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
+            libraryManager.getLibrarySourceLoader()
+                    .registerProvider(new TestLibrarySourceProvider());
+            libraryManager.getLibrarySourceLoader()
+                    .registerProvider(new FhirLibrarySourceProvider());
         }
 
         return libraryManager;
@@ -47,14 +47,15 @@ public abstract class TranslatingTestBase {
         String fileName = this.getClass().getSimpleName();
         UcumService ucumService = new UcumEssenceService(
                 UcumEssenceService.class.getResourceAsStream("/ucum-essence.xml"));
-        File cqlFile = new File(URLDecoder.decode(this.getClass().getResource(fileName + ".cql").getFile(), "UTF-8"));
+        File cqlFile = new File(URLDecoder
+                .decode(this.getClass().getResource(fileName + ".cql").getFile(), "UTF-8"));
 
         ArrayList<CqlTranslator.Options> options = new ArrayList<>();
         options.add(CqlTranslator.Options.EnableDateRangeOptimization);
         options.add(CqlTranslator.Options.EnableAnnotations);
         options.add(CqlTranslator.Options.EnableLocators);
-        cqlTranslator = CqlTranslator.fromFile(cqlFile, getModelManager(), getLibraryManager(), ucumService,
-                options.toArray(new CqlTranslator.Options[options.size()]));
+        cqlTranslator = CqlTranslator.fromFile(cqlFile, getModelManager(), getLibraryManager(),
+                ucumService, options.toArray(new CqlTranslator.Options[options.size()]));
 
     }
 }

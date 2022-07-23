@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.ls.plugin.debug;
 
 import java.util.concurrent.CompletableFuture;
-
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
@@ -27,7 +26,7 @@ public class DebugPlugin implements CqlLanguageServerPlugin {
 
 
     public DebugPlugin(CompletableFuture<LanguageClient> client, WorkspaceService workspaceService,
-    TextDocumentService textDocumentService, CqlTranslationManager translationManager) {
+            TextDocumentService textDocumentService, CqlTranslationManager translationManager) {
         this.client = client;
         this.workspaceService = workspaceService;
         this.textDocumentService = textDocumentService;

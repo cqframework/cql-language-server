@@ -9,24 +9,22 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.opencds.cqf.cql.evaluator.cli.Main;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
-
 import com.google.gson.JsonElement;
 
 // TODO: This will be moved to the debug plugin once that's more fully baked..
 public class DebugCqlCommandContribution implements CommandContribution {
 
     // TODO: Delete once the plugin is fully supported
-    public static final String START_DEBUG_COMMAND = "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
+    public static final String START_DEBUG_COMMAND =
+            "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
 
     private CompletableFuture<Object> executeCql(ExecuteCommandParams params) {
         try {
             List<String> arguments = params.getArguments().stream().map(JsonElement.class::cast)
-                    .map(JsonElement::getAsString)
-                    .collect(Collectors.toList());
+                    .map(JsonElement::getAsString).collect(Collectors.toList());
 
             // Temporarily redirect std out, because uh... I didn't do that very smart.
             ByteArrayOutputStream baosOut = new ByteArrayOutputStream();

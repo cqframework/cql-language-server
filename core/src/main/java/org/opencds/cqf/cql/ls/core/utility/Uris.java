@@ -21,8 +21,8 @@ public class Uris {
 
     public static URI withPath(URI uri, String path) {
         try {
-            return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path, uri.getFragment(),
-                    uri.getQuery());
+            return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path,
+                    uri.getFragment(), uri.getQuery());
         } catch (Exception e) {
             return null;
         }
@@ -31,4 +31,13 @@ public class Uris {
     public static URI addPath(URI uri, String path) {
         return withPath(uri, uri.getPath() + path);
     }
+
+    public static URI parseOrNull(String uriString) {
+        try {
+            return new URI(uriString);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
 }

@@ -8,7 +8,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
 import org.eclipse.lsp4j.debug.launch.DSPLauncher;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
@@ -33,11 +32,11 @@ public class DebugSession {
     }
 
     public CompletableFuture<Integer> start() {
-            synchronized(this) {
-                this.isActive = true;
-            }
-            startListening();
-            return this.port;
+        synchronized (this) {
+            this.isActive = true;
+        }
+        startListening();
+        return this.port;
     }
 
     public CqlDebugServer getDebugServer() {
@@ -50,12 +49,12 @@ public class DebugSession {
 
     private void startListening() {
         threadService.submit(() -> {
-            try(ServerSocket serverSocket = new ServerSocket(0)) {
+            try (ServerSocket serverSocket = new ServerSocket(0)) {
                 serverSocket.setSoTimeout(10000);
                 this.port.complete(serverSocket.getLocalPort());
                 Socket s = serverSocket.accept();
-                Launcher<IDebugProtocolClient> launcher = DSPLauncher.createServerLauncher(this.getDebugServer(),
-                        s.getInputStream(), s.getOutputStream());
+                Launcher<IDebugProtocolClient> launcher = DSPLauncher.createServerLauncher(
+                        this.getDebugServer(), s.getInputStream(), s.getOutputStream());
                 this.getDebugServer().connect(launcher.getRemoteProxy());
 
                 // We'll exit the server when the client disconnects.
@@ -73,7 +72,7 @@ public class DebugSession {
             } catch (Exception e) {
                 log.error("error in debug session", e);
             }
-            synchronized(this) {
+            synchronized (this) {
                 this.isActive = false;
             }
         });

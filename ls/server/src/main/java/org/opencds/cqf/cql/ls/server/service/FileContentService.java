@@ -1,13 +1,12 @@
-package org.opencds.cqf.cql.ls.server;
+package org.opencds.cqf.cql.ls.server.service;
 
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
@@ -41,14 +40,15 @@ public class FileContentService implements ContentService {
         // One way we could implement the "search only CQL folders" behavior is to register
         // file watchers with the language client to notify us. Then we could limit searches
         // to the appropriate folders, or keep a registry.
+        List<URI> uris = new ArrayList<>();
         for (WorkspaceFolder w : this.workspaceFolders) {
             File file = searchFolder(w.getUri(), identifier);
             if (file != null && file.exists()) {
-                return Collections.singletonList(file.toURI());
+                uris.add(file.toURI());
             }
         }
 
-        return Collections.emptyList();
+        return uris;
     }
 
     public static File searchFolder(String directory, VersionedIdentifier libraryIdentifier) {
@@ -63,13 +63,13 @@ public class FileContentService implements ContentService {
         // First, try a direct match
         String libraryName = libraryIdentifier.getId();
         Path libraryPath = path.resolve(String.format("%s%s.cql", libraryName,
-                libraryIdentifier.getVersion() != null ? ("-" + libraryIdentifier.getVersion()) : ""));
+                libraryIdentifier.getVersion() != null ? ("-" + libraryIdentifier.getVersion())
+                        : ""));
         File libraryFile = libraryPath.toFile();
 
-        if(libraryFile.exists()) {
+        if (libraryFile.exists()) {
             return libraryFile;
-        }
-        else {
+        } else {
             return nearestMatch(path, libraryIdentifier.getId(), libraryIdentifier.getVersion());
         }
     }
@@ -94,15 +94,15 @@ public class FileContentService implements ContentService {
     }
 
     private static File nearestMatch(Path directory, String name, String version) {
-        Collection<File> files = FileUtils.listFiles(directory.toFile(), ioFilter(name), TrueFileFilter.INSTANCE);
+        Collection<File> files =
+                FileUtils.listFiles(directory.toFile(), ioFilter(name), TrueFileFilter.INSTANCE);
         if (files == null || files.isEmpty()) {
             return null;
         }
 
         File mostRecentFile = null;
         Version mostRecent = null;
-        Version requestedVersion = version == null ? null
-                : new Version(version);
+        Version requestedVersion = version == null ? null : new Version(version);
 
         // The filter will give us all the files that start with the appropriate the
         // appropriate name. We then need to
