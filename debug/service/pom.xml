@@ -19,12 +19,6 @@
             <artifactId>cql-debug-server</artifactId>
             <version>1.5.7-SNAPSHOT</version>
         </dependency>
-
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <optional>true</optional>
-        </dependency>
     </dependencies>
 
 

@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.ls.server.manager;
 
 import java.util.HashMap;
 import java.util.Map;
-
 import org.cqframework.cql.cql2elm.ModelInfoLoader;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
@@ -24,20 +23,20 @@ public class CacheAwareModelManager extends ModelManager {
         this.localCache = new HashMap<>();
     }
 
-	private Model buildModel(VersionedIdentifier identifier) {
+    private Model buildModel(VersionedIdentifier identifier) {
         ModelInfoLoader loader = new ModelInfoLoader();
         Model model = null;
         try {
             ModelInfo modelInfo = loader.getModelInfo(identifier);
             if (identifier.getId().equals("System")) {
                 model = new SystemModel(modelInfo);
-            }
-            else {
+            } else {
                 model = new Model(modelInfo, this);
             }
         } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s.",
-                    identifier.getId(), identifier.getVersion()));
+            throw new IllegalArgumentException(
+                    String.format("Could not load model information for model %s, version %s.",
+                            identifier.getId(), identifier.getVersion()));
         }
 
         return model;
@@ -48,9 +47,12 @@ public class CacheAwareModelManager extends ModelManager {
         Model model = null;
         if (this.localCache.containsKey(modelIdentifier.getId())) {
             model = this.localCache.get(modelIdentifier.getId());
-            if (modelIdentifier.getVersion() != null && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
-                throw new IllegalArgumentException(String.format("Could not load model information for model %s, version %s because version %s is already loaded.",
-                        modelIdentifier.getId(), modelIdentifier.getVersion(), model.getModelInfo().getVersion()));
+            if (modelIdentifier.getVersion() != null
+                    && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
+                throw new IllegalArgumentException(String.format(
+                        "Could not load model information for model %s, version %s because version %s is already loaded.",
+                        modelIdentifier.getId(), modelIdentifier.getVersion(),
+                        model.getModelInfo().getVersion()));
             }
 
         }

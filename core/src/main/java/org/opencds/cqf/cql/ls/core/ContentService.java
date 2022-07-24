@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.net.URI;
 import java.util.List;
 import java.util.Objects;
-
 import org.apache.commons.lang3.NotImplementedException;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.slf4j.Logger;
@@ -15,8 +14,8 @@ public interface ContentService {
     static final Logger log = LoggerFactory.getLogger(ContentService.class);
 
 
-    default List<URI> locate(VersionedIdentifier libraryIdentifier) {
-        Objects.requireNonNull(libraryIdentifier);
+    default List<URI> locate(VersionedIdentifier identifier) {
+        Objects.requireNonNull(identifier);
         throw new NotImplementedException();
     }
 
@@ -29,7 +28,9 @@ public interface ContentService {
         }
 
         if (locations.size() > 1) {
-            throw new IllegalStateException(String.format("more than one file was found for library: %s version: %s in the current workspace.", identifier.getId(), identifier.getVersion()));
+            throw new IllegalStateException(String.format(
+                    "more than one file was found for library: %s version: %s in the current workspace.",
+                    identifier.getId(), identifier.getVersion()));
         }
         return read(locations.get(0));
     }
@@ -39,8 +40,7 @@ public interface ContentService {
 
         try {
             return uri.toURL().openStream();
-        }
-        catch(IOException e) {
+        } catch (IOException e) {
             log.warn(String.format("error opening stream for: %s", uri.toString()), e);
             return null;
         }

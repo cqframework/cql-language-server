@@ -23,7 +23,7 @@ public class ExpressionTrackBackVisitor extends ElmBaseLibraryVisitor<Element, T
     @Override
     public Element visitExpressionDef(ExpressionDef elm, TrackBack context) {
         if (elm instanceof FunctionDef) {
-            return visitFunctionDef((FunctionDef)elm, context);
+            return visitFunctionDef((FunctionDef) elm, context);
         }
         Element childResult = visitChildren(elm, context);
         return aggregateResult(elementCoversTrackBack(elm, context) ? elm : null, childResult);
@@ -73,5 +73,5 @@ public class ExpressionTrackBackVisitor extends ElmBaseLibraryVisitor<Element, T
         // Same line
         return left.getEndChar() >= right.getEndChar();
     }
-    
+
 }

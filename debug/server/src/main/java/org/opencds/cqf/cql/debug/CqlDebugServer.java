@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.debug;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-
 import org.eclipse.lsp4j.debug.Capabilities;
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
 import org.eclipse.lsp4j.debug.DisconnectArguments;
@@ -22,6 +21,7 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
     }
 
     protected final CompletableFuture<IDebugProtocolClient> client = new CompletableFuture<>();
+
     @Override
     public void connect(IDebugProtocolClient client) {
         this.client.complete(client);
@@ -36,24 +36,22 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
         /// And... nothing else at this point.
 
         setState(ServerState.INITIALIZED);
-        return CompletableFuture
-            .completedFuture(capabilities)
-            .whenCompleteAsync((c, e) -> this.client.join().initialized());
+        return CompletableFuture.completedFuture(capabilities)
+                .whenCompleteAsync((c, e) -> this.client.join().initialized());
     }
 
     @Override
     public CompletableFuture<Void> configurationDone(ConfigurationDoneArguments args) {
         checkState(ServerState.INITIALIZED);
         setState(ServerState.CONFIGURED);
-		return CompletableFuture.completedFuture(null);
-	}
+        return CompletableFuture.completedFuture(null);
+    }
 
     @Override
-	public CompletableFuture<Void> disconnect(DisconnectArguments args) {
-        return CompletableFuture
-            .runAsync(() -> {})
-            .whenCompleteAsync((o, e) -> this.exitServer());
-	}
+    public CompletableFuture<Void> disconnect(DisconnectArguments args) {
+        return CompletableFuture.runAsync(() -> {
+        }).whenCompleteAsync((o, e) -> this.exitServer());
+    }
 
     @Override
     public CompletableFuture<Void> launch(Map<String, Object> args) {
@@ -61,18 +59,17 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
         setState(ServerState.RUNNING);
 
         // Create CQL request arguments..
-        return CompletableFuture
-            .runAsync(() -> {})
-            .thenRunAsync(() -> { 
-                this.terminateServer();
-                this.exitServer();
+        return CompletableFuture.runAsync(() -> {
+        }).thenRunAsync(() -> {
+            this.terminateServer();
+            this.exitServer();
         });
     }
 
     protected void terminateServer() {
         this.terminateServer(null);
     }
-    
+
     protected void terminateServer(Object restart) {
         TerminatedEventArguments terminatedEventArguments = new TerminatedEventArguments();
         terminatedEventArguments.setRestart(restart);
@@ -97,7 +94,9 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
 
     protected void checkState(ServerState requiredState) {
         if (this.serverState != requiredState) {
-            throw new IllegalStateException(String.format("Operation required state %s, server actual state: %s", requiredState.toString(), this.serverState.toString()));
+            throw new IllegalStateException(
+                    String.format("Operation required state %s, server actual state: %s",
+                            requiredState.toString(), this.serverState.toString()));
         }
     }
 
