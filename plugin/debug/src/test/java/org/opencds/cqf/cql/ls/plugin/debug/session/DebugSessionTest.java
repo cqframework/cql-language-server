@@ -1,7 +1,7 @@
 package org.opencds.cqf.cql.ls.plugin.debug.session;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import java.net.Socket;
 import java.util.concurrent.Future;
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
@@ -10,8 +10,8 @@ import org.eclipse.lsp4j.debug.InitializeRequestArguments;
 import org.eclipse.lsp4j.debug.launch.DSPLauncher;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
+import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.plugin.debug.client.TestDebugClient;
-import org.testng.annotations.Test;
 
 public class DebugSessionTest {
 

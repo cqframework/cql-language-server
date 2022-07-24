@@ -12,7 +12,7 @@ import org.cqframework.cql.cql2elm.ModelManager;
 import org.fhir.ucum.UcumEssenceService;
 import org.fhir.ucum.UcumException;
 import org.fhir.ucum.UcumService;
-import org.testng.annotations.BeforeClass;
+import org.junit.jupiter.api.BeforeAll;
 
 public abstract class TranslatingTestBase {
 
@@ -42,7 +42,7 @@ public abstract class TranslatingTestBase {
         return libraryManager;
     }
 
-    @BeforeClass
+    @BeforeAll
     public void before() throws JAXBException, IOException, UcumException {
         String fileName = this.getClass().getSimpleName();
         UcumService ucumService = new UcumEssenceService(

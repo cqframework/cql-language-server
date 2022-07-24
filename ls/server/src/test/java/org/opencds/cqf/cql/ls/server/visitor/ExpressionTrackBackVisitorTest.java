@@ -2,15 +2,15 @@ package org.opencds.cqf.cql.ls.server.visitor;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library;
 import org.hl7.elm.r1.Retrieve;
+import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.server.TranslatingTestBase;
-import org.testng.annotations.Test;
 
 
 public class ExpressionTrackBackVisitorTest extends TranslatingTestBase {

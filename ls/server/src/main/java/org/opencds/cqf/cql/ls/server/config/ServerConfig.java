@@ -108,8 +108,9 @@ public class ServerConfig {
 
     @Bean
     DiagnosticsService diagnosticsService(CompletableFuture<LanguageClient> languageClient,
-            CqlTranslationManager cqlTranslationManager) {
-        DiagnosticsService ds = new DiagnosticsService(languageClient, cqlTranslationManager);
+            CqlTranslationManager cqlTranslationManager, ContentService contentService) {
+        DiagnosticsService ds =
+                new DiagnosticsService(languageClient, cqlTranslationManager, contentService);
 
         EventBus.getDefault().register(ds);
 
