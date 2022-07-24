@@ -36,10 +36,9 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     @Override
     public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
         try {
-
             ServerCapabilities serverCapabilities = new ServerCapabilities();
-            this.initializeWorkspaceService(params, serverCapabilities);
-            this.initializeTextDocumentService(params, serverCapabilities);
+            this.workspaceService.initialize(params, serverCapabilities);
+            this.textDocumentService.initialize(params, serverCapabilities);
 
             InitializeResult result = new InitializeResult();
             result.setCapabilities(serverCapabilities);
@@ -53,16 +52,6 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     @Override
     public void initialized(InitializedParams params) {
         // Nothing to do, currently.
-    }
-
-    private void initializeTextDocumentService(InitializeParams params,
-            ServerCapabilities serverCapabilities) {
-        this.textDocumentService.initialize(params, serverCapabilities);
-    }
-
-    private void initializeWorkspaceService(InitializeParams params,
-            ServerCapabilities serverCapabilities) {
-        this.workspaceService.initialize(params, serverCapabilities);
     }
 
     @Override

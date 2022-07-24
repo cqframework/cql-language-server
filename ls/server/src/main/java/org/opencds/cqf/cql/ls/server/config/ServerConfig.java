@@ -8,7 +8,6 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.greenrobot.eventbus.EventBus;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
-import org.opencds.cqf.cql.ls.server.ServerContext;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
@@ -58,33 +57,17 @@ public class ServerConfig {
     }
 
     @Bean
-    public ServerContext serverContext(CompletableFuture<LanguageClient> languageClient,
-            ContentService activeContentService, List<WorkspaceFolder> workspaceFolders) {
-        return new ServerContext(languageClient, workspaceFolders, activeContentService);
-    }
-
-    @Bean
     public CqlTextDocumentService cqlTextDocumentService(
             CompletableFuture<LanguageClient> languageClient, HoverProvider hoverProvider,
             FormattingProvider formattingProvider) {
-        CqlTextDocumentService ts =
-                new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider);
-
-        // EventBus.getDefault().register(ts);
-
-        return ts;
+        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider);
     }
 
     @Bean
     CqlWorkspaceService cqlWorkspaceService(CompletableFuture<LanguageClient> languageClient,
             CompletableFuture<List<CommandContribution>> commandContributions,
             List<WorkspaceFolder> workspaceFolders) {
-        CqlWorkspaceService cws =
-                new CqlWorkspaceService(languageClient, commandContributions, workspaceFolders);
-
-        // EventBus.getDefault().register(cws);
-
-        return cws;
+        return new CqlWorkspaceService(languageClient, commandContributions, workspaceFolders);
     }
 
     @Bean

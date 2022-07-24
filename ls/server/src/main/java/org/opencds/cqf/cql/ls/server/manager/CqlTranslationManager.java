@@ -40,7 +40,6 @@ public class CqlTranslationManager {
     }
 
     public CqlTranslationManager(ContentService contentService) {
-
         this.globalCache = new HashMap<>();
         this.contentService = contentService;
     }
