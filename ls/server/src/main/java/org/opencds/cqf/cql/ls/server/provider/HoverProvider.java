@@ -28,11 +28,29 @@ public class HoverProvider {
             return null;
         }
 
+        // This translates on the fly. We may want to consider maintaining
+        // an ELM index to reduce the need to do retranslation.
         CqlTranslator translator = this.cqlTranslationManager.translate(uri);
         if (translator == null) {
             return null;
         }
 
+        // The ExpressionTrackBackVisitor is supposed to replace this eventually.
+        // Basically, for any given position in the text document there's a graph of nodes
+        // that represent the parents nodes for that position. For example:
+        //
+        // define: "EncounterExists":
+        // exists([Encounter])
+        //
+        // ExpressionDef -> Expression -> Exists -> Retrieve
+        //
+        // For that given position, we want to select the most specific node we support generating
+        // hover information for and return that.
+        //
+        // (maybe.. the alternative is to select the specific node under the cursor, but that may be
+        // less user friendly)
+        //
+        // The current code always picks the first ExpressionDef in the graph.
         Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
                 translator.getTranslatedLibrary().getLibrary().getStatements());
 
@@ -94,6 +112,8 @@ public class HoverProvider {
             return null;
         }
 
+        // Specifying the Markdown type as cql allows the client to apply
+        // cql syntax highlighting the resulting pop-up
         String result = String.join("\n", "```cql", resultType.toString(), "```");
 
         return new MarkupContent("markdown", result);
