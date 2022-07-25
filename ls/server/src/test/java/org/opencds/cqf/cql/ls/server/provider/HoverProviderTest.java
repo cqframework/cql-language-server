@@ -8,17 +8,26 @@ import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.opencds.cqf.cql.ls.server.config.TestConfig;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
+import org.opencds.cqf.cql.ls.server.service.TestContentService;
 
 
-@SpringBootTest(classes = {TestConfig.class})
+
 public class HoverProviderTest {
 
-    @Autowired
-    HoverProvider hoverProvider;
+    private static HoverProvider hoverProvider;
+
+    @BeforeAll
+    public static void beforeAll() {
+        ContentService cs = new TestContentService();
+        CqlTranslationManager cqlTranslationManager =
+                new CqlTranslationManager(cs, new TranslatorOptionsManager(cs));
+        hoverProvider = new HoverProvider(cqlTranslationManager);
+    }
 
     @Test
     public void hoverInt() throws Exception {

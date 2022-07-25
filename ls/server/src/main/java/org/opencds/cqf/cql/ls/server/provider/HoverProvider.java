@@ -22,11 +22,6 @@ public class HoverProvider {
         this.cqlTranslationManager = cqlTranslationManager;
     }
 
-    // TODO: Right now this just implements return type highlighting for expressions
-    // only.
-    // It also only works for top-level expressions.
-    // This functionality should probably be part of signature help
-    // So, some future work is do that and also make it work for sub-expressions.
     public Hover hover(HoverParams position) {
         URI uri = Uris.parseOrNull(position.getTextDocument().getUri());
         if (uri == null) {

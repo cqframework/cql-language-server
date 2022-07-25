@@ -137,11 +137,10 @@ public class FileContentService implements ContentService {
                 return file;
             }
             // Otherwise, find the most recent compatible version
-            else if (requestedVersion == null || v.compatibleWith(requestedVersion)) {
-                if (mostRecent == null || v.compareTo(mostRecent) > 0) {
-                    mostRecent = v;
-                    mostRecentFile = file;
-                }
+            else if ((requestedVersion == null || v.compatibleWith(requestedVersion))
+                    && (mostRecent == null || v.compareTo(mostRecent) > 0)) {
+                mostRecent = v;
+                mostRecentFile = file;
             }
         }
 

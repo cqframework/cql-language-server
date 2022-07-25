@@ -19,7 +19,7 @@ public class DebugServerTest {
         CqlDebugServer server = new CqlDebugServer();
         server.connect(client);
 
-        assertEquals(server.getState(), ServerState.STARTED);
+        assertEquals(ServerState.STARTED, server.getState());
 
         // https://microsoft.github.io/debug-adapter-protocol/overview
 
@@ -39,9 +39,8 @@ public class DebugServerTest {
         assertNotNull(capabilities);
 
         // Server should send the "initialized" event once it's ready
-        // TODO:
         Mockito.verify(client).initialized();
-        assertEquals(server.getState(), ServerState.INITIALIZED);
+        assertEquals(ServerState.INITIALIZED, server.getState());
 
         // SetBreakpointsResponse setBreakpointsResponse = server.setBreakpoints(new
         // SetBreakpointsArguments()).get();
@@ -55,7 +54,7 @@ public class DebugServerTest {
         // server.setExceptionBreakpoints(new SetExceptionBreakpointsArguments()).get();
 
         server.configurationDone(new ConfigurationDoneArguments()).get();
-        assertEquals(server.getState(), ServerState.CONFIGURED);
+        assertEquals(ServerState.CONFIGURED, server.getState());
 
         // Server should now be ready to launch...
         // The "launch" options are specific to the CQL implementation
@@ -67,7 +66,7 @@ public class DebugServerTest {
         // terminated, and then exited
         Mockito.verify(client).terminated(any());
         Mockito.verify(client).exited(any());
-        assertEquals(server.getState(), ServerState.STOPPED);
+        assertEquals(ServerState.STOPPED, server.getState());
 
     }
 

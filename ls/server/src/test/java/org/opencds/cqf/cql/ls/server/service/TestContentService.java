@@ -1,4 +1,4 @@
-package org.opencds.cqf.cql.ls.server;
+package org.opencds.cqf.cql.ls.server.service;
 
 import java.io.InputStream;
 import java.net.URI;

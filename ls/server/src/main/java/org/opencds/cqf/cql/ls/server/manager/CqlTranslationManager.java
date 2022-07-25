@@ -60,7 +60,7 @@ public class CqlTranslationManager {
             return CqlTranslator.fromStream(stream, modelManager, libraryManager, ucumService,
                     this.translatorOptionsManager.getOptions(uri));
         } catch (IOException e) {
-            throw new RuntimeException(
+            throw new IllegalArgumentException(
                     String.format("error creating translator for uri: %s", uri.toString()), e);
         }
     }
