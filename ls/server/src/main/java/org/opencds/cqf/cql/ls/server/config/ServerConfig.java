@@ -17,6 +17,7 @@ import org.opencds.cqf.cql.ls.server.service.ActiveContentService;
 import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService;
 import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService;
 import org.opencds.cqf.cql.ls.server.service.DiagnosticsService;
+import org.opencds.cqf.cql.ls.server.service.FederatedContentService;
 import org.opencds.cqf.cql.ls.server.service.FileContentService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,14 +32,21 @@ public class ServerConfig {
         return new FileContentService(workspaceFolders);
     }
 
-    @Bean(name = {"contentService", "activeContentService"})
-    public ContentService activeContentService(ContentService fileContentService) {
-        ActiveContentService ac = new ActiveContentService(fileContentService);
+    @Bean(name = {"activeContentService"})
+    public ActiveContentService activeContentService() {
+        ActiveContentService ac = new ActiveContentService();
 
         EventBus.getDefault().register(ac);
 
         return ac;
     }
+
+    @Bean(name = {"contentService"})
+    public ContentService contentService(ActiveContentService activeContentService,
+            ContentService fileContentService) {
+        return new FederatedContentService(activeContentService, fileContentService);
+    }
+
 
     @Bean
     public CqlLanguageServer cqlLanguageServer(CompletableFuture<LanguageClient> languageClient,

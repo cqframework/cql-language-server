@@ -1,12 +1,14 @@
 package org.opencds.cqf.cql.ls.server.service;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
@@ -32,15 +34,16 @@ public class FileContentService implements ContentService {
     }
 
     @Override
-    public List<URI> locate(VersionedIdentifier identifier) {
+    public Set<URI> locate(VersionedIdentifier identifier) {
+        checkNotNull(identifier);
+
         // TODO: Actually, the content service here just needs to search through folders
-        // that have CQL files in them. It should also explode if two or more
-        // matches for a given versioned identifier are found.
-        //
+        // that have CQL files in them.
+
         // One way we could implement the "search only CQL folders" behavior is to register
         // file watchers with the language client to notify us. Then we could limit searches
         // to the appropriate folders, or keep a registry.
-        List<URI> uris = new ArrayList<>();
+        Set<URI> uris = new HashSet<>();
         for (WorkspaceFolder w : this.workspaceFolders) {
             File file = searchFolder(w.getUri(), identifier);
             if (file != null && file.exists()) {

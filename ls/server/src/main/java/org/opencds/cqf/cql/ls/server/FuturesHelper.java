@@ -1,6 +1,6 @@
 package org.opencds.cqf.cql.ls.server;
 
-import java.util.Objects;
+import static com.google.common.base.Preconditions.checkNotNull;
 import java.util.concurrent.CompletableFuture;
 
 public class FuturesHelper {
@@ -9,7 +9,7 @@ public class FuturesHelper {
     }
 
     public static <U> CompletableFuture<U> failedFuture(Throwable ex) {
-        Objects.requireNonNull(ex);
+        checkNotNull(ex);
         CompletableFuture<U> future = new CompletableFuture<>();
         future.completeExceptionally(ex);
         return future;

@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.server.service;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -83,8 +84,8 @@ public class DiagnosticsService {
 
     private void mergeDiagnostics(Map<URI, Set<Diagnostic>> currentDiagnostics,
             Map<URI, Set<Diagnostic>> newDiagnostics) {
-        Objects.requireNonNull(currentDiagnostics);
-        Objects.requireNonNull(newDiagnostics);
+        checkNotNull(currentDiagnostics);
+        checkNotNull(newDiagnostics);
 
         for (Entry<URI, Set<Diagnostic>> entry : newDiagnostics.entrySet()) {
             Set<Diagnostic> currentSet =
@@ -127,9 +128,9 @@ public class DiagnosticsService {
         // project
         // to locate a given versioned identifier for every library in the list here. Thats ~N^2
         // file accesses, so that's bad.
-        List<Pair<VersionedIdentifier, URI>> libraryUriList =
-                uniqueLibraries.stream().map(x -> Pair.of(x, this.contentService.locate(x).get(0)))
-                        .collect(Collectors.toList());
+        List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
+                .map(x -> Pair.of(x, this.contentService.locate(x).iterator().next()))
+                .collect(Collectors.toList());
 
         Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();
         for (Pair<VersionedIdentifier, URI> p : libraryUriList) {

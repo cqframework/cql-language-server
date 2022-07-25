@@ -3,8 +3,8 @@ package org.opencds.cqf.cql.ls.core;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.apache.commons.lang3.NotImplementedException;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.slf4j.Logger;
@@ -14,15 +14,14 @@ public interface ContentService {
     static final Logger log = LoggerFactory.getLogger(ContentService.class);
 
 
-    default List<URI> locate(VersionedIdentifier identifier) {
-        Objects.requireNonNull(identifier);
+    default Set<URI> locate(VersionedIdentifier identifier) {
         throw new NotImplementedException();
     }
 
     default InputStream read(VersionedIdentifier identifier) {
         Objects.requireNonNull(identifier);
 
-        List<URI> locations = locate(identifier);
+        Set<URI> locations = locate(identifier);
         if (locations.isEmpty()) {
             return null;
         }
@@ -32,7 +31,7 @@ public interface ContentService {
                     "more than one file was found for library: %s version: %s in the current workspace.",
                     identifier.getId(), identifier.getVersion()));
         }
-        return read(locations.get(0));
+        return read(locations.iterator().next());
     }
 
     default InputStream read(URI uri) {

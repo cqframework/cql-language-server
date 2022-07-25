@@ -1,6 +1,6 @@
 package org.opencds.cqf.cql.ls.service;
 
-import java.util.Objects;
+import static com.google.common.base.Preconditions.checkNotNull;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -33,7 +33,7 @@ public class LanguageClientAppender extends AppenderBase<ILoggingEvent> {
     }
 
     MessageParams createMessageParams(ILoggingEvent eventObject) {
-        Objects.requireNonNull(eventObject);
+        checkNotNull(eventObject);
 
         return new MessageParams(toType(eventObject.getLevel()), eventObject.getMessage());
     }

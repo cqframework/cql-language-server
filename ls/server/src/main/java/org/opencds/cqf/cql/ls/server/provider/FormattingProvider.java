@@ -23,15 +23,17 @@ public class FormattingProvider {
     public List<TextEdit> format(String uri) {
         URI u = checkNotNull(Uris.parseOrNull(uri));
 
-        FormatResult fr;
+        FormatResult fr = null;
         try {
             fr = CqlFormatterVisitor.getFormattedOutput(this.contentService.read(u));
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new IllegalArgumentException("Unable to format CQL due to an error.", e);
         }
 
         if (!fr.getErrors().isEmpty()) {
-            throw new RuntimeException("Unable to format CQL due to syntax errors");
+            throw new IllegalArgumentException(
+                    String.join("\n", "Unable to format CQL due to syntax errors.",
+                            "Please fix the errors and try again."));
         }
 
         TextEdit te = new TextEdit(

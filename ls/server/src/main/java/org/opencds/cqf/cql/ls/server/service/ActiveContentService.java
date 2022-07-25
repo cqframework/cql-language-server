@@ -10,9 +10,11 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -21,7 +23,6 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
-import org.opencds.cqf.cql.ls.server.ActiveContent;
 import org.opencds.cqf.cql.ls.server.VersionedContent;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
@@ -29,42 +30,29 @@ import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
 
 public class ActiveContentService implements ContentService {
 
-    private ContentService inactiveContentService;
-
-    private ActiveContent activeContent = new ActiveContent();
-
-    public ActiveContentService(ContentService inactiveContentService) {
-        this.inactiveContentService = inactiveContentService;
-    }
+    private final Map<URI, VersionedContent> activeContent = new ConcurrentHashMap<>();
 
     @Override
-    public List<URI> locate(VersionedIdentifier libraryIdentifier) {
+    public Set<URI> locate(VersionedIdentifier libraryIdentifier) {
         checkNotNull(libraryIdentifier);
 
-        List<URI> uris = searchActiveContent(libraryIdentifier);
-
-        uris.addAll(this.inactiveContentService.locate(libraryIdentifier));
-
-        return uris;
+        return searchActiveContent(libraryIdentifier);
     }
 
     @Override
     public InputStream read(VersionedIdentifier identifier) {
-        List<URI> uris = this.locate(identifier);
-        if (uris.isEmpty()) {
-            return this.inactiveContentService.read(identifier);
-        }
+        checkNotNull(identifier);
+
+        Set<URI> uris = this.locate(identifier);
 
         checkState(uris.size() == 1, "Found more than one file for identifier: {}", identifier);
 
-        return this.read(uris.get(0));
+        return this.read(uris.iterator().next());
     }
 
     @Override
     public InputStream read(URI uri) {
-        if (!this.activeContent.containsKey(uri)) {
-            return this.inactiveContentService.read(uri);
-        }
+        checkNotNull(uri);
 
         String content = this.activeContent.get(uri).content;
         return new ByteArrayInputStream(content.getBytes());
@@ -152,7 +140,7 @@ public class ActiveContentService implements ContentService {
         }
     }
 
-    public List<URI> searchActiveContent(VersionedIdentifier identifier) {
+    public Set<URI> searchActiveContent(VersionedIdentifier identifier) {
         String id = identifier.getId();
         String version = identifier.getVersion();
 
@@ -163,7 +151,7 @@ public class ActiveContentService implements ContentService {
             matchText += "'\\s+(?s).*";
         }
 
-        List<URI> uris = new ArrayList<>();
+        Set<URI> uris = new HashSet<>();
 
         for (Entry<URI, VersionedContent> uri : this.activeContent.entrySet()) {
             String content = uri.getValue().content;
@@ -174,5 +162,9 @@ public class ActiveContentService implements ContentService {
         }
 
         return uris;
+    }
+
+    public Set<URI> activeUris() {
+        return this.activeContent.keySet();
     }
 }
