@@ -12,6 +12,7 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService;
 import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService;
+import org.opencds.cqf.cql.ls.server.utility.Futures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +46,7 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
             return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
             log.error("failed to initialize with error: {}", e.getMessage());
-            return FuturesHelper.failedFuture(e);
+            return Futures.failed(e);
         }
     }
 

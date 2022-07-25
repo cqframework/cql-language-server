@@ -1,4 +1,4 @@
-package org.opencds.cqf.cql.ls.server;
+package org.opencds.cqf.cql.ls.server.command;
 
 import java.io.ByteArrayOutputStream;
 import java.io.FileDescriptor;

@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.services.LanguageClient;
-import org.opencds.cqf.cql.ls.server.DebugCqlCommandContribution;
+import org.opencds.cqf.cql.ls.server.command.DebugCqlCommandContribution;
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;

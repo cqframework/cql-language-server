@@ -23,12 +23,20 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
-import org.opencds.cqf.cql.ls.server.VersionedContent;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
 
 public class ActiveContentService implements ContentService {
+    public static class VersionedContent {
+        public final String content;
+        public final int version;
+
+        public VersionedContent(String content, int version) {
+            this.content = content;
+            this.version = version;
+        }
+    }
 
     private final Map<URI, VersionedContent> activeContent = new ConcurrentHashMap<>();
 

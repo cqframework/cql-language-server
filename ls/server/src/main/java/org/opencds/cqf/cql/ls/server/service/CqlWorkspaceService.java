@@ -28,9 +28,9 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.greenrobot.eventbus.EventBus;
 import org.opencds.cqf.cql.ls.server.Constants;
-import org.opencds.cqf.cql.ls.server.FuturesHelper;
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+import org.opencds.cqf.cql.ls.server.utility.Futures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.google.common.collect.ImmutableList;
@@ -110,7 +110,7 @@ public class CqlWorkspaceService implements WorkspaceService {
             log.error(String.format("executeCommand for %s", params.getCommand()), e);
             this.client.join().showMessage(new MessageParams(MessageType.Error, String
                     .format("Command %s failed with: %s", params.getCommand(), e.getMessage())));
-            return FuturesHelper.failedFuture(e);
+            return Futures.failed(e);
         }
     }
 

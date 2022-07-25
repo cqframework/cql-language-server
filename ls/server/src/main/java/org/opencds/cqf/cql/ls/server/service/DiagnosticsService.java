@@ -13,6 +13,10 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslator;
@@ -28,7 +32,6 @@ import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.DebounceExecutor;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
@@ -43,19 +46,18 @@ public class DiagnosticsService {
     private static Logger log = LoggerFactory.getLogger(DiagnosticsService.class);
 
     private static final long BOUNCE_DELAY = 200;
+    private final ScheduledExecutorService executor =
+            Executors.newSingleThreadScheduledExecutor(x -> {
+                Thread t = new Thread(x, "Debouncer");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private ScheduledFuture<?> future;
 
     private CqlTranslationManager cqlTranslationManager;
     private CompletableFuture<LanguageClient> client;
     private ContentService contentService;
-
-    private DebounceExecutor debouncer;
-
-    private DebounceExecutor getDebouncer() {
-        if (debouncer == null) {
-            debouncer = new DebounceExecutor();
-        }
-        return debouncer;
-    }
 
     public DiagnosticsService(CompletableFuture<LanguageClient> client,
             CqlTranslationManager cqlTranslationManager, ContentService contentService) {
@@ -177,7 +179,14 @@ public class DiagnosticsService {
 
     @Subscribe
     public void didChange(DidChangeTextDocumentEvent e) {
-        getDebouncer().debounce(BOUNCE_DELAY, () -> doLint(Collections
+        debounce(BOUNCE_DELAY, () -> doLint(Collections
                 .singletonList(Uris.parseOrNull(e.params().getTextDocument().getUri()))));
+    }
+
+    void debounce(long delay, Runnable task) {
+        if (this.future != null && !this.future.isDone())
+            this.future.cancel(false);
+
+        this.future = this.executor.schedule(task, delay, TimeUnit.MILLISECONDS);
     }
 }

@@ -5,9 +5,9 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.opencds.cqf.cql.ls.plugin.debug.session.DebugSession;
-import org.opencds.cqf.cql.ls.server.FuturesHelper;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+import org.opencds.cqf.cql.ls.server.utility.Futures;
 
 public class DebugCommandContribution implements CommandContribution {
 
@@ -39,9 +39,9 @@ public class DebugCommandContribution implements CommandContribution {
                     return CompletableFuture.completedFuture(this.debugSession.start().get());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    return FuturesHelper.failedFuture(e);
+                    return Futures.failed(e);
                 } catch (Exception e) {
-                    return FuturesHelper.failedFuture(e);
+                    return Futures.failed(e);
                 }
             } else {
                 throw new IllegalStateException(
