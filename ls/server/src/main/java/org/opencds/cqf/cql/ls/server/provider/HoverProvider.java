@@ -9,7 +9,6 @@ import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
@@ -42,20 +41,16 @@ public class HoverProvider {
         Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
                 translator.getTranslatedLibrary().getLibrary().getStatements());
 
-        if (exp == null || exp.getRight().getExpression() == null) {
+        if (exp == null) {
             return null;
         }
 
-        DataType resultType = exp.getRight().getExpression().getResultType();
-        if (resultType == null) {
+        MarkupContent markup = markup(exp.getRight());
+        if (markup == null) {
             return null;
         }
 
-        Hover hover = new Hover();
-        hover.setContents(Either
-                .forRight(new MarkupContent("markdown", "```" + resultType.toString() + "```")));
-        hover.setRange(exp.getLeft());
-        return hover;
+        return new Hover(markup, exp.getLeft());
     }
 
     private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position,
@@ -92,5 +87,20 @@ public class HoverProvider {
         } else {
             return false;
         }
+    }
+
+    public MarkupContent markup(ExpressionDef def) {
+        if (def == null || def.getExpression() == null) {
+            return null;
+        }
+
+        DataType resultType = def.getExpression().getResultType();
+        if (resultType == null) {
+            return null;
+        }
+
+        String result = String.join("\n", "```cql", resultType.toString(), "```");
+
+        return new MarkupContent("markdown", result);
     }
 }

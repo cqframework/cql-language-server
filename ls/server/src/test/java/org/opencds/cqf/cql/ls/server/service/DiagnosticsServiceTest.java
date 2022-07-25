@@ -10,13 +10,11 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.config.ServerConfig;
 import org.opencds.cqf.cql.ls.server.config.TestConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest(classes = {ServerConfig.class, TestConfig.class},
-        properties = {"spring.main.allow-bean-definition-overriding=true"})
+@SpringBootTest(classes = {TestConfig.class})
 public class DiagnosticsServiceTest {
 
     @Autowired

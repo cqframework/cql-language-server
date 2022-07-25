@@ -12,13 +12,8 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class FormattingProvider {
-
-    private static Logger log = LoggerFactory.getLogger(FormattingProvider.class);
-
     private ContentService contentService;
 
     public FormattingProvider(ContentService contentService) {
@@ -36,8 +31,7 @@ public class FormattingProvider {
         }
 
         if (!fr.getErrors().isEmpty()) {
-            log.error("cql format");
-            throw new RuntimeException("Unable to format CQL");
+            throw new RuntimeException("Unable to format CQL due to syntax errors");
         }
 
         TextEdit te = new TextEdit(

@@ -6,19 +6,14 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.FhirLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
 import org.fhir.ucum.UcumEssenceService;
 import org.fhir.ucum.UcumService;
-import org.greenrobot.eventbus.Subscribe;
-import org.greenrobot.eventbus.ThreadMode;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
-import org.opencds.cqf.cql.ls.server.CqlUtilities;
-import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +24,7 @@ public class CqlTranslationManager {
     private final Map<VersionedIdentifier, Model> globalCache;
     private final ContentService contentService;
     private static UcumService ucumService = null;
+    private final TranslatorOptionsManager translatorOptionsManager;
 
     static {
         try {
@@ -39,9 +35,11 @@ public class CqlTranslationManager {
         }
     }
 
-    public CqlTranslationManager(ContentService contentService) {
+    public CqlTranslationManager(ContentService contentService,
+            TranslatorOptionsManager translatorOptionsManager) {
         this.globalCache = new HashMap<>();
         this.contentService = contentService;
+        this.translatorOptionsManager = translatorOptionsManager;
     }
 
     public CqlTranslator translate(URI uri) {
@@ -60,25 +58,11 @@ public class CqlTranslationManager {
 
         try {
             return CqlTranslator.fromStream(stream, modelManager, libraryManager, ucumService,
-                    getTranslatorOptions(uri));
+                    this.translatorOptionsManager.getOptions(uri));
         } catch (IOException e) {
             throw new RuntimeException(
                     String.format("error creating translator for uri: %s", uri.toString()), e);
         }
-    }
-
-    private CqlTranslatorOptions cachedOptions = null;
-
-    private CqlTranslatorOptions getTranslatorOptions(URI uri) {
-        if (cachedOptions == null) {
-            cachedOptions = CqlUtilities.getTranslatorOptions(contentService, uri);
-        }
-
-        return cachedOptions;
-    }
-
-    public void clearCachedTranslatorOptions() {
-        cachedOptions = null;
     }
 
     private ModelManager createModelManager() {
@@ -92,10 +76,5 @@ public class CqlTranslationManager {
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
 
         return libraryManager;
-    }
-
-    @Subscribe(threadMode = ThreadMode.ASYNC)
-    public void onMessageEvent(DidChangeWatchedFilesEvent event) {
-        this.clearCachedTranslatorOptions();
     }
 }

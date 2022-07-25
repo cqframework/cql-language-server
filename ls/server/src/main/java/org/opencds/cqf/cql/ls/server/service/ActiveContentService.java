@@ -55,8 +55,7 @@ public class ActiveContentService implements ContentService {
             return this.inactiveContentService.read(identifier);
         }
 
-        checkState(uris.size() == 1, "Found more than one file for identifier: {}",
-                identifier.toString());
+        checkState(uris.size() == 1, "Found more than one file for identifier: {}", identifier);
 
         return this.read(uris.get(0));
     }

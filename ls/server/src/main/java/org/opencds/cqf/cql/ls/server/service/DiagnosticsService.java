@@ -172,7 +172,6 @@ public class DiagnosticsService {
         PublishDiagnosticsParams params = new PublishDiagnosticsParams(
                 e.params().getTextDocument().getUri(), new ArrayList<>());
         client.join().publishDiagnostics(params);
-
     }
 
     @Subscribe

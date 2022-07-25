@@ -9,6 +9,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
@@ -71,12 +72,20 @@ public class ServerConfig {
     }
 
     @Bean
-    CqlTranslationManager cqlTranslationManager(ContentService contentService) {
-        CqlTranslationManager ctm = new CqlTranslationManager(contentService);
+    TranslatorOptionsManager translatorOptionsManager(ContentService contentService) {
+        TranslatorOptionsManager t = new TranslatorOptionsManager(contentService);
 
-        EventBus.getDefault().register(ctm);
+        EventBus.getDefault().register(t);
 
-        return ctm;
+        return t;
+    }
+
+    @Bean
+    CqlTranslationManager cqlTranslationManager(ContentService contentService,
+            TranslatorOptionsManager translatorOptionsManager) {
+        return new CqlTranslationManager(contentService, translatorOptionsManager);
+
+
     }
 
     @Bean

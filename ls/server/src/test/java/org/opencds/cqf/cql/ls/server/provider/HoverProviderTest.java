@@ -9,13 +9,12 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.junit.jupiter.api.Test;
-import org.opencds.cqf.cql.ls.server.config.ServerConfig;
 import org.opencds.cqf.cql.ls.server.config.TestConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest(classes = {ServerConfig.class, TestConfig.class},
-        properties = {"spring.main.allow-bean-definition-overriding=true"})
+
+@SpringBootTest(classes = {TestConfig.class})
 public class HoverProviderTest {
 
     @Autowired
@@ -31,8 +30,8 @@ public class HoverProviderTest {
         assertNotNull(hover.getContents().getRight());
 
         MarkupContent markup = hover.getContents().getRight();
-        assertEquals(markup.getKind(), "markdown");
-        assertEquals(markup.getValue(), "```System.Integer```");
+        assertEquals("markdown", markup.getKind());
+        assertEquals("```cql\nSystem.Integer\n```", markup.getValue());
     }
 
     @Test
@@ -54,8 +53,8 @@ public class HoverProviderTest {
         assertNotNull(hover.getContents().getRight());
 
         MarkupContent markup = hover.getContents().getRight();
-        assertEquals(markup.getKind(), "markdown");
-        assertEquals(markup.getValue(), "```list<System.Integer>```");
+        assertEquals("markdown", markup.getKind());
+        assertEquals("```cql\nlist<System.Integer>\n```", markup.getValue());
     }
 
 }
