@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.NotImplementedException;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.slf4j.Logger;
@@ -27,9 +28,11 @@ public interface ContentService {
         }
 
         if (locations.size() > 1) {
+            String allLocations = String.join("%n",
+                    locations.stream().map(String::valueOf).collect(Collectors.toList()));
             throw new IllegalStateException(String.format(
-                    "more than one file was found for library: %s version: %s in the current workspace.",
-                    identifier.getId(), identifier.getVersion()));
+                    "more than one location was found for library: %s version: %s in the current workspace:%n%s",
+                    identifier.getId(), identifier.getVersion(), allLocations));
         }
         return read(locations.iterator().next());
     }
