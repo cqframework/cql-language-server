@@ -11,7 +11,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>1.5.7</version>
+        <version>1.5.8-SNAPSHOT</version>
         <relativePath>../..</relativePath>
     </parent>
 
@@ -19,7 +19,7 @@
         <dependency>
             <groupId>org.opencds.cqf.cql.ls</groupId>
             <artifactId>cql-ls-core</artifactId>
-            <version>1.5.7</version>
+            <version>1.5.8-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.lsp4j</groupId>
