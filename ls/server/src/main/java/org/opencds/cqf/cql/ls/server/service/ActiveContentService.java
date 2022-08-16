@@ -41,17 +41,19 @@ public class ActiveContentService implements ContentService {
     private final Map<URI, VersionedContent> activeContent = new ConcurrentHashMap<>();
 
     @Override
-    public Set<URI> locate(VersionedIdentifier libraryIdentifier) {
+    public Set<URI> locate(URI root, VersionedIdentifier libraryIdentifier) {
+        checkNotNull(root);
         checkNotNull(libraryIdentifier);
 
-        return searchActiveContent(libraryIdentifier);
+        return searchActiveContent(root, libraryIdentifier);
     }
 
     @Override
-    public InputStream read(VersionedIdentifier identifier) {
+    public InputStream read(URI root, VersionedIdentifier identifier) {
+        checkNotNull(root);
         checkNotNull(identifier);
 
-        Set<URI> uris = this.locate(identifier);
+        Set<URI> uris = this.locate(root, identifier);
 
         checkState(uris.size() == 1, "Found more than one file for identifier: {}", identifier);
 
@@ -111,7 +113,7 @@ public class ActiveContentService implements ContentService {
 
     // Break this out into its own thing for test purposes.
     @SuppressWarnings("deprecation")
-    private String patch(String sourceText, TextDocumentContentChangeEvent change)
+    protected String patch(String sourceText, TextDocumentContentChangeEvent change)
             throws IOException {
         Range range = change.getRange();
         BufferedReader reader = new BufferedReader(new StringReader(sourceText));
@@ -148,7 +150,7 @@ public class ActiveContentService implements ContentService {
         }
     }
 
-    public Set<URI> searchActiveContent(VersionedIdentifier identifier) {
+    protected Set<URI> searchActiveContent(URI root, VersionedIdentifier identifier) {
         String id = identifier.getId();
         String version = identifier.getVersion();
 
@@ -161,11 +163,17 @@ public class ActiveContentService implements ContentService {
 
         Set<URI> uris = new HashSet<>();
 
-        for (Entry<URI, VersionedContent> uri : this.activeContent.entrySet()) {
-            String content = uri.getValue().content;
+        for (Entry<URI, VersionedContent> entry : this.activeContent.entrySet()) {
+            URI uri = entry.getKey();
+            // Checks to see if the current entry is a child of the root URI.
+            if (root.relativize(uri).equals(uri)) {
+                continue;
+            }
+
+            String content = entry.getValue().content;
             // This will match if the content contains the library definition is present.
             if (content.matches(matchText)) {
-                uris.add(uri.getKey());
+                uris.add(entry.getKey());
             }
         }
 
