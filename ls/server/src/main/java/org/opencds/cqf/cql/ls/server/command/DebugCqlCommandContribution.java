@@ -39,7 +39,7 @@ public class DebugCqlCommandContribution implements CommandContribution {
             String err = baosErr.toString();
 
             if (err.length() > 0) {
-                out += "\nThe following errors were encountered during evaluation:\n";
+                out += "\nEvaluation logs:\n";
                 out += err;
             }
 
