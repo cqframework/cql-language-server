@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.service;
 import static com.google.common.base.Preconditions.checkNotNull;
 import java.io.File;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
@@ -34,18 +35,28 @@ public class FileContentService implements ContentService {
     }
 
     @Override
-    public Set<URI> locate(VersionedIdentifier identifier) {
+    public Set<URI> locate(URI root, VersionedIdentifier identifier) {
+        checkNotNull(root);
         checkNotNull(identifier);
 
-        // TODO: Actually, the content service here just needs to search through folders
-        // that have CQL files in them.
-
-        // One way we could implement the "search only CQL folders" behavior is to register
-        // file watchers with the language client to notify us. Then we could limit searches
-        // to the appropriate folders, or keep a registry.
         Set<URI> uris = new HashSet<>();
+
+        // This just checks to see if the requested
+        // location URI is part of the workspace.
+        // If not, no locations are returned.
         for (WorkspaceFolder w : this.workspaceFolders) {
-            File file = searchFolder(w.getUri(), identifier);
+            URI folderUri;
+            try {
+                folderUri = new URI(w.getUri());
+            } catch (URISyntaxException e) {
+                continue;
+            }
+            // If root is not a is a child of the workspace folder, skip it.
+            if (folderUri.relativize(root).equals(root)) {
+                continue;
+            }
+
+            File file = searchFolder(root, identifier);
             if (file != null && file.exists()) {
                 uris.add(file.toURI());
             }
@@ -54,10 +65,10 @@ public class FileContentService implements ContentService {
         return uris;
     }
 
-    public static File searchFolder(String directory, VersionedIdentifier libraryIdentifier) {
+    public static File searchFolder(URI directory, VersionedIdentifier libraryIdentifier) {
         Path path;
         try {
-            path = Paths.get(new URI(directory));
+            path = Paths.get(directory);
         } catch (Exception e) {
             log.warn(String.format("error searching directory %s. Skipping.", directory), e);
             return null;
