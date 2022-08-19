@@ -11,6 +11,7 @@ import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.server.config.ServerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -30,6 +31,9 @@ public class Main implements CommandLineRunner {
      * @param args the commandline parameters (none supported currently)
      */
     public static void main(String[] args) {
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
+
         SpringApplication.run(Main.class, args);
     }
 
