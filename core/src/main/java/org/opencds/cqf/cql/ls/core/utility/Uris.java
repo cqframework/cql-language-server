@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.core.utility;
 
+import java.io.File;
 import java.net.URI;
 
 public class Uris {
@@ -39,6 +40,10 @@ public class Uris {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public static URI normalizeUri(URI uri) {
+        return new File(uri).toURI();
     }
 
     private static String createAuthority(String rawAuthority) {
