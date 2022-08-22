@@ -23,7 +23,7 @@ public class HoverProvider {
     }
 
     public Hover hover(HoverParams position) {
-        URI uri = Uris.parseOrNull(position.getTextDocument().getUri());
+        URI uri = Uris.parseOrNull(Uris.fixUri(position.getTextDocument().getUri()));
         if (uri == null) {
             return null;
         }

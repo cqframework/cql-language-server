@@ -18,6 +18,7 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.greenrobot.eventbus.EventBus;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
@@ -67,8 +68,8 @@ public class CqlTextDocumentService implements TextDocumentService {
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
         return CompletableFuture
-                .<List<? extends TextEdit>>supplyAsync(
-                        () -> this.formattingProvider.format(params.getTextDocument().getUri()))
+                .<List<? extends TextEdit>>supplyAsync(() -> this.formattingProvider
+                        .format(Uris.fixUri(params.getTextDocument().getUri())))
                 .exceptionally(this::notifyClient);
     }
 

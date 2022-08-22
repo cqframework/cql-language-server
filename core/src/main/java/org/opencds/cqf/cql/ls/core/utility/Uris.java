@@ -42,6 +42,26 @@ public class Uris {
         }
     }
 
+    public static String fixUri(String uri) {
+        // When running on Windows, URIs seem to come back with colons encoded in the path.
+        // This appears to be an incorrect encoding for URIs:
+        // https://www.rfc-editor.org/rfc/rfc3986#section-3.3
+        // And this seems to be something that other language servers are accounting for as well:
+        // https://github.com/eclipse/eclipse.jdt.ls/blob/a996b57495a150f31c8c2e61110ce8032086f2a1/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/JDTUtils.java#L1088
+        // This is a super simple and naive "fix" for this, but it seems preferable to trying to
+        // "decode" the URI, because it's supposed to be a valid URI in the first place.
+        if (uri.startsWith("file:///")) {
+            return uri.replace("%3A", ":").replace("%3a", ":");
+        }
+
+        return uri;
+    }
+
+
+    public static URI fixUri(URI uri) {
+        return parseOrNull(fixUri(uri.toString()));
+    }
+
     public static URI normalizeUri(URI uri) {
         return new File(uri).toURI();
     }

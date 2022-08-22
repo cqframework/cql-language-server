@@ -23,6 +23,7 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
@@ -71,41 +72,46 @@ public class ActiveContentService implements ContentService {
     @Subscribe
     public void didOpen(DidOpenTextDocumentEvent e) {
         TextDocumentItem document = e.params().getTextDocument();
-        URI uri = URI.create(document.getUri());
+        URI uri = Uris.parseOrNull(Uris.fixUri(document.getUri()));
+        if (uri != null) {
+            String encodedText = new String(document.getText().getBytes(StandardCharsets.UTF_8),
+                    StandardCharsets.UTF_8);
 
-        String encodedText = new String(document.getText().getBytes(StandardCharsets.UTF_8),
-                StandardCharsets.UTF_8);
-
-        activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
+            activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
+        }
     }
 
     @Subscribe
     public void didClose(DidCloseTextDocumentEvent e) {
         TextDocumentIdentifier document = e.params().getTextDocument();
-        URI uri = URI.create(document.getUri());
-        activeContent.remove(uri);
+        URI uri = Uris.parseOrNull(Uris.fixUri(document.getUri()));
+        if (uri != null) {
+            activeContent.remove(uri);
+        }
     }
 
     @Subscribe
     public void didChange(DidChangeTextDocumentEvent e) throws IOException {
         VersionedTextDocumentIdentifier document = e.params().getTextDocument();
-        URI uri = URI.create(document.getUri());
+        URI uri = Uris.parseOrNull(Uris.fixUri(document.getUri()));
+        if (uri != null) {
+            VersionedContent existing = activeContent.get(uri);
+            String existingText = existing.content;
 
-        VersionedContent existing = activeContent.get(uri);
-        String existingText = existing.content;
+            if (document.getVersion() > existing.version) {
+                for (TextDocumentContentChangeEvent change : e.params().getContentChanges()) {
+                    if (change.getRange() == null) {
+                        String encodedText =
+                                new String(change.getText().getBytes(StandardCharsets.UTF_8),
+                                        StandardCharsets.UTF_8);
+                        activeContent.put(uri,
+                                new VersionedContent(encodedText, document.getVersion()));
+                    } else {
+                        String newText = patch(existingText, change);
+                        activeContent.put(uri,
+                                new VersionedContent(newText, document.getVersion()));
 
-        if (document.getVersion() > existing.version) {
-            for (TextDocumentContentChangeEvent change : e.params().getContentChanges()) {
-                if (change.getRange() == null) {
-                    String encodedText =
-                            new String(change.getText().getBytes(StandardCharsets.UTF_8),
-                                    StandardCharsets.UTF_8);
-                    activeContent.put(uri,
-                            new VersionedContent(encodedText, document.getVersion()));
-                } else {
-                    String newText = patch(existingText, change);
-                    activeContent.put(uri, new VersionedContent(newText, document.getVersion()));
-
+                    }
                 }
             }
         }
@@ -153,30 +159,31 @@ public class ActiveContentService implements ContentService {
     protected Set<URI> searchActiveContent(URI root, VersionedIdentifier identifier) {
         String id = identifier.getId();
         String version = identifier.getVersion();
-
-        String matchText = "(?s).*library\\s+" + id;
-        if (version != null) {
-            matchText += ("\\s+version\\s+'" + version + "'\\s+(?s).*");
-        } else {
-            matchText += "'\\s+(?s).*";
-        }
-
+        root = Uris.fixUri(root);
         Set<URI> uris = new HashSet<>();
 
-        for (Entry<URI, VersionedContent> entry : this.activeContent.entrySet()) {
-            URI uri = entry.getKey();
-            // Checks to see if the current entry is a child of the root URI.
-            if (root.relativize(uri).equals(uri)) {
-                continue;
+        if (root != null) {
+            String matchText = "(?s).*library\\s+" + id;
+            if (version != null) {
+                matchText += ("\\s+version\\s+'" + version + "'\\s+(?s).*");
+            } else {
+                matchText += "'\\s+(?s).*";
             }
 
-            String content = entry.getValue().content;
-            // This will match if the content contains the library definition is present.
-            if (content.matches(matchText)) {
-                uris.add(entry.getKey());
+            for (Entry<URI, VersionedContent> entry : this.activeContent.entrySet()) {
+                URI uri = entry.getKey();
+                // Checks to see if the current entry is a child of the root URI.
+                if (root.relativize(uri).equals(uri)) {
+                    continue;
+                }
+
+                String content = entry.getValue().content;
+                // This will match if the content contains the library definition is present.
+                if (content.matches(matchText)) {
+                    uris.add(entry.getKey());
+                }
             }
         }
-
         return uris;
     }
 

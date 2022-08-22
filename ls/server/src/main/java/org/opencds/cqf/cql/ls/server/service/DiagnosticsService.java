@@ -164,20 +164,21 @@ public class DiagnosticsService {
 
     @Subscribe
     public void didOpen(DidOpenTextDocumentEvent e) {
-        doLint(Collections.singletonList(Uris.parseOrNull(e.params().getTextDocument().getUri())));
+        doLint(Collections.singletonList(
+                Uris.parseOrNull(Uris.fixUri(e.params().getTextDocument().getUri()))));
     }
 
     @Subscribe
     public void didClose(DidCloseTextDocumentEvent e) {
         PublishDiagnosticsParams params = new PublishDiagnosticsParams(
-                e.params().getTextDocument().getUri(), new ArrayList<>());
+                Uris.fixUri(e.params().getTextDocument().getUri()), new ArrayList<>());
         client.join().publishDiagnostics(params);
     }
 
     @Subscribe
     public void didChange(DidChangeTextDocumentEvent e) {
-        debounce(BOUNCE_DELAY, () -> doLint(Collections
-                .singletonList(Uris.parseOrNull(e.params().getTextDocument().getUri()))));
+        debounce(BOUNCE_DELAY, () -> doLint(Collections.singletonList(
+                Uris.parseOrNull(Uris.fixUri(e.params().getTextDocument().getUri())))));
     }
 
     void debounce(long delay, Runnable task) {

@@ -45,6 +45,8 @@ public class TranslatorOptionsManager {
 
         CqlTranslatorOptions options = null;
 
+        rootUri = Uris.fixUri(rootUri);
+
         InputStream input = contentService.read(Uris.addPath(rootUri, "/cql-options.json"));
 
         if (input != null) {
@@ -68,8 +70,9 @@ public class TranslatorOptionsManager {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public void onMessageEvent(DidChangeWatchedFilesEvent event) {
         for (FileEvent e : event.params().getChanges()) {
-            if (e.getUri().endsWith("cql-options.json")) {
-                this.clearOptions(Uris.parseOrNull(e.getUri()));
+            String uri = Uris.fixUri(e.getUri());
+            if (uri.endsWith("cql-options.json")) {
+                this.clearOptions(Uris.parseOrNull(uri));
             }
         }
     }
