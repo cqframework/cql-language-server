@@ -32,7 +32,7 @@ public class HoverProviderTest {
     @Test
     public void hoverInt() throws Exception {
         Hover hover = hoverProvider.hover(new HoverParams(
-                new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"),
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
                 new Position(5, 2)));
 
         assertNotNull(hover);
@@ -46,7 +46,7 @@ public class HoverProviderTest {
     @Test
     public void hoverNothing() throws Exception {
         Hover hover = hoverProvider.hover(new HoverParams(
-                new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"),
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
                 new Position(2, 0)));
 
         assertNull(hover);
@@ -55,7 +55,7 @@ public class HoverProviderTest {
     @Test
     public void hoverList() throws Exception {
         Hover hover = hoverProvider.hover(new HoverParams(
-                new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"),
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
                 new Position(8, 2)));
 
         assertNotNull(hover);

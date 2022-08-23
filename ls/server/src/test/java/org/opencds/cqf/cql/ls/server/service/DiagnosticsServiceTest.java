@@ -22,7 +22,7 @@ public class DiagnosticsServiceTest {
 
     @Test
     public void missingInclude() {
-        URI uri = Uris.parseOrNull("file:/org/opencds/cqf/cql/ls/server/MissingInclude.cql");
+        URI uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/MissingInclude.cql");
         Map<URI, Set<Diagnostic>> diagnostics = diagnosticsService.lint(uri);
 
         assertTrue(diagnostics.containsKey(uri));

@@ -3,7 +3,6 @@ package org.opencds.cqf.cql.ls.server.service;
 import static com.google.common.base.Preconditions.checkNotNull;
 import java.io.File;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
@@ -18,6 +17,7 @@ import org.cqframework.cql.cql2elm.model.Version;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,14 +45,9 @@ public class FileContentService implements ContentService {
         // location URI is part of the workspace.
         // If not, no locations are returned.
         for (WorkspaceFolder w : this.workspaceFolders) {
-            URI folderUri;
-            try {
-                folderUri = new URI(w.getUri());
-            } catch (URISyntaxException e) {
-                continue;
-            }
+            URI folderUri = Uris.parseOrNull(w.getUri());
             // If root is not a is a child of the workspace folder, skip it.
-            if (folderUri.relativize(root).equals(root)) {
+            if (folderUri == null || folderUri.relativize(root).equals(root)) {
                 continue;
             }
 

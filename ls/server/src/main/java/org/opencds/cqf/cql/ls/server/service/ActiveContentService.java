@@ -23,6 +23,7 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
@@ -68,10 +69,10 @@ public class ActiveContentService implements ContentService {
         return new ByteArrayInputStream(content.getBytes());
     }
 
-    @Subscribe
+    @Subscribe(priority = 100)
     public void didOpen(DidOpenTextDocumentEvent e) {
         TextDocumentItem document = e.params().getTextDocument();
-        URI uri = URI.create(document.getUri());
+        URI uri = Uris.parseOrNull(document.getUri());
 
         String encodedText = new String(document.getText().getBytes(StandardCharsets.UTF_8),
                 StandardCharsets.UTF_8);
@@ -79,17 +80,17 @@ public class ActiveContentService implements ContentService {
         activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
     }
 
-    @Subscribe
+    @Subscribe(priority = 100)
     public void didClose(DidCloseTextDocumentEvent e) {
         TextDocumentIdentifier document = e.params().getTextDocument();
-        URI uri = URI.create(document.getUri());
+        URI uri = Uris.parseOrNull(document.getUri());
         activeContent.remove(uri);
     }
 
-    @Subscribe
+    @Subscribe(priority = 100)
     public void didChange(DidChangeTextDocumentEvent e) throws IOException {
         VersionedTextDocumentIdentifier document = e.params().getTextDocument();
-        URI uri = URI.create(document.getUri());
+        URI uri = Uris.parseOrNull(document.getUri());
 
         VersionedContent existing = activeContent.get(uri);
         String existingText = existing.content;

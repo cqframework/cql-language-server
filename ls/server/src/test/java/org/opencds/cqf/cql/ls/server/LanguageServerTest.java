@@ -47,7 +47,7 @@ public class LanguageServerTest {
     public void hoverInt() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
-                        new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"),
+                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
                         new Position(5, 2)))
                 .get();
 
@@ -63,7 +63,7 @@ public class LanguageServerTest {
     public void hoverNothing() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
-                        new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"),
+                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
                         new Position(2, 0)))
                 .get();
 
@@ -74,7 +74,7 @@ public class LanguageServerTest {
     public void hoverList() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
-                        new TextDocumentIdentifier("file:/org/opencds/cqf/cql/ls/server/Two.cql"),
+                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
                         new Position(8, 2)))
                 .get();
 

@@ -2,9 +2,13 @@ package org.opencds.cqf.cql.ls.core.utility;
 
 import java.io.File;
 import java.net.URI;
+import org.apache.commons.lang3.SystemUtils;
 
 public class Uris {
     private Uris() {}
+
+    private static final String FILE_UNC_PREFIX = "file:////";
+    private static final String FILE_SCHEME = "file";
 
     public static URI getHead(URI uri) {
         String path = uri.getRawPath();
@@ -36,14 +40,28 @@ public class Uris {
 
     public static URI parseOrNull(String uriString) {
         try {
-            return new URI(uriString);
+            URI uri = new URI(uriString);
+            if (SystemUtils.IS_OS_WINDOWS && FILE_SCHEME.equals(uri.getScheme())) {
+                uri = new File(uri.getSchemeSpecificPart()).toURI();
+            }
+
+            return uri;
         } catch (Exception e) {
             return null;
         }
     }
 
-    public static URI normalizeUri(URI uri) {
-        return new File(uri).toURI();
+    public static String toClientUri(URI uri) {
+        if (uri == null) {
+            return null;
+        }
+
+        String uriString = uri.toString();
+        if (SystemUtils.IS_OS_WINDOWS && uriString.startsWith(FILE_UNC_PREFIX)) {
+            uriString = uriString.replace(FILE_UNC_PREFIX, "file://");
+        }
+
+        return uriString;
     }
 
     private static String createAuthority(String rawAuthority) {
@@ -83,5 +101,4 @@ public class Uris {
             return prefix + value;
         }
     }
-
 }
