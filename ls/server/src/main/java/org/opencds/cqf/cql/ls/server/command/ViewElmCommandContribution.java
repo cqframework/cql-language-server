@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import com.google.gson.JsonElement;
@@ -42,7 +43,7 @@ public class ViewElmCommandContribution implements CommandContribution {
         String uriString = ((JsonElement) params.getArguments().get(0)).getAsString();
         try {
 
-            URI uri = URI.create(uriString);
+            URI uri = Uris.parseOrNull(uriString);
             CqlTranslator translator = this.cqlTranslationManager.translate(uri);
             if (translator != null) {
                 return CompletableFuture.completedFuture(translator.toXml());

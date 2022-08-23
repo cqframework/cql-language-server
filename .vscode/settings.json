@@ -22,6 +22,7 @@
         "baos",
         "debouncer",
         "hamcrest",
+        "opencds",
         "testng",
         "Unregistration"
     ],
