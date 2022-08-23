@@ -1,10 +1,7 @@
 package org.opencds.cqf.cql.ls.core.utility;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import java.io.File;
 import java.net.URI;
-import java.net.URISyntaxException;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class UrisTest {
@@ -76,14 +73,5 @@ public class UrisTest {
 
         uri = Uris.withPath(initial, "fhir/test.cql");
         assertEquals("http://locahost:8080/fhir/test.cql", uri.toString());
-    }
-
-    @Test
-    @Disabled
-    public void fileUris() throws URISyntaxException {
-        URI initialUri = Uris.normalizeUri(URI.create("file:///d%3A/src/test.cql"));
-        File file = new File("d:/src/test.cql");
-        URI fileUri = file.toURI().normalize();
-        assertEquals(initialUri, fileUri);
     }
 }

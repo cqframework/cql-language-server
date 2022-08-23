@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.core.utility;
 
 import java.io.File;
 import java.net.URI;
+import org.apache.commons.lang3.SystemUtils;
 
 public class Uris {
     private Uris() {}
@@ -36,14 +37,15 @@ public class Uris {
 
     public static URI parseOrNull(String uriString) {
         try {
-            return new URI(uriString);
+            URI uri = new URI(uriString);
+            if (SystemUtils.IS_OS_WINDOWS && "file".equals(uri.getScheme())) {
+                uri = new File(uri.getSchemeSpecificPart()).toURI();
+            }
+
+            return uri;
         } catch (Exception e) {
             return null;
         }
-    }
-
-    public static URI normalizeUri(URI uri) {
-        return new File(uri).toURI();
     }
 
     private static String createAuthority(String rawAuthority) {
