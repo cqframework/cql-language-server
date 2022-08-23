@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Logger.JavaLogger;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
@@ -33,10 +34,10 @@ public class ServerConfig {
     }
 
     @Bean(name = {"activeContentService"})
-    public ActiveContentService activeContentService() {
+    public ActiveContentService activeContentService(EventBus eventBus) {
         ActiveContentService ac = new ActiveContentService();
 
-        EventBus.getDefault().register(ac);
+        eventBus.register(ac);
 
         return ac;
     }
@@ -68,22 +69,25 @@ public class ServerConfig {
     @Bean
     public CqlTextDocumentService cqlTextDocumentService(
             CompletableFuture<LanguageClient> languageClient, HoverProvider hoverProvider,
-            FormattingProvider formattingProvider) {
-        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider);
+            FormattingProvider formattingProvider, EventBus eventBus) {
+        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider,
+                eventBus);
     }
 
     @Bean
     CqlWorkspaceService cqlWorkspaceService(CompletableFuture<LanguageClient> languageClient,
             CompletableFuture<List<CommandContribution>> commandContributions,
-            List<WorkspaceFolder> workspaceFolders) {
-        return new CqlWorkspaceService(languageClient, commandContributions, workspaceFolders);
+            List<WorkspaceFolder> workspaceFolders, EventBus eventBus) {
+        return new CqlWorkspaceService(languageClient, commandContributions, workspaceFolders,
+                eventBus);
     }
 
     @Bean
-    TranslatorOptionsManager translatorOptionsManager(ContentService contentService) {
+    TranslatorOptionsManager translatorOptionsManager(ContentService contentService,
+            EventBus eventBus) {
         TranslatorOptionsManager t = new TranslatorOptionsManager(contentService);
 
-        EventBus.getDefault().register(t);
+        eventBus.register(t);
 
         return t;
     }
@@ -108,12 +112,18 @@ public class ServerConfig {
 
     @Bean
     DiagnosticsService diagnosticsService(CompletableFuture<LanguageClient> languageClient,
-            CqlTranslationManager cqlTranslationManager, ContentService contentService) {
+            CqlTranslationManager cqlTranslationManager, ContentService contentService,
+            EventBus eventBus) {
         DiagnosticsService ds =
                 new DiagnosticsService(languageClient, cqlTranslationManager, contentService);
 
-        EventBus.getDefault().register(ds);
+        eventBus.register(ds);
 
         return ds;
+    }
+
+    @Bean
+    EventBus eventBus() {
+        return EventBus.builder().logger(new JavaLogger("eventBus")).build();
     }
 }

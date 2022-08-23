@@ -31,9 +31,6 @@ public class Main implements CommandLineRunner {
      * @param args the commandline parameters (none supported currently)
      */
     public static void main(String[] args) {
-        SLF4JBridgeHandler.removeHandlersForRootLogger();
-        SLF4JBridgeHandler.install();
-
         SpringApplication.run(Main.class, args);
     }
 
@@ -42,6 +39,8 @@ public class Main implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        configureLogging();
+
         log.info("java.version: {}", System.getProperty("java.version"));
         log.info("cql-language-server version: {}",
                 CqlLanguageServer.class.getPackage().getImplementationVersion());
@@ -61,5 +60,10 @@ public class Main implements CommandLineRunner {
 
         server.exited().get();
         serverThread.cancel(true);
+    }
+
+    public static void configureLogging() {
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
     }
 }

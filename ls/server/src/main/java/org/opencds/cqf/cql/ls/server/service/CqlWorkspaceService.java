@@ -44,13 +44,15 @@ public class CqlWorkspaceService implements WorkspaceService {
     private final CompletableFuture<LanguageClient> client;
     private final CompletableFuture<List<CommandContribution>> commandContributions;
     private final List<WorkspaceFolder> workspaceFolders;
+    private final EventBus eventBus;
 
     public CqlWorkspaceService(CompletableFuture<LanguageClient> client,
             CompletableFuture<List<CommandContribution>> commandContributions,
-            List<WorkspaceFolder> workspaceFolders) {
+            List<WorkspaceFolder> workspaceFolders, EventBus eventBus) {
         this.client = client;
         this.commandContributions = commandContributions;
         this.workspaceFolders = workspaceFolders;
+        this.eventBus = eventBus;
     }
 
 
@@ -131,7 +133,7 @@ public class CqlWorkspaceService implements WorkspaceService {
 
     @Override
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {
-        EventBus.getDefault().post(new DidChangeWatchedFilesEvent(params));
+        eventBus.post(new DidChangeWatchedFilesEvent(params));
     }
 
     private void addFolders(List<WorkspaceFolder> folders) {
