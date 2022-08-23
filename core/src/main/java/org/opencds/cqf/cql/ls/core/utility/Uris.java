@@ -7,6 +7,9 @@ import org.apache.commons.lang3.SystemUtils;
 public class Uris {
     private Uris() {}
 
+    private static final String FILE_UNC_PREFIX = "file:////";
+    private static final String FILE_SCHEME = "file";
+
     public static URI getHead(URI uri) {
         String path = uri.getRawPath();
         if (path != null) {
@@ -38,7 +41,7 @@ public class Uris {
     public static URI parseOrNull(String uriString) {
         try {
             URI uri = new URI(uriString);
-            if (SystemUtils.IS_OS_WINDOWS && "file".equals(uri.getScheme())) {
+            if (SystemUtils.IS_OS_WINDOWS && FILE_SCHEME.equals(uri.getScheme())) {
                 uri = new File(uri.getSchemeSpecificPart()).toURI();
             }
 
@@ -46,6 +49,19 @@ public class Uris {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public static String toClientUri(URI uri) {
+        if (uri == null) {
+            return null;
+        }
+
+        String uriString = uri.toString();
+        if (SystemUtils.IS_OS_WINDOWS && uriString.startsWith(FILE_UNC_PREFIX)) {
+            uriString = uriString.replace(FILE_UNC_PREFIX, "file://");
+        }
+
+        return uriString;
     }
 
     private static String createAuthority(String rawAuthority) {
@@ -85,5 +101,4 @@ public class Uris {
             return prefix + value;
         }
     }
-
 }

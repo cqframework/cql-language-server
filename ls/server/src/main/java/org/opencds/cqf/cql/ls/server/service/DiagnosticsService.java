@@ -79,7 +79,7 @@ public class DiagnosticsService {
 
         for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(
-                    entry.getKey().toString(), new ArrayList<>(entry.getValue()));
+                    Uris.toClientUri(entry.getKey()), new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
         }
     }
