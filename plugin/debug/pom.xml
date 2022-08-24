@@ -11,7 +11,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>1.5.8-SNAPSHOT</version>
+        <version>1.5.8</version>
         <relativePath>../..</relativePath>
     </parent>
 
@@ -19,13 +19,13 @@
         <dependency>
             <groupId>org.opencds.cqf.cql.ls</groupId>
             <artifactId>cql-ls-server</artifactId>
-            <version>1.5.8-SNAPSHOT</version>
+            <version>1.5.8</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.opencds.cqf.cql.debug</groupId>
             <artifactId>cql-debug-server</artifactId>
-            <version>1.5.8-SNAPSHOT</version>
+            <version>1.5.8</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.lsp4j</groupId>
