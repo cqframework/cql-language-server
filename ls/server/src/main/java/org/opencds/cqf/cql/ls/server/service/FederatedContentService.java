@@ -19,18 +19,21 @@ public class FederatedContentService implements ContentService {
     }
 
     @Override
-    public Set<URI> locate(VersionedIdentifier identifier) {
+    public Set<URI> locate(URI root, VersionedIdentifier identifier) {
+        checkNotNull(root);
         checkNotNull(identifier);
 
-        Set<URI> locations = this.activeContentService.locate(identifier);
+        Set<URI> locations = this.activeContentService.locate(root, identifier);
 
-        locations.addAll(this.fileContentService.locate(identifier));
+        locations.addAll(this.fileContentService.locate(root, identifier));
 
         return locations;
     }
 
     @Override
     public InputStream read(URI uri) {
+        checkNotNull(uri);
+
         if (this.activeContentService.activeUris().contains(uri)) {
             return this.activeContentService.read(uri);
         }

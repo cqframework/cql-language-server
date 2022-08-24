@@ -14,15 +14,14 @@ import org.slf4j.LoggerFactory;
 public interface ContentService {
     static final Logger log = LoggerFactory.getLogger(ContentService.class);
 
-
-    default Set<URI> locate(VersionedIdentifier identifier) {
+    default Set<URI> locate(URI root, VersionedIdentifier identifier) {
         throw new NotImplementedException();
     }
 
-    default InputStream read(VersionedIdentifier identifier) {
+    default InputStream read(URI root, VersionedIdentifier identifier) {
         Objects.requireNonNull(identifier);
 
-        Set<URI> locations = locate(identifier);
+        Set<URI> locations = locate(root, identifier);
         if (locations.isEmpty()) {
             return null;
         }

@@ -11,10 +11,10 @@ import org.opencds.cqf.cql.ls.core.ContentService;
 public class TestContentService implements ContentService {
 
     @Override
-    public Set<URI> locate(VersionedIdentifier libraryIdentifier) {
+    public Set<URI> locate(URI root, VersionedIdentifier libraryIdentifier) {
         try {
             return Collections.singleton(new URI(
-                    "file:/org/opencds/cqf/cql/ls/server/" + libraryIdentifier.getId() + ".cql"));
+                    "/org/opencds/cqf/cql/ls/server/" + libraryIdentifier.getId() + ".cql"));
         } catch (URISyntaxException e) {
             throw new RuntimeException(String.format("error locating test contest for: %s",
                     libraryIdentifier.toString()));
@@ -22,6 +22,6 @@ public class TestContentService implements ContentService {
     }
 
     public InputStream read(URI uri) {
-        return TestContentService.class.getResourceAsStream(uri.toString().replace("file:", ""));
+        return TestContentService.class.getResourceAsStream(uri.toString());
     }
 }

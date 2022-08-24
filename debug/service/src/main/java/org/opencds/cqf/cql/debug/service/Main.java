@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.opencds.cqf.cql.debug.CqlDebugServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 
 /**
  * This class starts a CqlDebugServer listening on std-in and std-out. NOTE: This stand-alone server
@@ -26,6 +27,9 @@ public class Main {
      * @throws ExecutionException if server thread errors
      */
     public static void main(String[] args) throws InterruptedException, ExecutionException {
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
+
         log.info("java.version is {}", System.getProperty("java.version"));
         log.info("cql-debug version is {}",
                 CqlDebugServer.class.getPackage().getImplementationVersion());

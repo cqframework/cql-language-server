@@ -1,6 +1,6 @@
 # CQL Language Server
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/org.opencds.cqf.cql/ls/badge.svg)](https://maven-badges.herokuapp.com/maven-central/org.opencds.cqf.cql/ls) [![Build Status](https://www.travis-ci.com/DBCG/cql-language-server.svg?branch=master)](https://www.travis-ci.com/DBCG/cql-language-server) [![project chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://chat.fhir.org/#narrow/stream/179220-cql)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/org.opencds.cqf.cql.ls/cql-ls/badge.svg)](https://maven-badges.herokuapp.com/maven-central/org.opencds.cqf.cql.ls/cql-ls) [![Build Status](https://app.travis-ci.com/DBCG/cql-language-server.svg?branch=master)](https://app.travis-ci.com/DBCG/cql-language-server) [![project chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://chat.fhir.org/#narrow/stream/179220-cql)
 
 A CQL Language server compatible with the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
 

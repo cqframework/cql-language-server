@@ -17,6 +17,7 @@ import org.cqframework.cql.cql2elm.model.Version;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,18 +35,23 @@ public class FileContentService implements ContentService {
     }
 
     @Override
-    public Set<URI> locate(VersionedIdentifier identifier) {
+    public Set<URI> locate(URI root, VersionedIdentifier identifier) {
+        checkNotNull(root);
         checkNotNull(identifier);
 
-        // TODO: Actually, the content service here just needs to search through folders
-        // that have CQL files in them.
-
-        // One way we could implement the "search only CQL folders" behavior is to register
-        // file watchers with the language client to notify us. Then we could limit searches
-        // to the appropriate folders, or keep a registry.
         Set<URI> uris = new HashSet<>();
+
+        // This just checks to see if the requested
+        // location URI is part of the workspace.
+        // If not, no locations are returned.
         for (WorkspaceFolder w : this.workspaceFolders) {
-            File file = searchFolder(w.getUri(), identifier);
+            URI folderUri = Uris.parseOrNull(w.getUri());
+            // If root is not a is a child of the workspace folder, skip it.
+            if (folderUri == null || folderUri.relativize(root).equals(root)) {
+                continue;
+            }
+
+            File file = searchFolder(root, identifier);
             if (file != null && file.exists()) {
                 uris.add(file.toURI());
             }
@@ -54,10 +60,10 @@ public class FileContentService implements ContentService {
         return uris;
     }
 
-    public static File searchFolder(String directory, VersionedIdentifier libraryIdentifier) {
+    public static File searchFolder(URI directory, VersionedIdentifier libraryIdentifier) {
         Path path;
         try {
-            path = Paths.get(new URI(directory));
+            path = Paths.get(directory);
         } catch (Exception e) {
             log.warn(String.format("error searching directory %s. Skipping.", directory), e);
             return null;

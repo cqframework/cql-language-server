@@ -79,7 +79,7 @@ public class DiagnosticsService {
 
         for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
             PublishDiagnosticsParams params = new PublishDiagnosticsParams(
-                    entry.getKey().toString(), new ArrayList<>(entry.getValue()));
+                    Uris.toClientUri(entry.getKey()), new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
         }
     }
@@ -126,12 +126,9 @@ public class DiagnosticsService {
                 exceptions.stream().map(x -> x.getLocator().getLibrary()).distinct()
                         .filter(Objects::nonNull).collect(Collectors.toList());
 
-        // TODO: Due to the way the content service is implemented, this will scan the entire
-        // project
-        // to locate a given versioned identifier for every library in the list here. Thats ~N^2
-        // file accesses, so that's bad.
+        URI root = Uris.getHead(uri);
         List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
-                .map(x -> Pair.of(x, this.contentService.locate(x).iterator().next()))
+                .map(x -> Pair.of(x, this.contentService.locate(root, x).iterator().next()))
                 .collect(Collectors.toList());
 
         Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();

@@ -34,12 +34,14 @@ public class CqlTextDocumentService implements TextDocumentService {
     private final CompletableFuture<LanguageClient> client;
     private final FormattingProvider formattingProvider;
     private final HoverProvider hoverProvider;
+    private final EventBus eventBus;
 
     public CqlTextDocumentService(CompletableFuture<LanguageClient> client,
-            HoverProvider hoverProvider, FormattingProvider formattingProvider) {
+            HoverProvider hoverProvider, FormattingProvider formattingProvider, EventBus eventBus) {
         this.client = client;
         this.formattingProvider = formattingProvider;
         this.hoverProvider = hoverProvider;
+        this.eventBus = eventBus;
     }
 
     @SuppressWarnings("java:S125") // Keeping the commented code for future reference
@@ -81,21 +83,21 @@ public class CqlTextDocumentService implements TextDocumentService {
 
     @Override
     public void didOpen(DidOpenTextDocumentParams params) {
-        EventBus.getDefault().post(new DidOpenTextDocumentEvent(params));
+        eventBus.post(new DidOpenTextDocumentEvent(params));
     }
 
     @Override
     public void didChange(DidChangeTextDocumentParams params) {
-        EventBus.getDefault().post(new DidChangeTextDocumentEvent(params));
+        eventBus.post(new DidChangeTextDocumentEvent(params));
     }
 
     @Override
     public void didClose(DidCloseTextDocumentParams params) {
-        EventBus.getDefault().post(new DidCloseTextDocumentEvent(params));
+        eventBus.post(new DidCloseTextDocumentEvent(params));
     }
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
-        EventBus.getDefault().post(new DidSaveTextDocumentEvent(params));
+        eventBus.post(new DidSaveTextDocumentEvent(params));
     }
 }

@@ -14,6 +14,7 @@ import org.fhir.ucum.UcumEssenceService;
 import org.fhir.ucum.UcumService;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +55,7 @@ public class CqlTranslationManager {
     public CqlTranslator translate(URI uri, InputStream stream) {
         ModelManager modelManager = this.createModelManager();
 
-        LibraryManager libraryManager = this.createLibraryManager(modelManager);
+        LibraryManager libraryManager = this.createLibraryManager(Uris.getHead(uri), modelManager);
 
         try {
             return CqlTranslator.fromStream(stream, modelManager, libraryManager, ucumService,
@@ -69,10 +70,10 @@ public class CqlTranslationManager {
         return new CacheAwareModelManager(this.globalCache);
     }
 
-    private LibraryManager createLibraryManager(ModelManager modelManager) {
+    private LibraryManager createLibraryManager(URI root, ModelManager modelManager) {
         LibraryManager libraryManager = new LibraryManager(modelManager);
         libraryManager.getLibrarySourceLoader()
-                .registerProvider(new ContentServiceSourceProvider(this.contentService));
+                .registerProvider(new ContentServiceSourceProvider(root, this.contentService));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
 
         return libraryManager;
