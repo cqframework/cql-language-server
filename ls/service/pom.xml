@@ -9,7 +9,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>1.5.8</version>
+        <version>1.5.9-SNAPSHOT</version>
         <relativePath>../..</relativePath>
     </parent>
 
@@ -17,7 +17,7 @@
         <dependency>
             <groupId>org.opencds.cqf.cql.ls</groupId>
             <artifactId>cql-ls-server</artifactId>
-            <version>1.5.8</version>
+            <version>1.5.9-SNAPSHOT</version>
         </dependency>
 
         <dependency>
