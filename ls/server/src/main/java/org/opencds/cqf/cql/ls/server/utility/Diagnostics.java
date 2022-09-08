@@ -2,7 +2,8 @@ package org.opencds.cqf.cql.ls.server.utility;
 
 import java.util.HashSet;
 import java.util.Set;
-import org.cqframework.cql.cql2elm.CqlTranslatorException;
+
+import org.cqframework.cql.cql2elm.CqlCompilerException;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -12,7 +13,7 @@ public class Diagnostics {
     private Diagnostics() {}
 
 
-    public static Diagnostic convert(CqlTranslatorException error) {
+    public static Diagnostic convert(CqlCompilerException error) {
         if (error.getLocator() != null) {
             Range range = position(error);
             Diagnostic diagnostic = new Diagnostic();
@@ -28,9 +29,9 @@ public class Diagnostics {
         }
     }
 
-    public static Set<Diagnostic> convert(Iterable<CqlTranslatorException> errors) {
+    public static Set<Diagnostic> convert(Iterable<CqlCompilerException> errors) {
         Set<Diagnostic> result = new HashSet<>();
-        for (CqlTranslatorException error : errors) {
+        for (CqlCompilerException error : errors) {
             Diagnostic diagnostic = convert(error);
             if (diagnostic != null) {
                 result.add(diagnostic);
@@ -39,7 +40,7 @@ public class Diagnostics {
         return result;
     }
 
-    private static DiagnosticSeverity severity(CqlTranslatorException.ErrorSeverity severity) {
+    private static DiagnosticSeverity severity(CqlCompilerException.ErrorSeverity severity) {
         switch (severity) {
             case Error:
                 return DiagnosticSeverity.Error;
@@ -51,7 +52,7 @@ public class Diagnostics {
         }
     }
 
-    private static Range position(CqlTranslatorException error) {
+    private static Range position(CqlCompilerException error) {
         // The Language server API assumes 0 based indices and an exclusive range
         return new Range(
                 new Position(error.getLocator().getStartLine() - 1,

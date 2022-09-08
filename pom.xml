@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>1.5.9-SNAPSHOT</version>
+    <version>2.0.0-SNAPSHOT</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -16,10 +16,10 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <jackson-2.version>2.5.0</jackson-2.version>
         <jersey-2.version>2.10</jersey-2.version>
-        <cqframework.version>1.5.11</cqframework.version>
+        <cqframework.version>2.1.0</cqframework.version>
         <hapi.version>5.6.3</hapi.version>
-        <cql-engine.version>1.5.9</cql-engine.version>
-        <cql-evaluator.version>1.4.6</cql-evaluator.version>
+        <cql-engine.version>2.1.0-SNAPSHOT</cql-engine.version>
+        <cql-evaluator.version>2.1.0-SNAPSHOT</cql-evaluator.version>
         <auto-service.version>1.0</auto-service.version>
         <slf4j.version>1.7.29</slf4j.version>
         <spring.boot.version>2.7.2</spring.boot.version>
@@ -103,7 +103,47 @@
             </dependency>
             <dependency>
                 <groupId>info.cqframework</groupId>
+                <artifactId>cqf-fhir</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>cqf-fhir-npm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>elm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
                 <artifactId>elm-fhir</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>model</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>model-jaxb</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>elm-jaxb</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>qdm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>quick</artifactId>
                 <version>${cqframework.version}</version>
             </dependency>
 
@@ -113,6 +153,11 @@
                 <artifactId>evaluator.cli</artifactId>
                 <version>${cql-evaluator.version}</version>
             </dependency>
+            <!--dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.jaxb-deps</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency-->
 
             <!-- CQL engine -->
             <dependency>
@@ -182,6 +227,12 @@
             </dependency>
 
             <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.12.0</version>
+            </dependency>
+
+            <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-core</artifactId>
                 <version>1.2.11</version>
@@ -191,6 +242,18 @@
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
                 <version>1.2.11</version>
+            </dependency>
+
+            <!-- JAXB implementation dependencies -->
+            <dependency>
+                <groupId>org.eclipse.persistence</groupId>
+                <artifactId>org.eclipse.persistence.moxy</artifactId>
+                <version>2.7.7</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish</groupId>
+                <artifactId>javax.json</artifactId>
+                <version>1.0.4</version>
             </dependency>
 
             <!-- test dependencies -->
@@ -240,10 +303,12 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.8.1</version>
+                    <version>3.10.0</version>
                     <configuration>
-                        <source>1.8</source>
-                        <target>1.8</target>
+                        <release>11</release>
+                        <source>11</source>
+                        <target>11</target>
+                        <failOnError>true</failOnError>
                         <failOnWarning>true</failOnWarning>
                         <showWarnings>true</showWarnings>
                         <compilerArgs>
@@ -252,6 +317,7 @@
                             <arg>-Xlint:-options</arg>
                             <arg>-Xlint:-processing</arg>
                             <arg>-Werror</arg>
+                            <arg>-implicit:none</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>
                             <path>
@@ -277,16 +343,10 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-javadoc-plugin</artifactId>
-                    <version>3.2.0</version>
+                    <version>3.3.1</version>
                     <configuration>
-                        <additionalparam>-Xdoclint:all -Xdoclint:-missing</additionalparam>
-                        <additionalOptions>-Xdoclint:all -Xdoclint:-missing</additionalOptions>
-                        <additionalJOptions>
-                            <additionalJOption>-Xdoclint:all</additionalJOption>
-                            <additionalJOption>-Xdoclint:-missing</additionalJOption>
-                        </additionalJOptions>
-                        <quiet>true</quiet>
-                        <source>8</source>
+                        <source>11</source>
+                        <show>private</show>
                     </configuration>
                     <executions>
                         <execution>
@@ -325,6 +385,11 @@
                     </executions>
                 </plugin>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.2.4</version>
+                </plugin>
+                <plugin>
                     <groupId>org.sonatype.plugins</groupId>
                     <artifactId>nexus-staging-maven-plugin</artifactId>
                     <version>1.6.7</version>
@@ -338,7 +403,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
-                    <version>3.0.0-M2</version>
+                    <version>3.1.0</version>
                     <executions>
                         <execution>
                             <id>enforce-no-snapshots</id>
@@ -362,7 +427,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
-                    <version>2.19.1</version>
+                    <version>2.22.2</version>
                     <configuration>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     </configuration>

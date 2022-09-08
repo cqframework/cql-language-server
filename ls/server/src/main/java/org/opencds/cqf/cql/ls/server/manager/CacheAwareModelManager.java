@@ -6,6 +6,7 @@ import org.cqframework.cql.cql2elm.ModelInfoLoader;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
 import org.cqframework.cql.cql2elm.model.SystemModel;
+import org.hl7.cql.model.ModelIdentifier;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.hl7.elm_modelinfo.r1.ModelInfo;
 
@@ -14,16 +15,30 @@ import org.hl7.elm_modelinfo.r1.ModelInfo;
  */
 public class CacheAwareModelManager extends ModelManager {
 
-    private final Map<VersionedIdentifier, Model> globalCache;
+    private final Map<ModelIdentifier, Model> globalCache;
 
     private final Map<String, Model> localCache;
 
-    public CacheAwareModelManager(Map<VersionedIdentifier, Model> globalCache) {
+    public CacheAwareModelManager(Map<ModelIdentifier, Model> globalCache) {
         this.globalCache = globalCache;
         this.localCache = new HashMap<>();
     }
 
-    private Model buildModel(VersionedIdentifier identifier) {
+    private VersionedIdentifier toVersionedIdentifier(ModelIdentifier modelIdentifier) {
+        return new VersionedIdentifier()
+                .withId(modelIdentifier.getId())
+                .withVersion(modelIdentifier.getVersion())
+                .withSystem(modelIdentifier.getSystem());
+    }
+
+    private ModelIdentifier toModelIdentifier(VersionedIdentifier versionedIdentifier) {
+        return new ModelIdentifier()
+                .withId(versionedIdentifier.getId())
+                .withVersion(versionedIdentifier.getVersion())
+                .withSystem(versionedIdentifier.getSystem());
+    }
+
+    private Model buildModel(ModelIdentifier identifier) {
         ModelInfoLoader loader = new ModelInfoLoader();
         Model model = null;
         try {
@@ -43,7 +58,7 @@ public class CacheAwareModelManager extends ModelManager {
     }
 
     @Override
-    public Model resolveModel(VersionedIdentifier modelIdentifier) {
+    public Model resolveModel(ModelIdentifier modelIdentifier) {
         Model model = null;
         if (this.localCache.containsKey(modelIdentifier.getId())) {
             model = this.localCache.get(modelIdentifier.getId());
