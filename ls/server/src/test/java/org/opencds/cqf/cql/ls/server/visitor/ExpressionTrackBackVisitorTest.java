@@ -4,9 +4,10 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import org.cqframework.cql.elm.tracking.TrackBack;
+import org.eclipse.lsp4j.Position;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
+import org.hl7.elm.r1.ExpressionRef;
 import org.hl7.elm.r1.Library;
 import org.hl7.elm.r1.Retrieve;
 import org.junit.jupiter.api.BeforeAll;
@@ -33,8 +34,8 @@ public class ExpressionTrackBackVisitorTest {
     @Test
     public void positionInRetrieve_returnsRetrieve() {
         ExpressionTrackBackVisitor visitor = new ExpressionTrackBackVisitor();
-        TrackBack tb = new TrackBack(library.getIdentifier(), 9, 9, 9, 9);
-        Element e = visitor.visitLibrary(library, tb);
+        Position p = new Position(8, 9);
+        Element e = visitor.visitLibrary(library, p);
         assertNotNull(e);
         assertThat(e, instanceOf(Retrieve.class));
     }
@@ -42,17 +43,26 @@ public class ExpressionTrackBackVisitorTest {
     @Test
     public void positionOutsideExpression_returnsNull() {
         ExpressionTrackBackVisitor visitor = new ExpressionTrackBackVisitor();
-        TrackBack tb = new TrackBack(library.getIdentifier(), 10, 0, 10, 0);
-        Element e = visitor.visitLibrary(library, tb);
+        Position p = new Position(9, 0);
+        Element e = visitor.visitLibrary(library, p);
         assertNull(e);
     }
 
     @Test
     public void positionInExpression_returnsExpressionDef() {
         ExpressionTrackBackVisitor visitor = new ExpressionTrackBackVisitor();
-        TrackBack tb = new TrackBack(library.getIdentifier(), 15, 10, 15, 10);
-        Element e = visitor.visitLibrary(library, tb);
+        Position p = new Position(13, 10);
+        Element e = visitor.visitLibrary(library, p);
         assertNotNull(e);
         assertThat(e, instanceOf(ExpressionDef.class));
+    }
+
+    @Test
+    public void positionInExpressionDef_returnsExpressionRef() {
+        ExpressionTrackBackVisitor visitor = new ExpressionTrackBackVisitor();
+        Position p = new Position(14, 10);
+        Element e = visitor.visitLibrary(library, p);
+        assertNotNull(e);
+        assertThat(e, instanceOf(ExpressionRef.class));
     }
 }
