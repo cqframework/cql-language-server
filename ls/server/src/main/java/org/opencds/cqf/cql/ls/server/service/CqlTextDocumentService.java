@@ -2,6 +2,10 @@ package org.opencds.cqf.cql.ls.server.service;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionList;
+import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -15,6 +19,7 @@ import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.greenrobot.eventbus.EventBus;
@@ -22,10 +27,12 @@ import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidSaveTextDocumentEvent;
+import org.opencds.cqf.cql.ls.server.provider.CompletionProvider;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.google.common.collect.ImmutableList;
 
 public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger log = LoggerFactory.getLogger(CqlTextDocumentService.class);
@@ -34,13 +41,16 @@ public class CqlTextDocumentService implements TextDocumentService {
     private final CompletableFuture<LanguageClient> client;
     private final FormattingProvider formattingProvider;
     private final HoverProvider hoverProvider;
+    private final CompletionProvider completionProvider;
     private final EventBus eventBus;
 
     public CqlTextDocumentService(CompletableFuture<LanguageClient> client,
-            HoverProvider hoverProvider, FormattingProvider formattingProvider, EventBus eventBus) {
+            CompletionProvider completionProvider, HoverProvider hoverProvider,
+            FormattingProvider formattingProvider, EventBus eventBus) {
         this.client = client;
-        this.formattingProvider = formattingProvider;
+        this.completionProvider = completionProvider;
         this.hoverProvider = hoverProvider;
+        this.formattingProvider = formattingProvider;
         this.eventBus = eventBus;
     }
 
@@ -48,7 +58,8 @@ public class CqlTextDocumentService implements TextDocumentService {
     public void initialize(InitializeParams params, ServerCapabilities serverCapabilities) {
         serverCapabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
         // c.setDefinitionProvider(true);
-        // c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
+        serverCapabilities
+                .setCompletionProvider(new CompletionOptions(false, ImmutableList.of(".")));
         serverCapabilities.setDocumentFormattingProvider(true);
         // serverCapabilities.setDocumentRangeFormattingProvider(false);
         serverCapabilities.setHoverProvider(true);
@@ -64,6 +75,14 @@ public class CqlTextDocumentService implements TextDocumentService {
         return CompletableFuture.supplyAsync(() -> this.hoverProvider.hover(position))
                 .exceptionally(this::notifyClient);
     }
+
+    @Override
+    public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
+            CompletionParams position) {
+        return CompletableFuture.supplyAsync(() -> this.completionProvider.completion(position))
+                .exceptionally(this::notifyClient);
+    }
+
 
 
     @Override

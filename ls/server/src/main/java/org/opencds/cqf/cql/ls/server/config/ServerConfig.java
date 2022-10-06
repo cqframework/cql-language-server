@@ -12,6 +12,7 @@ import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+import org.opencds.cqf.cql.ls.server.provider.CompletionProvider;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.opencds.cqf.cql.ls.server.service.ActiveContentService;
@@ -68,10 +69,10 @@ public class ServerConfig {
 
     @Bean
     public CqlTextDocumentService cqlTextDocumentService(
-            CompletableFuture<LanguageClient> languageClient, HoverProvider hoverProvider,
-            FormattingProvider formattingProvider, EventBus eventBus) {
-        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider,
-                eventBus);
+            CompletableFuture<LanguageClient> languageClient, CompletionProvider completionProvider,
+            HoverProvider hoverProvider, FormattingProvider formattingProvider, EventBus eventBus) {
+        return new CqlTextDocumentService(languageClient, completionProvider, hoverProvider,
+                formattingProvider, eventBus);
     }
 
     @Bean
@@ -96,8 +97,11 @@ public class ServerConfig {
     CqlTranslationManager cqlTranslationManager(ContentService contentService,
             TranslatorOptionsManager translatorOptionsManager) {
         return new CqlTranslationManager(contentService, translatorOptionsManager);
+    }
 
-
+    @Bean
+    CompletionProvider completionProvider(CqlTranslationManager cqlTranslationManager) {
+        return new CompletionProvider(cqlTranslationManager);
     }
 
     @Bean
