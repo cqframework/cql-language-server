@@ -73,7 +73,28 @@
          In the meantime, the language server implements part of this directly-->
         <dependency>
             <groupId>org.opencds.cqf.cql</groupId>
-            <artifactId>evaluator.cli</artifactId>
+            <artifactId>evaluator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.fhir</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.library</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.expression</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.dagger</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
         </dependency>
     </dependencies>
 </project>

@@ -16,10 +16,11 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <jackson-2.version>2.5.0</jackson-2.version>
         <jersey-2.version>2.10</jersey-2.version>
-        <cqframework.version>2.1.0</cqframework.version>
-        <hapi.version>5.6.3</hapi.version>
-        <cql-engine.version>2.1.0-SNAPSHOT</cql-engine.version>
-        <cql-evaluator.version>2.1.0-SNAPSHOT</cql-evaluator.version>
+        <cqframework.version>2.3.0-SNAPSHOT</cqframework.version>
+        <hapi.version>6.0.1</hapi.version>
+        <picocli.version>4.6.1</picocli.version>
+        <cql-engine.version>2.2.0-SNAPSHOT</cql-engine.version>
+        <cql-evaluator.version>2.2.0-SNAPSHOT</cql-evaluator.version>
         <auto-service.version>1.0</auto-service.version>
         <slf4j.version>1.7.29</slf4j.version>
         <spring.boot.version>2.7.2</spring.boot.version>
@@ -90,6 +91,14 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!-- CLI -->
+            <dependency>
+                <groupId>info.picocli</groupId>
+                <artifactId>picocli</artifactId>
+                <version>${picocli.version}</version>
+            </dependency>
+
             <!-- CQL-to-ELM Translator -->
             <dependency>
                 <groupId>info.cqframework</groupId>
@@ -150,14 +159,34 @@
             <!-- CQL evaluator -->
             <dependency>
                 <groupId>org.opencds.cqf.cql</groupId>
-                <artifactId>evaluator.cli</artifactId>
+                <artifactId>evaluator</artifactId>
                 <version>${cql-evaluator.version}</version>
             </dependency>
-            <!--dependency>
+            <dependency>
                 <groupId>org.opencds.cqf.cql</groupId>
                 <artifactId>evaluator.jaxb-deps</artifactId>
                 <version>${cql-evaluator.version}</version>
-            </dependency-->
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.fhir</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.library</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.expression</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.dagger</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
 
             <!-- CQL engine -->
             <dependency>
@@ -324,6 +353,11 @@
                                 <groupId>com.google.auto.service</groupId>
                                 <artifactId>auto-service</artifactId>
                                 <version>${auto-service.version}</version>
+                            </path>
+                            <path>
+                                <groupId>info.picocli</groupId>
+                                <artifactId>picocli-codegen</artifactId>
+                                <version>${picocli.version}</version>
                             </path>
                         </annotationProcessorPaths>
                     </configuration>
