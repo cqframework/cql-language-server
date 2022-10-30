@@ -49,12 +49,72 @@
         </dependency>
         <dependency>
             <groupId>info.cqframework</groupId>
+            <artifactId>model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>info.cqframework</groupId>
+            <artifactId>model-jaxb</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>info.cqframework</groupId>
             <artifactId>elm-fhir</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>info.cqframework</groupId>
+            <artifactId>elm-jaxb</artifactId>
         </dependency>
 
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-client</artifactId>
+        </dependency>
+
+        <!-- Core FHIR dependencies -->
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>org.hl7.fhir.r4</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>org.hl7.fhir.r4b</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>org.hl7.fhir.r5</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>org.hl7.fhir.convertors</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>org.hl7.fhir.utilities</artifactId>
+        </dependency>
+
+        <!-- Additional HAPI FHIR Dependencies the Engine does not import -->
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-structures-dstu3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-validation-resources-dstu3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-structures-r4</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-validation-resources-r4</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-structures-r5</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-validation-resources-r5</artifactId>
         </dependency>
 
         <!-- Java implementation of VS Code language server protocol -->
@@ -68,6 +128,22 @@
             <artifactId>eventbus-java</artifactId>
         </dependency>
 
+        <!-- CQL Engine dependencies-->
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>engine</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>engine.fhir</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>engine.jaxb</artifactId>
+        </dependency>
+
         <!-- CQL Evaluator dependencies-->
         <!--TODO: These are being migrated out to the debug server plugin eventually,
          In the meantime, the language server implements part of this directly-->
@@ -77,7 +153,15 @@
         </dependency>
         <dependency>
             <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.builder</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
             <artifactId>evaluator.fhir</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.fhir-npm</artifactId>
         </dependency>
         <dependency>
             <groupId>org.opencds.cqf.cql</groupId>
@@ -91,10 +175,23 @@
             <groupId>org.opencds.cqf.cql</groupId>
             <artifactId>evaluator.dagger</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.opencds.cqf.cql</groupId>
+            <artifactId>evaluator.spring</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.eclipse.persistence</groupId>
+            <artifactId>org.eclipse.persistence.moxy</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish</groupId>
+            <artifactId>javax.json</artifactId>
         </dependency>
     </dependencies>
 </project>

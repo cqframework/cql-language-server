@@ -33,8 +33,14 @@ public class DebugCqlCommandContribution implements CommandContribution {
             ByteArrayOutputStream baosErr = new ByteArrayOutputStream();
             System.setErr(new PrintStream(baosErr));
 
-            CommandLine cli = new CommandLine(new CliCommand());
-            int result = cli.execute(arguments.toArray(new String[arguments.size()]));
+            try {
+                CommandLine cli = new CommandLine(new CliCommand());
+                int result = cli.execute(arguments.toArray(new String[arguments.size()]));
+            }
+            catch (Exception e) {
+                System.err.println("Exception occurred attempting to evaluate:");
+                System.err.println(e.getMessage());
+            }
 
             String out = baosOut.toString();
             String err = baosErr.toString();
@@ -45,7 +51,8 @@ public class DebugCqlCommandContribution implements CommandContribution {
             }
 
             return CompletableFuture.completedFuture(out);
-        } finally {
+        }
+        finally {
             System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out)));
             System.setErr(new PrintStream(new FileOutputStream(FileDescriptor.err)));
         }

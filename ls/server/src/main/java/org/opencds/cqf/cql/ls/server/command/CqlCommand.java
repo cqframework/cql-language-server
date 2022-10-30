@@ -97,73 +97,77 @@ public class CqlCommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        try {
+            FhirVersionEnum fhirVersionEnum = FhirVersionEnum.valueOf(fhirVersion);
 
-        FhirVersionEnum fhirVersionEnum = FhirVersionEnum.valueOf(fhirVersion);
+            CqlEvaluatorComponent cqlEvaluatorComponent = DaggerCqlEvaluatorComponent.builder()
+                    .fhirContext(fhirVersionEnum.newContext()).build();
 
-        CqlEvaluatorComponent cqlEvaluatorComponent = DaggerCqlEvaluatorComponent.builder()
-                .fhirContext(fhirVersionEnum.newContext()).build();
+            CqlOptions cqlOptions = CqlOptions.defaultOptions();
 
-        CqlOptions cqlOptions = CqlOptions.defaultOptions();
-
-        if (optionsPath != null) {
-            CqlTranslatorOptions options = CqlTranslatorOptionsMapper.fromFile(optionsPath);
-            cqlOptions.setCqlTranslatorOptions(options);
-        }
-
-        for (LibraryParameter library : libraries) {
-            CqlEvaluatorBuilder cqlEvaluatorBuilder = cqlEvaluatorComponent.createBuilder().withCqlOptions(cqlOptions);
-
-            LibrarySourceProvider librarySourceProvider = librarySourceProviderIndex.get(library.libraryUrl);
-
-            if (librarySourceProvider == null) {
-                librarySourceProvider = cqlEvaluatorComponent.createLibrarySourceProviderFactory()
-                        .create(new EndpointInfo().setAddress(library.libraryUrl));
-                this.librarySourceProviderIndex.put(library.libraryUrl, librarySourceProvider);
+            if (optionsPath != null) {
+                CqlTranslatorOptions options = CqlTranslatorOptionsMapper.fromFile(optionsPath);
+                cqlOptions.setCqlTranslatorOptions(options);
             }
 
-            cqlEvaluatorBuilder.withLibrarySourceProvider(librarySourceProvider);
+            for (LibraryParameter library : libraries) {
+                CqlEvaluatorBuilder cqlEvaluatorBuilder = cqlEvaluatorComponent.createBuilder().withCqlOptions(cqlOptions);
 
-            if (library.terminologyUrl != null) {
-                TerminologyProvider terminologyProvider = this.terminologyProviderIndex.get(library.terminologyUrl);
-                if (terminologyProvider == null) {
-                    terminologyProvider = cqlEvaluatorComponent.createTerminologyProviderFactory()
-                            .create(new EndpointInfo().setAddress(library.terminologyUrl));
-                    this.terminologyProviderIndex.put(library.terminologyUrl, terminologyProvider);
+                LibrarySourceProvider librarySourceProvider = librarySourceProviderIndex.get(library.libraryUrl);
+
+                if (librarySourceProvider == null) {
+                    librarySourceProvider = cqlEvaluatorComponent.createLibrarySourceProviderFactory()
+                            .create(new EndpointInfo().setAddress(library.libraryUrl));
+                    this.librarySourceProviderIndex.put(library.libraryUrl, librarySourceProvider);
                 }
 
-                cqlEvaluatorBuilder.withTerminologyProvider(terminologyProvider);
+                cqlEvaluatorBuilder.withLibrarySourceProvider(librarySourceProvider);
+
+                if (library.terminologyUrl != null) {
+                    TerminologyProvider terminologyProvider = this.terminologyProviderIndex.get(library.terminologyUrl);
+                    if (terminologyProvider == null) {
+                        terminologyProvider = cqlEvaluatorComponent.createTerminologyProviderFactory()
+                                .create(new EndpointInfo().setAddress(library.terminologyUrl));
+                        this.terminologyProviderIndex.put(library.terminologyUrl, terminologyProvider);
+                    }
+
+                    cqlEvaluatorBuilder.withTerminologyProvider(terminologyProvider);
+                }
+
+                DataProviderComponents dataProvider = null;
+                DataProviderFactory dataProviderFactory = cqlEvaluatorComponent.createDataProviderFactory();
+                if (library.model != null) {
+                    dataProvider = dataProviderFactory.create(new EndpointInfo().setAddress(library.model.modelUrl));
+                }
+                // default to FHIR
+                else {
+                    dataProvider = dataProviderFactory.create(new EndpointInfo().setType(Constants.HL7_FHIR_FILES_CODE));
+                }
+
+                cqlEvaluatorBuilder.withModelResolverAndRetrieveProvider(dataProvider.getModelUri(), dataProvider.getModelResolver(),
+                        dataProvider.getRetrieveProvider());
+
+                CqlEvaluator evaluator = cqlEvaluatorBuilder.build();
+
+                VersionedIdentifier identifier = new VersionedIdentifier().withId(library.libraryName);
+
+                Pair<String, Object> contextParameter = null;
+
+                if (library.context != null) {
+                    contextParameter = Pair.of(library.context.contextName, library.context.contextValue);
+                }
+
+                EvaluationResult result = evaluator.evaluate(identifier, contextParameter);
+
+                for (Map.Entry<String, ExpressionResult> libraryEntry : result.expressionResults.entrySet()) {
+                    System.out.println(libraryEntry.getKey() + "=" + this.tempConvert(libraryEntry.getValue().value()));
+                }
+
+                System.out.println();
             }
-
-            DataProviderComponents dataProvider = null;
-            DataProviderFactory dataProviderFactory = cqlEvaluatorComponent.createDataProviderFactory();
-            if (library.model != null) {
-                dataProvider = dataProviderFactory.create(new EndpointInfo().setAddress(library.model.modelUrl));
-            }
-            // default to FHIR
-            else {
-                dataProvider = dataProviderFactory.create(new EndpointInfo().setType(Constants.HL7_FHIR_FILES_CODE));
-            }
-
-            cqlEvaluatorBuilder.withModelResolverAndRetrieveProvider(dataProvider.getModelUri(), dataProvider.getModelResolver(),
-                    dataProvider.getRetrieveProvider());
-
-            CqlEvaluator evaluator = cqlEvaluatorBuilder.build();
-
-            VersionedIdentifier identifier = new VersionedIdentifier().withId(library.libraryName);
-
-            Pair<String, Object> contextParameter = null;
-
-            if (library.context != null) {
-                contextParameter = Pair.of(library.context.contextName, library.context.contextValue);
-            }
-
-            EvaluationResult result = evaluator.evaluate(identifier, contextParameter);
-
-            for (Map.Entry<String, ExpressionResult> libraryEntry : result.expressionResults.entrySet()) {
-                System.out.println(libraryEntry.getKey() + "=" + this.tempConvert(libraryEntry.getValue().value()));
-            }
-
-            System.out.println();
+        }
+        catch (Exception e) {
+            System.err.println(e.getMessage());
         }
 
         return 0;

@@ -13,7 +13,6 @@ import org.cqframework.cql.cql2elm.model.Model;
 import org.fhir.ucum.UcumEssenceService;
 import org.fhir.ucum.UcumService;
 import org.hl7.cql.model.ModelIdentifier;
-import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
@@ -28,6 +27,8 @@ public class CqlTranslationManager {
     private static UcumService ucumService = null;
     private final TranslatorOptionsManager translatorOptionsManager;
 
+    private final IgContextManager igContextManager;
+
     static {
         try {
             ucumService = new UcumEssenceService(
@@ -38,10 +39,11 @@ public class CqlTranslationManager {
     }
 
     public CqlTranslationManager(ContentService contentService,
-            TranslatorOptionsManager translatorOptionsManager) {
+            TranslatorOptionsManager translatorOptionsManager, IgContextManager igContextManager) {
         this.globalCache = new HashMap<>();
         this.contentService = contentService;
         this.translatorOptionsManager = translatorOptionsManager;
+        this.igContextManager = igContextManager;
     }
 
     public CqlTranslator translate(URI uri) {
@@ -76,7 +78,7 @@ public class CqlTranslationManager {
         libraryManager.getLibrarySourceLoader()
                 .registerProvider(new ContentServiceSourceProvider(root, this.contentService));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
-
+        igContextManager.setupLibraryManager(root, libraryManager);
         return libraryManager;
     }
 }

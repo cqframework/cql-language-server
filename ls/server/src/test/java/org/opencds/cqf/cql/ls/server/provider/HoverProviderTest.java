@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.service.TestContentService;
 
@@ -25,7 +26,7 @@ public class HoverProviderTest {
     public static void beforeAll() {
         ContentService cs = new TestContentService();
         CqlTranslationManager cqlTranslationManager =
-                new CqlTranslationManager(cs, new TranslatorOptionsManager(cs));
+                new CqlTranslationManager(cs, new TranslatorOptionsManager(cs), new IgContextManager(cs));
         hoverProvider = new HoverProvider(cqlTranslationManager);
     }
 
