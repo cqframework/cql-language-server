@@ -128,27 +128,12 @@
             </dependency>
             <dependency>
                 <groupId>info.cqframework</groupId>
-                <artifactId>elm-jaxb</artifactId>
-                <version>${cqframework.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>info.cqframework</groupId>
                 <artifactId>elm-fhir</artifactId>
                 <version>${cqframework.version}</version>
             </dependency>
             <dependency>
                 <groupId>info.cqframework</groupId>
                 <artifactId>model</artifactId>
-                <version>${cqframework.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>info.cqframework</groupId>
-                <artifactId>model-jaxb</artifactId>
-                <version>${cqframework.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>info.cqframework</groupId>
-                <artifactId>elm-jaxb</artifactId>
                 <version>${cqframework.version}</version>
             </dependency>
             <dependency>
@@ -173,15 +158,12 @@
                 <artifactId>evaluator.builder</artifactId>
                 <version>${cql-evaluator.version}</version>
             </dependency>
-            <!-- I tried to use this, but it doesn't work, gets an error that the version is missing from the evaluator jar?
             <dependency>
                 <groupId>org.opencds.cqf.cql</groupId>
                 <artifactId>evaluator.jaxb-deps</artifactId>
-                <scope>import</scope>
                 <type>pom</type>
                 <version>${cql-evaluator.version}</version>
             </dependency>
-            -->
             <dependency>
                 <groupId>org.opencds.cqf.cql</groupId>
                 <artifactId>evaluator.fhir</artifactId>
@@ -225,13 +207,6 @@
                 <artifactId>engine.fhir</artifactId>
                 <version>${cql-engine.version}</version>
             </dependency>
-
-            <dependency>
-                <groupId>org.opencds.cqf.cql</groupId>
-                <artifactId>engine.jaxb</artifactId>
-                <version>${cql-engine.version}</version>
-            </dependency>
-
             <dependency>
                 <groupId>ca.uhn.hapi.fhir</groupId>
                 <artifactId>hapi-fhir-structures-hl7org-dstu2</artifactId>
@@ -429,8 +404,6 @@
                         <showWarnings>true</showWarnings>
                         <compilerArgs>
                             <arg>-Xlint:all</arg>
-                            <!-- This fixes a boostrapclass path warning which the "release" property fixes on Java 9+ -->
-                            <arg>-Xlint:-options</arg>
                             <arg>-Xlint:-processing</arg>
                             <arg>-Werror</arg>
                             <arg>-implicit:none</arg>
@@ -468,6 +441,7 @@
                     <configuration>
                         <source>11</source>
                         <show>private</show>
+                        <doclint>-missing</doclint>
                     </configuration>
                     <executions>
                         <execution>

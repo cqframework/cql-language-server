@@ -42,24 +42,14 @@
 
         <dependency>
             <groupId>org.opencds.cqf.cql</groupId>
-            <artifactId>engine.jaxb</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>info.cqframework</groupId>
-            <artifactId>model-jaxb</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>info.cqframework</groupId>
-            <artifactId>elm-jaxb</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.persistence</groupId>
-            <artifactId>org.eclipse.persistence.moxy</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish</groupId>
-            <artifactId>javax.json</artifactId>
+            <artifactId>evaluator.jaxb-deps</artifactId>
+            <type>pom</type>
         </dependency>
 
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>3.1.1</version>
+        </dependency>
     </dependencies>
 </project>
