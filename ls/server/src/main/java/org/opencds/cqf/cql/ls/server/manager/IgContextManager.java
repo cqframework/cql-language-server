@@ -71,14 +71,14 @@ public class IgContextManager {
      */
     protected IGContext findIgContext(URI uri) {
         // TODO: Support igs that don't have an ini by just looking for an implementation guide resource
-        log.info("Searching for ini file in %s", uri.toString());
+        log.info(String.format("Searching for ini file in %s", uri.toString()));
         URI current = uri;
         for (int i = 0; i < 2; i++) {
             URI parent = Uris.getHead(current);
             if (!parent.equals(current)) {
                 current = parent;
                 URI igIniPath = Uris.addPath(parent, "/ig.ini");
-                log.info("Attempting to read ini from path %s", igIniPath.toString());
+                log.info(String.format("Attempting to read ini from path %s", igIniPath.toString()));
                 InputStream input = contentService.read(igIniPath);
                 if (input != null) {
                     log.info("Initializing ig from ini...");

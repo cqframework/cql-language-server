@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import com.google.gson.JsonElement;
 import picocli.CommandLine;
@@ -20,6 +21,12 @@ public class DebugCqlCommandContribution implements CommandContribution {
     // TODO: Delete once the plugin is fully supported
     public static final String START_DEBUG_COMMAND =
             "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
+
+    private IgContextManager igContextManager;
+
+    public DebugCqlCommandContribution(IgContextManager igContextManager) {
+        this.igContextManager = igContextManager;
+    }
 
     private CompletableFuture<Object> executeCql(ExecuteCommandParams params) {
         try {
@@ -34,7 +41,7 @@ public class DebugCqlCommandContribution implements CommandContribution {
             System.setErr(new PrintStream(baosErr));
 
             try {
-                CommandLine cli = new CommandLine(new CliCommand());
+                CommandLine cli = new CommandLine(new CliCommand(igContextManager));
                 int result = cli.execute(arguments.toArray(new String[arguments.size()]));
             }
             catch (Exception e) {

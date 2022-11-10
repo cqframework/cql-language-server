@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.server.command;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,9 @@ import org.opencds.cqf.cql.evaluator.dagger.CqlEvaluatorComponent;
 import org.opencds.cqf.cql.evaluator.dagger.DaggerCqlEvaluatorComponent;
 
 import ca.uhn.fhir.context.FhirVersionEnum;
+import org.opencds.cqf.cql.evaluator.fhir.npm.NpmProcessor;
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
+import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -95,6 +99,9 @@ public class CqlCommand implements Callable<Integer> {
     private Map<String, LibrarySourceProvider> librarySourceProviderIndex = new HashMap<>();
     private Map<String, TerminologyProvider> terminologyProviderIndex = new HashMap<>();
 
+    @CommandLine.ParentCommand
+    private CliCommand parentCommand;
+
     @Override
     public Integer call() throws Exception {
         try {
@@ -112,6 +119,11 @@ public class CqlCommand implements Callable<Integer> {
 
             for (LibraryParameter library : libraries) {
                 CqlEvaluatorBuilder cqlEvaluatorBuilder = cqlEvaluatorComponent.createBuilder().withCqlOptions(cqlOptions);
+
+                NpmProcessor npmProcessor = parentCommand.getIgContextManager().getContext(URI.create(library.libraryUrl));
+                if (npmProcessor != null) {
+                    cqlEvaluatorBuilder.withNpmProcessor(npmProcessor);
+                }
 
                 LibrarySourceProvider librarySourceProvider = librarySourceProviderIndex.get(library.libraryUrl);
 
