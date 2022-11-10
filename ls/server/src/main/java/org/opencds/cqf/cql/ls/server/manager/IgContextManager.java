@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.manager;
 import org.cqframework.cql.cql2elm.*;
 import org.cqframework.fhir.npm.ILibraryReader;
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider;
+import org.cqframework.fhir.npm.NpmModelInfoProvider;
 import org.cqframework.fhir.utilities.IGContext;
 import org.eclipse.lsp4j.FileEvent;
 import org.greenrobot.eventbus.Subscribe;
@@ -57,7 +58,9 @@ public class IgContextManager {
         if (npmProcessor != null) {
             libraryManager.getNamespaceManager().addNamespace(npmProcessor.getIgNamespace());
             ILibraryReader reader = new org.cqframework.fhir.npm.LibraryLoader(npmProcessor.getIgContext().getFhirVersion());
-            libraryManager.getLibrarySourceLoader().registerProvider(new NpmLibrarySourceProvider(npmProcessor.getPackageManager().getNpmList(), reader, new LoggerAdapter(log)));
+            LoggerAdapter adapter = new LoggerAdapter(log);
+            libraryManager.getLibrarySourceLoader().registerProvider(new NpmLibrarySourceProvider(npmProcessor.getPackageManager().getNpmList(), reader, adapter));
+            libraryManager.getModelManager().getModelInfoLoader().registerModelInfoProvider(new NpmModelInfoProvider(npmProcessor.getPackageManager().getNpmList(), reader, adapter));
             for (NamespaceInfo ni : npmProcessor.getNamespaces()) {
                 libraryManager.getNamespaceManager().addNamespace(ni);
             }
