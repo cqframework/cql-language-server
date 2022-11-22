@@ -7,6 +7,9 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+// Here we want to find the most specific element in a list of elements that match
+// a particular cursor position. So after collecting all elements that overlap,
+// we sort them from smallest to largest and take the smallest matching element.
 public class OverlappingElements {
 
     public static Element getMostSpecificElement(List<Element> elements) {

@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.eclipse.lsp4j.*;
@@ -17,7 +16,6 @@ import org.opencds.cqf.cql.ls.server.visitor.ExpressionOverlapVisitorContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.xml.namespace.QName;
 import java.io.File;
 import java.net.URI;
 import java.util.ArrayList;
@@ -33,7 +31,7 @@ public class GoToDefinitionProvider {
         this.cqlTranslationManager = cqlTranslationManager;
     }
 
-    public Either<List<? extends Location>, List<? extends LocationLink>> getDefinitionLocation (DefinitionParams params) {
+    public Either<List<? extends Location>, List<? extends LocationLink>> getDefinitionLocation(DefinitionParams params) {
 
         ArrayList<LocationLink> locations = new ArrayList<>();
 
@@ -59,7 +57,7 @@ public class GoToDefinitionProvider {
 
         Element specificElement = OverlappingElements.getMostSpecificElement(context.getOverlappingElements());
 
-        LocationLink locationLink = this.getLocationFromElement(specificElement, library, uri);
+        LocationLink locationLink = this.getLocationLinkOfElement(specificElement, library, uri);
         if (locationLink != null) {
             locations.add(locationLink);
         }
@@ -67,44 +65,46 @@ public class GoToDefinitionProvider {
         return Either.forRight(locations);
     }
 
-    protected LocationLink getLocationFromElement (Element element, Library currentLibrary, URI currentUri ) {
+    protected LocationLink getLocationLinkOfElement(Element element, Library currentLibrary, URI currentUri) {
 
         // This case must come before ExpressionRef case because FunctionRef inherits from ExpressionRef
-        if (element instanceof FunctionRef) {
-            FunctionRef elFunctionRef = (FunctionRef) element;
+//        if (element instanceof FunctionRef) {
+//            FunctionRef elFunctionRef = (FunctionRef) element;
+//
+//            ImmutablePair<URI, Library> searchLibraryPair;
+//
+//            // If libraryName exists search for it, else use current.
+//            if (elFunctionRef.getLibraryName() == null) {
+//                searchLibraryPair = new ImmutablePair<URI, Library>(currentUri, currentLibrary);
+//            } else {
+//                searchLibraryPair = findIncludedLibrary(currentLibrary, elFunctionRef.getLibraryName(), Uris.getHead(currentUri));
+//            }
+//
+//            if (searchLibraryPair != null) {
+//
+//                List<ExpressionDef> expressionDefCandidates = GoToDefinitionProvider.getExpressionDefCandidatesByName(searchLibraryPair.getRight(), elFunctionRef.getName());
+//
+//                // If exactly one match by name, don't worry about arguments matching
+//                if (expressionDefCandidates.size() == 1) {
+//                    return GoToDefinitionProvider.getLocationLinkForExpressionDef(expressionDefCandidates.get(0), searchLibraryPair.getLeft(), elFunctionRef);
+//                }
+//
+//                // If more than one match, try to match calling function args with definition func args
+//                else if (expressionDefCandidates.size() > 1) {
+//                    FunctionDef functionDefCandidate = GoToDefinitionProvider.findMatchingFunctionDefInLibrary(expressionDefCandidates, elFunctionRef);
+//                    if (functionDefCandidate != null) {
+//                        return GoToDefinitionProvider.getLocationLinkForExpressionDef(functionDefCandidate, searchLibraryPair.getLeft(), elFunctionRef);
+//                    }
+//                }
+//            }
+//        }
+
+        if (element instanceof ExpressionRef) {
+            ExpressionRef elExpressionRef = (ExpressionRef) element;
 
             ImmutablePair<URI, Library> searchLibraryPair;
 
             // If libraryName exists search for it, else use current.
-            if (elFunctionRef.getLibraryName() == null) {
-                searchLibraryPair = new ImmutablePair<URI, Library>(currentUri, currentLibrary);
-            } else {
-                searchLibraryPair = findIncludedLibrary(currentLibrary, elFunctionRef.getLibraryName(), Uris.getHead(currentUri));
-            }
-
-            if (searchLibraryPair != null) {
-
-                List<ExpressionDef> expressionDefCandidates = GoToDefinitionProvider.getExpressionDefCandidatesByName(searchLibraryPair.getRight(), elFunctionRef.getName());
-
-                // If exactly one match by name, don't worry about arguments matching
-                if (expressionDefCandidates.size() == 1) {
-                    return GoToDefinitionProvider.getLocationLinkForExpressionDef(expressionDefCandidates.get(0), searchLibraryPair.getLeft(), elFunctionRef);
-                }
-
-                // If more than one match, try to match calling function args with definition func args
-                else if (expressionDefCandidates.size() > 1) {
-                    FunctionDef functionDefCandidate = GoToDefinitionProvider.findMatchingFunctionDefInLibrary(expressionDefCandidates, elFunctionRef);
-                    if (functionDefCandidate != null) {
-                        return GoToDefinitionProvider.getLocationLinkForExpressionDef(functionDefCandidate, searchLibraryPair.getLeft(), elFunctionRef);
-                    }
-                }
-            }
-        }
-
-        else if (element instanceof ExpressionRef) {
-            ExpressionRef elExpressionRef = (ExpressionRef) element;
-
-            ImmutablePair<URI, Library> searchLibraryPair;
             if (elExpressionRef.getLibraryName() == null) {
                 searchLibraryPair = new ImmutablePair<URI, Library>(currentUri, currentLibrary);
             } else {
@@ -115,9 +115,18 @@ public class GoToDefinitionProvider {
 
                 List<ExpressionDef> expressionDefCandidates = GoToDefinitionProvider.getExpressionDefCandidatesByName(searchLibraryPair.getRight(), elExpressionRef.getName());
 
-                // Should be one exact match for ExpressionRef if it exists
+                // If one exact match for either ExpressionRef or FunctionRef, go to it
                 if (expressionDefCandidates.size() == 1) {
                     return GoToDefinitionProvider.getLocationLinkForExpressionDef(expressionDefCandidates.get(0), searchLibraryPair.getLeft(), elExpressionRef);
+                }
+
+                // If more than one match for FunctionRef only, search for the best match among overloads based on arguments
+                else if (expressionDefCandidates.size() > 1 && element instanceof FunctionRef) {
+                    FunctionRef elFunctionRef = (FunctionRef) element;
+                    FunctionDef functionDefCandidate = GoToDefinitionProvider.findMatchingFunctionDefInLibrary(expressionDefCandidates, elFunctionRef);
+                    if (functionDefCandidate != null) {
+                        return GoToDefinitionProvider.getLocationLinkForExpressionDef(functionDefCandidate, searchLibraryPair.getLeft(), elFunctionRef);
+                    }
                 }
             }
         }
@@ -125,19 +134,19 @@ public class GoToDefinitionProvider {
         return null;
     }
 
-    protected static List<ExpressionDef> getExpressionDefCandidatesByName (Library library, String searchName) {
+    protected static List<ExpressionDef> getExpressionDefCandidatesByName(Library library, String searchName) {
         return library.getStatements().getDef().stream().filter(expressionDef -> expressionDef.getName().equals(searchName)).collect(Collectors.toList());
     }
 
-    protected static LocationLink getLocationLinkForExpressionDef (ExpressionDef foundExpressionDef, URI libraryUri, Element selectionElement) {
+    protected static LocationLink getLocationLinkForExpressionDef(ExpressionDef foundExpressionDef, URI libraryUri, Element selectionElement) {
         Range targetRange = GoToDefinitionProvider.getRangeOfElement(foundExpressionDef);
         Range originSelectionRange = GoToDefinitionProvider.getRangeOfElement(selectionElement);
         return new LocationLink(libraryUri.toString(), targetRange, targetRange, originSelectionRange);
     }
 
-    protected static FunctionDef findMatchingFunctionDefInLibrary (List<ExpressionDef> expressionDefCandidates, FunctionRef elFunctionRef) {
+    protected static FunctionDef findMatchingFunctionDefInLibrary(List<ExpressionDef> expressionDefCandidates, FunctionRef elFunctionRef) {
 
-        for (ExpressionDef expressionDef: expressionDefCandidates) {
+        for (ExpressionDef expressionDef : expressionDefCandidates) {
             if (expressionDef instanceof FunctionDef) {
                 FunctionDef functionDefCandidate = (FunctionDef) expressionDef;
 
@@ -157,7 +166,7 @@ public class GoToDefinitionProvider {
                     OperandDef operandDefArg = functionDefCandidate.getOperand().get(i);
                     Expression operandRefArg = elFunctionRef.getOperand().get(i);
 
-                    doesMatch = GoToDefinitionProvider.doesFunctionRefArg(operandDefArg, operandRefArg);
+                    doesMatch = GoToDefinitionProvider.areFunctionArgsCompatible(operandDefArg, operandRefArg);
 
                     if (!doesMatch) {
                         break;
@@ -173,9 +182,10 @@ public class GoToDefinitionProvider {
         return null;
     }
 
-    protected ImmutablePair<URI, Library> findIncludedLibrary (Library searchLibrary, String libraryName, URI cqlDirectory ) {
+    protected ImmutablePair<URI, Library> findIncludedLibrary(Library searchLibrary, String libraryName, URI cqlDirectory) {
         File foundFile = null;
-        for (IncludeDef includeDef: searchLibrary.getIncludes().getDef()) {
+        for (IncludeDef includeDef : searchLibrary.getIncludes().getDef()) {
+            // Use LocalIdentifier for lookup
             if (includeDef.getLocalIdentifier().equals(libraryName)) {
                 VersionedIdentifier includeIdentifier = new VersionedIdentifier()
                         .withId(includeDef.getPath())
@@ -199,7 +209,7 @@ public class GoToDefinitionProvider {
 
     }
 
-    public static boolean doesFunctionRefArg(OperandDef functionDefArg, Expression functionRefArg) {
+    public static boolean areFunctionArgsCompatible(OperandDef functionDefArg, Expression functionRefArg) {
         DataType functionDefArgType = functionDefArg.getOperandTypeSpecifier().getResultType();
         DataType functionRefArgType = functionRefArg.getResultType();
         return functionDefArgType.isCompatibleWith(functionRefArgType);
@@ -228,7 +238,7 @@ public class GoToDefinitionProvider {
 //    }
 
 
-    public static Range getRangeOfElement (Element element) {
+    public static Range getRangeOfElement(Element element) {
         if (element.getTrackbacks().size() == 0) {
             return null;
         }
