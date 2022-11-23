@@ -12,6 +12,7 @@ import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+import org.opencds.cqf.cql.ls.server.provider.GoToDefinitionProvider;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.opencds.cqf.cql.ls.server.service.ActiveContentService;
@@ -68,9 +69,9 @@ public class ServerConfig {
 
     @Bean
     public CqlTextDocumentService cqlTextDocumentService(
-            CompletableFuture<LanguageClient> languageClient, HoverProvider hoverProvider,
+            CompletableFuture<LanguageClient> languageClient, HoverProvider hoverProvider, GoToDefinitionProvider goToDefinitionProvider,
             FormattingProvider formattingProvider, EventBus eventBus) {
-        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider,
+        return new CqlTextDocumentService(languageClient, hoverProvider,  formattingProvider, goToDefinitionProvider,
                 eventBus);
     }
 
@@ -103,6 +104,11 @@ public class ServerConfig {
     @Bean
     HoverProvider hoverProvider(CqlTranslationManager cqlTranslationManager) {
         return new HoverProvider(cqlTranslationManager);
+    }
+
+    @Bean
+    GoToDefinitionProvider definitionProvider (CqlTranslationManager cqlTranslationManager) {
+        return new GoToDefinitionProvider(cqlTranslationManager);
     }
 
     @Bean

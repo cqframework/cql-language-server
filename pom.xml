@@ -279,6 +279,7 @@
                     <artifactId>maven-javadoc-plugin</artifactId>
                     <version>3.2.0</version>
                     <configuration>
+                        <javadocExecutable>${java.home}/bin/javadoc</javadocExecutable>
                         <additionalparam>-Xdoclint:all -Xdoclint:-missing</additionalparam>
                         <additionalOptions>-Xdoclint:all -Xdoclint:-missing</additionalOptions>
                         <additionalJOptions>
