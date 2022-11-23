@@ -18,7 +18,11 @@ public class CursorOverlappingElements {
 
     public static Element getMostSpecificElementAtPosition (Position searchPosition, Library library) {
         List<Element> elements = CursorOverlappingElements.getElementsAtPosition(searchPosition, library);
-        return CursorOverlappingElements.getMostSpecificElement(elements);
+        if (elements.size() == 0) {
+            return null;
+        }
+        elements = CursorOverlappingElements.sortElementsFromSmallestToLargest(elements);
+        return elements.get(0);
     }
 
     public static List<Element> getElementsAtPosition (Position searchPosition, Library library) {
@@ -28,11 +32,7 @@ public class CursorOverlappingElements {
         return context.getOverlappingElements();
     }
 
-    public static Element getMostSpecificElement(List<Element> elements) {
-        if (elements.size() == 0) {
-            return null;
-        }
-
+    public static List <Element> sortElementsFromSmallestToLargest (List <Element> elements) {
         Comparator<Element> compareElements = (o1, o2) -> {
             if (o1.getTrackbacks().size() == 0) {
                 return 1;
@@ -74,6 +74,6 @@ public class CursorOverlappingElements {
 
         Collections.sort(elements, compareElements);
 
-        return elements.get(0);
+        return elements;
     }
 }
