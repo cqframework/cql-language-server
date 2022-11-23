@@ -10,7 +10,7 @@ import org.hl7.elm.r1.*;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
 import org.opencds.cqf.cql.ls.server.service.FileContentService;
-import org.opencds.cqf.cql.ls.server.utility.OverlappingElements;
+import org.opencds.cqf.cql.ls.server.utility.CursorOverlappingElements;
 import org.opencds.cqf.cql.ls.server.visitor.ExpressionOverlapVisitor;
 import org.opencds.cqf.cql.ls.server.visitor.ExpressionOverlapVisitorContext;
 import org.slf4j.Logger;
@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class GoToDefinitionProvider {
     private static final Logger log = LoggerFactory.getLogger(GoToDefinitionProvider.class);
     private CqlTranslationManager cqlTranslationManager;
-    private ExpressionOverlapVisitor expressionOverlapVisitor = new ExpressionOverlapVisitor();
+
 
     public GoToDefinitionProvider(CqlTranslationManager cqlTranslationManager) {
         this.cqlTranslationManager = cqlTranslationManager;
@@ -52,10 +52,7 @@ public class GoToDefinitionProvider {
         }
 
         Library library = translator.getTranslatedLibrary().getLibrary();
-        ExpressionOverlapVisitorContext context = new ExpressionOverlapVisitorContext(cqlPosition);
-        this.expressionOverlapVisitor.visitLibrary(library, context);
-
-        Element specificElement = OverlappingElements.getMostSpecificElement(context.getOverlappingElements());
+        Element specificElement = CursorOverlappingElements.getMostSpecificElementAtPosition(cqlPosition, library);
 
         LocationLink locationLink = this.getLocationLinkOfElement(specificElement, library, uri);
         if (locationLink != null) {
