@@ -63,39 +63,7 @@ public class GoToDefinitionProvider {
     }
 
     protected LocationLink getLocationLinkOfElement(Element element, Library currentLibrary, URI currentUri) {
-
-        // This case must come before ExpressionRef case because FunctionRef inherits from ExpressionRef
-//        if (element instanceof FunctionRef) {
-//            FunctionRef elFunctionRef = (FunctionRef) element;
-//
-//            ImmutablePair<URI, Library> searchLibraryPair;
-//
-//            // If libraryName exists search for it, else use current.
-//            if (elFunctionRef.getLibraryName() == null) {
-//                searchLibraryPair = new ImmutablePair<URI, Library>(currentUri, currentLibrary);
-//            } else {
-//                searchLibraryPair = findIncludedLibrary(currentLibrary, elFunctionRef.getLibraryName(), Uris.getHead(currentUri));
-//            }
-//
-//            if (searchLibraryPair != null) {
-//
-//                List<ExpressionDef> expressionDefCandidates = GoToDefinitionProvider.getExpressionDefCandidatesByName(searchLibraryPair.getRight(), elFunctionRef.getName());
-//
-//                // If exactly one match by name, don't worry about arguments matching
-//                if (expressionDefCandidates.size() == 1) {
-//                    return GoToDefinitionProvider.getLocationLinkForExpressionDef(expressionDefCandidates.get(0), searchLibraryPair.getLeft(), elFunctionRef);
-//                }
-//
-//                // If more than one match, try to match calling function args with definition func args
-//                else if (expressionDefCandidates.size() > 1) {
-//                    FunctionDef functionDefCandidate = GoToDefinitionProvider.findMatchingFunctionDefInLibrary(expressionDefCandidates, elFunctionRef);
-//                    if (functionDefCandidate != null) {
-//                        return GoToDefinitionProvider.getLocationLinkForExpressionDef(functionDefCandidate, searchLibraryPair.getLeft(), elFunctionRef);
-//                    }
-//                }
-//            }
-//        }
-
+        
         if (element instanceof ExpressionRef) {
             ExpressionRef elExpressionRef = (ExpressionRef) element;
 
