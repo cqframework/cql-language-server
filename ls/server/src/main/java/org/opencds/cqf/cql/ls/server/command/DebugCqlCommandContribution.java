@@ -10,9 +10,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.ExecuteCommandParams;
-import org.opencds.cqf.cql.evaluator.cli.Main;
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import com.google.gson.JsonElement;
+import picocli.CommandLine;
 
 // TODO: This will be moved to the debug plugin once that's more fully baked..
 public class DebugCqlCommandContribution implements CommandContribution {
@@ -20,6 +21,12 @@ public class DebugCqlCommandContribution implements CommandContribution {
     // TODO: Delete once the plugin is fully supported
     public static final String START_DEBUG_COMMAND =
             "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
+
+    private IgContextManager igContextManager;
+
+    public DebugCqlCommandContribution(IgContextManager igContextManager) {
+        this.igContextManager = igContextManager;
+    }
 
     private CompletableFuture<Object> executeCql(ExecuteCommandParams params) {
         try {
@@ -33,7 +40,14 @@ public class DebugCqlCommandContribution implements CommandContribution {
             ByteArrayOutputStream baosErr = new ByteArrayOutputStream();
             System.setErr(new PrintStream(baosErr));
 
-            Main.run(arguments.toArray(new String[arguments.size()]));
+            try {
+                CommandLine cli = new CommandLine(new CliCommand(igContextManager));
+                int result = cli.execute(arguments.toArray(new String[arguments.size()]));
+            }
+            catch (Exception e) {
+                System.err.println("Exception occurred attempting to evaluate:");
+                System.err.println(e.getMessage());
+            }
 
             String out = baosOut.toString();
             String err = baosErr.toString();
@@ -44,7 +58,8 @@ public class DebugCqlCommandContribution implements CommandContribution {
             }
 
             return CompletableFuture.completedFuture(out);
-        } finally {
+        }
+        finally {
             System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out)));
             System.setErr(new PrintStream(new FileOutputStream(FileDescriptor.err)));
         }

@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>1.5.10-SNAPSHOT</version>
+    <version>2.0.0-SNAPSHOT</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -16,10 +16,12 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <jackson-2.version>2.5.0</jackson-2.version>
         <jersey-2.version>2.10</jersey-2.version>
-        <cqframework.version>1.5.12</cqframework.version>
-        <hapi.version>5.6.3</hapi.version>
-        <cql-engine.version>1.5.10</cql-engine.version>
-        <cql-evaluator.version>1.4.7</cql-evaluator.version>
+        <cqframework.version>2.4.0-SNAPSHOT</cqframework.version>
+        <fhir-core.version>5.6.36</fhir-core.version>
+        <hapi.version>6.0.1</hapi.version>
+        <picocli.version>4.6.1</picocli.version>
+        <cql-engine.version>2.3.0-SNAPSHOT</cql-engine.version>
+        <cql-evaluator.version>2.3.0-SNAPSHOT</cql-evaluator.version>
         <auto-service.version>1.0</auto-service.version>
         <slf4j.version>1.7.29</slf4j.version>
         <spring.boot.version>2.7.2</spring.boot.version>
@@ -90,6 +92,14 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!-- CLI -->
+            <dependency>
+                <groupId>info.picocli</groupId>
+                <artifactId>picocli</artifactId>
+                <version>${picocli.version}</version>
+            </dependency>
+
             <!-- CQL-to-ELM Translator -->
             <dependency>
                 <groupId>info.cqframework</groupId>
@@ -103,14 +113,85 @@
             </dependency>
             <dependency>
                 <groupId>info.cqframework</groupId>
+                <artifactId>cqf-fhir</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>cqf-fhir-npm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>elm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
                 <artifactId>elm-fhir</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>model</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>qdm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>quick</artifactId>
                 <version>${cqframework.version}</version>
             </dependency>
 
             <!-- CQL evaluator -->
             <dependency>
                 <groupId>org.opencds.cqf.cql</groupId>
-                <artifactId>evaluator.cli</artifactId>
+                <artifactId>evaluator</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.builder</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.jaxb-deps</artifactId>
+                <type>pom</type>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.fhir</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.fhir-npm</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.library</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.expression</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.dagger</artifactId>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.spring</artifactId>
                 <version>${cql-evaluator.version}</version>
             </dependency>
 
@@ -126,16 +207,29 @@
                 <artifactId>engine.fhir</artifactId>
                 <version>${cql-engine.version}</version>
             </dependency>
-
             <dependency>
-                <groupId>org.opencds.cqf.cql</groupId>
-                <artifactId>engine.jaxb</artifactId>
-                <version>${cql-engine.version}</version>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-structures-hl7org-dstu2</artifactId>
+                <version>${hapi.version}</version>
             </dependency>
-
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-structures-dstu2</artifactId>
+                <version>${hapi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-validation-resources-dstu2</artifactId>
+                <version>${hapi.version}</version>
+            </dependency>
             <dependency>
                 <groupId>ca.uhn.hapi.fhir</groupId>
                 <artifactId>hapi-fhir-structures-dstu3</artifactId>
+                <version>${hapi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-validation-resources-dstu3</artifactId>
                 <version>${hapi.version}</version>
             </dependency>
             <dependency>
@@ -145,9 +239,51 @@
             </dependency>
             <dependency>
                 <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-validation-resources-r4</artifactId>
+                <version>${hapi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-structures-r5</artifactId>
+                <version>${hapi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>hapi-fhir-validation-resources-r5</artifactId>
+                <version>${hapi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
                 <artifactId>hapi-fhir-client</artifactId>
                 <version>${hapi.version}</version>
             </dependency>
+            <!-- Core FHIR dependencies -->
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>org.hl7.fhir.r4</artifactId>
+                <version>${fhir-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>org.hl7.fhir.r4b</artifactId>
+                <version>${fhir-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>org.hl7.fhir.r5</artifactId>
+                <version>${fhir-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>org.hl7.fhir.convertors</artifactId>
+                <version>${fhir-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ca.uhn.hapi.fhir</groupId>
+                <artifactId>org.hl7.fhir.utilities</artifactId>
+                <version>${fhir-core.version}</version>
+            </dependency>
+
             <!-- Java implementation of VS Code language server protocol -->
             <dependency>
                 <groupId>org.eclipse.lsp4j</groupId>
@@ -182,6 +318,12 @@
             </dependency>
 
             <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.12.0</version>
+            </dependency>
+
+            <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-core</artifactId>
                 <version>1.2.11</version>
@@ -191,6 +333,18 @@
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
                 <version>1.2.11</version>
+            </dependency>
+
+            <!-- JAXB implementation dependencies -->
+            <dependency>
+                <groupId>org.eclipse.persistence</groupId>
+                <artifactId>org.eclipse.persistence.moxy</artifactId>
+                <version>2.7.7</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish</groupId>
+                <artifactId>javax.json</artifactId>
+                <version>1.0.4</version>
             </dependency>
 
             <!-- test dependencies -->
@@ -240,24 +394,30 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.8.1</version>
+                    <version>3.10.0</version>
                     <configuration>
-                        <source>1.8</source>
-                        <target>1.8</target>
+                        <release>11</release>
+                        <source>11</source>
+                        <target>11</target>
+                        <failOnError>true</failOnError>
                         <failOnWarning>true</failOnWarning>
                         <showWarnings>true</showWarnings>
                         <compilerArgs>
                             <arg>-Xlint:all</arg>
-                            <!-- This fixes a boostrapclass path warning which the "release" property fixes on Java 9+ -->
-                            <arg>-Xlint:-options</arg>
                             <arg>-Xlint:-processing</arg>
                             <arg>-Werror</arg>
+                            <arg>-implicit:none</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>com.google.auto.service</groupId>
                                 <artifactId>auto-service</artifactId>
                                 <version>${auto-service.version}</version>
+                            </path>
+                            <path>
+                                <groupId>info.picocli</groupId>
+                                <artifactId>picocli-codegen</artifactId>
+                                <version>${picocli.version}</version>
                             </path>
                         </annotationProcessorPaths>
                     </configuration>
@@ -277,16 +437,11 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-javadoc-plugin</artifactId>
-                    <version>3.2.0</version>
+                    <version>3.3.1</version>
                     <configuration>
-                        <additionalparam>-Xdoclint:all -Xdoclint:-missing</additionalparam>
-                        <additionalOptions>-Xdoclint:all -Xdoclint:-missing</additionalOptions>
-                        <additionalJOptions>
-                            <additionalJOption>-Xdoclint:all</additionalJOption>
-                            <additionalJOption>-Xdoclint:-missing</additionalJOption>
-                        </additionalJOptions>
-                        <quiet>true</quiet>
-                        <source>8</source>
+                        <source>11</source>
+                        <show>private</show>
+                        <doclint>-missing</doclint>
                     </configuration>
                     <executions>
                         <execution>
@@ -325,6 +480,11 @@
                     </executions>
                 </plugin>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.2.4</version>
+                </plugin>
+                <plugin>
                     <groupId>org.sonatype.plugins</groupId>
                     <artifactId>nexus-staging-maven-plugin</artifactId>
                     <version>1.6.7</version>
@@ -338,7 +498,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
-                    <version>3.0.0-M2</version>
+                    <version>3.1.0</version>
                     <executions>
                         <execution>
                             <id>enforce-no-snapshots</id>
@@ -362,7 +522,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
-                    <version>2.19.1</version>
+                    <version>2.22.2</version>
                     <configuration>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     </configuration>

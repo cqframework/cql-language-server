@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.cqframework.cql.cql2elm.CqlTranslatorException;
+import org.cqframework.cql.cql2elm.CqlCompilerException;
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -110,12 +110,12 @@ public class DiagnosticsService {
             return diagnostics;
         }
 
-        List<CqlTranslatorException> exceptions = translator.getExceptions();
+        List<CqlCompilerException> exceptions = translator.getExceptions();
 
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
         // First, assign all unassociated exceptions to this library.
-        for (CqlTranslatorException exception : exceptions) {
+        for (CqlCompilerException exception : exceptions) {
             if (exception.getLocator() == null) {
                 exception.setLocator(new TrackBack(
                         translator.getTranslatedLibrary().getIdentifier(), 0, 0, 0, 0));
@@ -139,7 +139,7 @@ public class DiagnosticsService {
         // Map "unknown" libraries to the current uri
         libraryUris.put(new VersionedIdentifier().withId("unknown"), uri);
 
-        for (CqlTranslatorException exception : exceptions) {
+        for (CqlCompilerException exception : exceptions) {
             URI eUri = libraryUris.get(exception.getLocator().getLibrary());
             if (eUri == null) {
                 continue;

@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.opencds.cqf.cql.ls.server.command.DebugCqlCommandContribution;
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution;
 import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.plugin.CqlLanguageServerPlugin;
 import org.opencds.cqf.cql.ls.server.plugin.CqlLanguageServerPluginFactory;
@@ -31,6 +32,7 @@ public class PluginConfig {
             CompletableFuture<LanguageClient> client, CqlWorkspaceService cqlWorkspaceService,
             CqlTextDocumentService cqlTextDocumentService,
             CqlTranslationManager cqlTranslationManager,
+            IgContextManager igContextManager,
             CompletableFuture<List<CommandContribution>> futureCommandContributions) {
 
 
@@ -48,7 +50,7 @@ public class PluginConfig {
         }
 
         pluginCommandContributions.add(new ViewElmCommandContribution(cqlTranslationManager));
-        pluginCommandContributions.add(new DebugCqlCommandContribution());
+        pluginCommandContributions.add(new DebugCqlCommandContribution(igContextManager));
 
         futureCommandContributions.complete(pluginCommandContributions);
 

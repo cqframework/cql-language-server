@@ -60,8 +60,8 @@ public class TranslatorOptionsManager {
 
         // For the purposes of debugging and authoring support, always add detailed
         // translation information.
-        return options.withOptions(CqlTranslator.Options.EnableLocators,
-                CqlTranslator.Options.EnableResultTypes, CqlTranslator.Options.EnableAnnotations)
+        return options.withOptions(CqlTranslatorOptions.Options.EnableLocators,
+                CqlTranslatorOptions.Options.EnableResultTypes, CqlTranslatorOptions.Options.EnableAnnotations)
                 .withSignatureLevel(SignatureLevel.All);
     }
 

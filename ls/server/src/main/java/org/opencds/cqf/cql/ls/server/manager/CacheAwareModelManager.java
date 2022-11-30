@@ -1,73 +1,23 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
-import java.util.HashMap;
 import java.util.Map;
-import org.cqframework.cql.cql2elm.ModelInfoLoader;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
-import org.cqframework.cql.cql2elm.model.SystemModel;
-import org.hl7.elm.r1.VersionedIdentifier;
-import org.hl7.elm_modelinfo.r1.ModelInfo;
+import org.hl7.cql.model.ModelIdentifier;
 
 /**
- * Created by Bryn on 12/29/2016.
+ * This class extends the CQL translator {@link org.cqframework.cql.cql2elm.ModelManager} class to be aware of a global cache of {@link org.cqframework.cql.cql2elm.model.Model}s
+ * The global cache is by @{org.hl7.cql.model.ModelIdentifier}, while the local cache is by name. This is because the translator expects the ModelManager to only permit loading
+ * of a single version version of a given Model in a single translation context, while the global cache is for all versions of Models
+ *
+ * As of 2.3.0, the translator ModelManager has incorporated support for the use of the global cache by ModelIdentifier, so this
+ * class is now a backwards-compatibility wrapper for that functionality and should be deprecated.
  */
 public class CacheAwareModelManager extends ModelManager {
-
-    private final Map<VersionedIdentifier, Model> globalCache;
-
-    private final Map<String, Model> localCache;
-
-    public CacheAwareModelManager(Map<VersionedIdentifier, Model> globalCache) {
-        this.globalCache = globalCache;
-        this.localCache = new HashMap<>();
-    }
-
-    private Model buildModel(VersionedIdentifier identifier) {
-        ModelInfoLoader loader = new ModelInfoLoader();
-        Model model = null;
-        try {
-            ModelInfo modelInfo = loader.getModelInfo(identifier);
-            if (identifier.getId().equals("System")) {
-                model = new SystemModel(modelInfo);
-            } else {
-                model = new Model(modelInfo, this);
-            }
-        } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException(
-                    String.format("Could not load model information for model %s, version %s.",
-                            identifier.getId(), identifier.getVersion()));
-        }
-
-        return model;
-    }
-
-    @Override
-    public Model resolveModel(VersionedIdentifier modelIdentifier) {
-        Model model = null;
-        if (this.localCache.containsKey(modelIdentifier.getId())) {
-            model = this.localCache.get(modelIdentifier.getId());
-            if (modelIdentifier.getVersion() != null
-                    && !modelIdentifier.getVersion().equals(model.getModelInfo().getVersion())) {
-                throw new IllegalArgumentException(String.format(
-                        "Could not load model information for model %s, version %s because version %s is already loaded.",
-                        modelIdentifier.getId(), modelIdentifier.getVersion(),
-                        model.getModelInfo().getVersion()));
-            }
-
-        }
-
-        if (model == null && this.globalCache.containsKey(modelIdentifier)) {
-            model = this.globalCache.get(modelIdentifier);
-            this.localCache.put(modelIdentifier.getId(), model);
-        }
-
-        if (model == null) {
-            model = buildModel(modelIdentifier);
-            this.globalCache.put(modelIdentifier, model);
-            this.localCache.put(modelIdentifier.getId(), model);
-        }
-
-        return model;
+    /**
+     * @param globalCache cache for Models by ModelIdentifier. Expected to be thread-safe.
+     */
+    public CacheAwareModelManager(Map<ModelIdentifier, Model> globalCache) {
+        super(globalCache);
     }
 }
