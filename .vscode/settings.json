@@ -28,5 +28,6 @@
     ],
     "formatAll.includeFileExtensions": [
         ".java"
-    ]
+    ],
+    "java.compile.nullAnalysis.mode": "automatic"
 }
