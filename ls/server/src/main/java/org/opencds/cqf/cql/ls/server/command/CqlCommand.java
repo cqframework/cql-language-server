@@ -1,39 +1,29 @@
 package org.opencds.cqf.cql.ls.server.command;
 
-import java.net.URI;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Callable;
-
+import ca.uhn.fhir.context.FhirVersionEnum;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-import org.cqframework.cql.elm.execution.VersionedIdentifier;
+import org.cqframework.fhir.npm.NpmProcessor;
+import org.hl7.elm.r1.VersionedIdentifier;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseDatatype;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
 import org.opencds.cqf.cql.engine.terminology.TerminologyProvider;
-import org.opencds.cqf.cql.evaluator.CqlEvaluator;
-import org.opencds.cqf.cql.evaluator.CqlOptions;
-import org.opencds.cqf.cql.evaluator.builder.Constants;
-import org.opencds.cqf.cql.evaluator.builder.CqlEvaluatorBuilder;
-import org.opencds.cqf.cql.evaluator.builder.DataProviderComponents;
-import org.opencds.cqf.cql.evaluator.builder.DataProviderFactory;
-import org.opencds.cqf.cql.evaluator.builder.EndpointInfo;
-import org.opencds.cqf.cql.evaluator.dagger.CqlEvaluatorComponent;
-import org.opencds.cqf.cql.evaluator.dagger.DaggerCqlEvaluatorComponent;
-
-import ca.uhn.fhir.context.FhirVersionEnum;
-import org.opencds.cqf.cql.evaluator.fhir.npm.NpmProcessor;
-import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
+import org.opencds.cqf.fhir.cql.CqlOptions;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+
+import java.net.URI;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
 
 @Command(name = "cql", mixinStandardHelpOptions = true)
 public class CqlCommand implements Callable<Integer> {

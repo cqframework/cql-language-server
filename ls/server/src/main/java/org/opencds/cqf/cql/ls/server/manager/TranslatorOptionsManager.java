@@ -1,11 +1,5 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
-import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel;
@@ -17,6 +11,12 @@ import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 
 public class TranslatorOptionsManager {
 
@@ -54,8 +54,8 @@ public class TranslatorOptionsManager {
             options = CqlTranslatorOptions.defaultOptions();
         }
 
-        if (!options.getFormats().contains(CqlTranslator.Format.XML)) {
-            options.getFormats().add(CqlTranslator.Format.XML);
+        if (!options.getFormats().contains(CqlTranslatorOptions.Format.XML)) {
+            options.getFormats().add(CqlTranslatorOptions.Format.XML);
         }
 
         // For the purposes of debugging and authoring support, always add detailed

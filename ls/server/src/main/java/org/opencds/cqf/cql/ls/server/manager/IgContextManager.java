@@ -1,16 +1,16 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
-import org.cqframework.cql.cql2elm.*;
+import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.fhir.npm.ILibraryReader;
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider;
 import org.cqframework.fhir.npm.NpmModelInfoProvider;
+import org.cqframework.fhir.npm.NpmProcessor;
 import org.cqframework.fhir.utilities.IGContext;
+import org.cqframework.fhir.utilities.LoggerAdapter;
 import org.eclipse.lsp4j.FileEvent;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 import org.hl7.cql.model.NamespaceInfo;
-import org.opencds.cqf.cql.evaluator.fhir.npm.LoggerAdapter;
-import org.opencds.cqf.cql.evaluator.fhir.npm.NpmProcessor;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
@@ -18,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;

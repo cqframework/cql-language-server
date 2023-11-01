@@ -15,19 +15,23 @@
 
     <dependencies>
         <!-- CQL-to-ELM Translator -->
-        <dependency>
-            <groupId>info.cqframework</groupId>
-            <artifactId>model</artifactId>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>info.cqframework</groupId>-->
+<!--            <artifactId>model</artifactId>-->
+<!--        </dependency>-->
 
-        <dependency>
-            <groupId>info.cqframework</groupId>
-            <artifactId>elm</artifactId>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>info.cqframework</groupId>-->
+<!--            <artifactId>elm</artifactId>-->
+<!--        </dependency>-->
 
+<!--        <dependency>-->
+<!--            <groupId>info.cqframework</groupId>-->
+<!--            <artifactId>cql-to-elm</artifactId>-->
+<!--        </dependency>-->
         <dependency>
-            <groupId>info.cqframework</groupId>
-            <artifactId>cql-to-elm</artifactId>
+            <groupId>org.opencds.cqf.fhir</groupId>
+            <artifactId>cqf-fhir-cr</artifactId>
         </dependency>
 
         <dependency>
@@ -40,11 +44,11 @@
             <artifactId>commons-lang3</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>org.opencds.cqf.cql</groupId>
-            <artifactId>evaluator.jaxb-deps</artifactId>
-            <type>pom</type>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.opencds.cqf.cql</groupId>-->
+<!--            <artifactId>evaluator.jaxb-deps</artifactId>-->
+<!--            <type>pom</type>-->
+<!--        </dependency>-->
 
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
