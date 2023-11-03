@@ -1,13 +1,8 @@
 package org.opencds.cqf.cql.ls.server.config;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.ServiceLoader;
-import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.services.LanguageClient;
-import org.opencds.cqf.cql.ls.server.command.DebugCqlCommandContribution;
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.plugin.CqlLanguageServerPlugin;
@@ -16,6 +11,11 @@ import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService;
 import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.ServiceLoader;
+import java.util.concurrent.CompletableFuture;
 
 @Configuration
 public class PluginConfig {
@@ -31,7 +31,7 @@ public class PluginConfig {
     public List<CommandContribution> pluginCommandContributions(
             CompletableFuture<LanguageClient> client, CqlWorkspaceService cqlWorkspaceService,
             CqlTextDocumentService cqlTextDocumentService,
-            CqlTranslationManager cqlTranslationManager,
+            CqlCompilationManager cqlCompilationManager,
             IgContextManager igContextManager,
             CompletableFuture<List<CommandContribution>> futureCommandContributions) {
 
@@ -43,14 +43,14 @@ public class PluginConfig {
 
         for (CqlLanguageServerPluginFactory pluginFactory : pluginFactories) {
             CqlLanguageServerPlugin plugin = pluginFactory.createPlugin(client, cqlWorkspaceService,
-                    cqlTextDocumentService, cqlTranslationManager);
+                    cqlTextDocumentService, cqlCompilationManager);
             if (plugin.getCommandContribution() != null) {
                 pluginCommandContributions.add(plugin.getCommandContribution());
             }
         }
 
-        pluginCommandContributions.add(new ViewElmCommandContribution(cqlTranslationManager));
-        pluginCommandContributions.add(new DebugCqlCommandContribution(igContextManager));
+        pluginCommandContributions.add(new ViewElmCommandContribution(cqlCompilationManager));
+//        pluginCommandContributions.add(new DebugCqlCommandContribution(igContextManager));
 
         futureCommandContributions.complete(pluginCommandContributions);
 

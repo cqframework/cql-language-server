@@ -1,32 +1,11 @@
 package org.opencds.cqf.cql.ls.server.service;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import com.google.common.base.Joiner;
 import org.apache.commons.lang3.tuple.Pair;
-import org.cqframework.cql.cql2elm.CqlTranslator;
+import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.cql2elm.CqlCompilerException;
 import org.cqframework.cql.elm.tracking.TrackBack;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.PublishDiagnosticsParams;
-import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
@@ -35,11 +14,18 @@ import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.utility.Diagnostics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.google.common.base.Joiner;
+
+import java.net.URI;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 public class DiagnosticsService {
 
@@ -55,14 +41,14 @@ public class DiagnosticsService {
 
     private ScheduledFuture<?> future;
 
-    private CqlTranslationManager cqlTranslationManager;
+    private CqlCompilationManager cqlCompilationManager;
     private CompletableFuture<LanguageClient> client;
     private ContentService contentService;
 
     public DiagnosticsService(CompletableFuture<LanguageClient> client,
-            CqlTranslationManager cqlTranslationManager, ContentService contentService) {
+                              CqlCompilationManager cqlCompilationManager, ContentService contentService) {
         this.client = client;
-        this.cqlTranslationManager = cqlTranslationManager;
+        this.cqlCompilationManager = cqlCompilationManager;
         this.contentService = contentService;
     }
 
@@ -100,8 +86,8 @@ public class DiagnosticsService {
 
     public Map<URI, Set<Diagnostic>> lint(URI uri) {
         Map<URI, Set<Diagnostic>> diagnostics = new HashMap<>();
-        CqlTranslator translator = this.cqlTranslationManager.translate(uri);
-        if (translator == null) {
+        CqlCompiler compiler = this.cqlCompilationManager.translate(uri);
+        if (compiler == null) {
             Diagnostic d = new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
                     "Library does not contain CQL content.", DiagnosticSeverity.Warning, "lint");
 
@@ -110,7 +96,7 @@ public class DiagnosticsService {
             return diagnostics;
         }
 
-        List<CqlCompilerException> exceptions = translator.getExceptions();
+        List<CqlCompilerException> exceptions = compiler.getExceptions();
 
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
@@ -118,7 +104,7 @@ public class DiagnosticsService {
         for (CqlCompilerException exception : exceptions) {
             if (exception.getLocator() == null) {
                 exception.setLocator(new TrackBack(
-                        translator.getTranslatedLibrary().getIdentifier(), 0, 0, 0, 0));
+                        compiler.getCompiledLibrary().getIdentifier(), 0, 0, 0, 0));
             }
         }
 

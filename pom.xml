@@ -102,11 +102,11 @@
             </dependency>
 
             <!-- CQL-to-ELM Translator -->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>cql-to-elm</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
+            <dependency>
+                <groupId>info.cqframework</groupId>
+                <artifactId>cql-to-elm</artifactId>
+                <version>${cqframework.version}</version>
+            </dependency>
             <dependency>
                 <groupId>info.cqframework</groupId>
                 <artifactId>cql-formatter</artifactId>
@@ -166,12 +166,12 @@
 <!--                <artifactId>evaluator.builder</artifactId>-->
 <!--                <version>${cql-evaluator.version}</version>-->
 <!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.jaxb-deps</artifactId>-->
-<!--                <type>pom</type>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
+            <dependency>
+                <groupId>org.opencds.cqf.cql</groupId>
+                <artifactId>evaluator.jaxb-deps</artifactId>
+                <type>pom</type>
+                <version>${cql-evaluator.version}</version>
+            </dependency>
 <!--            <dependency>-->
 <!--                <groupId>org.opencds.cqf.cql</groupId>-->
 <!--                <artifactId>evaluator.fhir</artifactId>-->

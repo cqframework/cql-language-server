@@ -1,12 +1,10 @@
 package org.opencds.cqf.cql.ls.service;
 
-import java.util.concurrent.Future;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.opencds.cqf.cql.engine.execution.CqlEngine;
-import org.opencds.cqf.cql.evaluator.CqlEvaluator;
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
 import org.opencds.cqf.cql.ls.server.config.ServerConfig;
 import org.slf4j.Logger;
@@ -16,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.annotation.Import;
+
+import java.util.concurrent.Future;
 
 /**
  * This class starts a CqlLanguageServer running as a service listening on std-in/std-out
@@ -44,8 +44,8 @@ public class Main implements CommandLineRunner {
         log.info("java.version: {}", System.getProperty("java.version"));
         log.info("cql-language-server version: {}",
                 CqlLanguageServer.class.getPackage().getImplementationVersion());
-        log.info("cql-evaluator version: {}",
-                CqlEvaluator.class.getPackage().getImplementationVersion());
+//        log.info("cql-evaluator version: {}",
+//                CqlEvaluator.class.getPackage().getImplementationVersion());
         log.info("cql-translator version: {}",
                 CqlTranslator.class.getPackage().getImplementationVersion());
         log.info("cql-engine version: {}", CqlEngine.class.getPackage().getImplementationVersion());

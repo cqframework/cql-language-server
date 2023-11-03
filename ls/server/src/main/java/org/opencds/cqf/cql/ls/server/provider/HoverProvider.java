@@ -1,25 +1,22 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
-import java.net.URI;
 import org.apache.commons.lang3.tuple.Pair;
-import org.cqframework.cql.cql2elm.CqlTranslator;
+import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.elm.tracking.TrackBack;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.HoverParams;
-import org.eclipse.lsp4j.MarkupContent;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.*;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
+
+import java.net.URI;
 
 public class HoverProvider {
-    private CqlTranslationManager cqlTranslationManager;
+    private CqlCompilationManager cqlCompilationManager;
 
-    public HoverProvider(CqlTranslationManager cqlTranslationManager) {
-        this.cqlTranslationManager = cqlTranslationManager;
+    public HoverProvider(CqlCompilationManager cqlCompilationManager) {
+        this.cqlCompilationManager = cqlCompilationManager;
     }
 
     public Hover hover(HoverParams position) {
@@ -30,8 +27,8 @@ public class HoverProvider {
 
         // This translates on the fly. We may want to consider maintaining
         // an ELM index to reduce the need to do retranslation.
-        CqlTranslator translator = this.cqlTranslationManager.translate(uri);
-        if (translator == null) {
+        CqlCompiler compiler = this.cqlCompilationManager.translate(uri);
+        if (compiler == null) {
             return null;
         }
 
@@ -52,7 +49,7 @@ public class HoverProvider {
         //
         // The current code always picks the first ExpressionDef in the graph.
         Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
-                translator.getTranslatedLibrary().getLibrary().getStatements());
+                compiler.getCompiledLibrary().getLibrary().getStatements());
 
         if (exp == null) {
             return null;
@@ -67,7 +64,7 @@ public class HoverProvider {
     }
 
     private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position,
-            Statements statements) {
+                                                                   Statements statements) {
         if (statements == null || statements.getDef() == null || statements.getDef().isEmpty()) {
             return null;
         }
