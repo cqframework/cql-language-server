@@ -16,7 +16,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <jackson-2.version>2.5.0</jackson-2.version>
         <jersey-2.version>2.10</jersey-2.version>
-        <cqframework.version>2.4.0</cqframework.version>
+        <cqframework.version>3.3.2</cqframework.version>
         <fhir-core.version>5.6.36</fhir-core.version>
         <cqf-fhir-cr.version>3.0.0-PRE9</cqf-fhir-cr.version>
         <hapi.version>6.0.1</hapi.version>
