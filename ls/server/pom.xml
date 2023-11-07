@@ -177,6 +177,11 @@
 <!--            <artifactId>evaluator.jaxb-deps</artifactId>-->
 <!--            <type>pom</type>-->
 <!--        </dependency>-->
+        <dependency>
+            <groupId>org.opencds.cqf.fhir</groupId>
+            <artifactId>cqf-fhir-jaxb</artifactId>
+            <type>pom</type>
+        </dependency>
 
         <dependency>
             <groupId>info.picocli</groupId>

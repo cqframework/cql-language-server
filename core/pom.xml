@@ -44,9 +44,14 @@
             <artifactId>commons-lang3</artifactId>
         </dependency>
 
+<!--        <dependency>-->
+<!--            <groupId>org.opencds.cqf.cql</groupId>-->
+<!--            <artifactId>evaluator.jaxb-deps</artifactId>-->
+<!--            <type>pom</type>-->
+<!--        </dependency>-->
         <dependency>
-            <groupId>org.opencds.cqf.cql</groupId>
-            <artifactId>evaluator.jaxb-deps</artifactId>
+            <groupId>org.opencds.cqf.fhir</groupId>
+            <artifactId>cqf-fhir-jaxb</artifactId>
             <type>pom</type>
         </dependency>
 
