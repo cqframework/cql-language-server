@@ -55,10 +55,6 @@ public class CompilerOptionsManager {
             options = CqlTranslatorOptions.defaultOptions().getCqlCompilerOptions();
         }
 
-//        if (!options.getFormats().contains(CqlTranslator.Format.XML)) {
-//            options.getFormats().add(CqlTranslator.Format.XML);
-//        }
-
         // For the purposes of debugging and authoring support, always add detailed
         // translation information.
         return options.withOptions(CqlCompilerOptions.Options.EnableLocators,

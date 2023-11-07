@@ -1,5 +1,6 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.opencds.cqf.cql.ls</groupId>
@@ -17,12 +18,8 @@
         <jackson-2.version>2.5.0</jackson-2.version>
         <jersey-2.version>2.10</jersey-2.version>
         <cqframework.version>3.3.2</cqframework.version>
-<!--        <fhir-core.version>5.6.36</fhir-core.version>-->
         <cqf-fhir-cr.version>3.0.0-PRE9</cqf-fhir-cr.version>
-<!--        <hapi.version>6.0.1</hapi.version>-->
         <picocli.version>4.6.1</picocli.version>
-<!--        <cql-engine.version>2.3.0</cql-engine.version>-->
-<!--        <cql-evaluator.version>2.3.0</cql-evaluator.version>-->
         <auto-service.version>1.0</auto-service.version>
         <slf4j.version>1.7.29</slf4j.version>
         <spring.boot.version>2.7.2</spring.boot.version>
@@ -112,41 +109,6 @@
                 <artifactId>cql-formatter</artifactId>
                 <version>${cqframework.version}</version>
             </dependency>
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>cqf-fhir</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>cqf-fhir-npm</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>elm</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>elm-fhir</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>model</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>qdm</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>info.cqframework</groupId>-->
-<!--                <artifactId>quick</artifactId>-->
-<!--                <version>${cqframework.version}</version>-->
-<!--            </dependency>-->
 
             <!-- cqf-fhir-cr -->
             <dependency>
@@ -155,148 +117,12 @@
                 <version>${cqf-fhir-cr.version}</version>
             </dependency>
 
-            <!-- CQL evaluator -->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.builder</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.jaxb-deps</artifactId>-->
-<!--                <type>pom</type>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-                <dependency>
-                    <groupId>org.opencds.cqf.fhir</groupId>
-                    <artifactId>cqf-fhir-jaxb</artifactId>
-                    <version>3.0.0-PRE8</version>
-                    <type>pom</type>
-                </dependency>
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.fhir</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.fhir-npm</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.library</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.expression</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.dagger</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>evaluator.spring</artifactId>-->
-<!--                <version>${cql-evaluator.version}</version>-->
-<!--            </dependency>-->
-
-<!--            &lt;!&ndash; CQL engine &ndash;&gt;-->
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>engine</artifactId>-->
-<!--                <version>${cql-engine.version}</version>-->
-<!--            </dependency>-->
-
-<!--            <dependency>-->
-<!--                <groupId>org.opencds.cqf.cql</groupId>-->
-<!--                <artifactId>engine.fhir</artifactId>-->
-<!--                <version>${cql-engine.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-structures-hl7org-dstu2</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-structures-dstu2</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-validation-resources-dstu2</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-structures-dstu3</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-validation-resources-dstu3</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-structures-r4</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-validation-resources-r4</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-structures-r5</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-validation-resources-r5</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>hapi-fhir-client</artifactId>-->
-<!--                <version>${hapi.version}</version>-->
-<!--            </dependency>-->
-            <!-- Core FHIR dependencies -->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>org.hl7.fhir.r4</artifactId>-->
-<!--                <version>${fhir-core.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>org.hl7.fhir.r4b</artifactId>-->
-<!--                <version>${fhir-core.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>org.hl7.fhir.r5</artifactId>-->
-<!--                <version>${fhir-core.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>org.hl7.fhir.convertors</artifactId>-->
-<!--                <version>${fhir-core.version}</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                <groupId>ca.uhn.hapi.fhir</groupId>-->
-<!--                <artifactId>org.hl7.fhir.utilities</artifactId>-->
-<!--                <version>${fhir-core.version}</version>-->
-<!--            </dependency>-->
+            <dependency>
+                <groupId>org.opencds.cqf.fhir</groupId>
+                <artifactId>cqf-fhir-jaxb</artifactId>
+                <version>3.0.0-PRE8</version>
+                <type>pom</type>
+            </dependency>
 
             <!-- Java implementation of VS Code language server protocol -->
             <dependency>

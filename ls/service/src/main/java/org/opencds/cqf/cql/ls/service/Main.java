@@ -44,8 +44,6 @@ public class Main implements CommandLineRunner {
         log.info("java.version: {}", System.getProperty("java.version"));
         log.info("cql-language-server version: {}",
                 CqlLanguageServer.class.getPackage().getImplementationVersion());
-//        log.info("cql-evaluator version: {}",
-//                CqlEvaluator.class.getPackage().getImplementationVersion());
         log.info("cql-translator version: {}",
                 CqlTranslator.class.getPackage().getImplementationVersion());
         log.info("cql-engine version: {}", CqlEngine.class.getPackage().getImplementationVersion());
