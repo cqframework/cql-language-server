@@ -62,7 +62,7 @@ public class ViewElmCommandContribution implements CommandContribution {
         }
     }
 
-    public static String convertToXml(Library library) throws IOException {
+    private static String convertToXml(Library library) throws IOException {
         StringWriter writer = new StringWriter();
         ElmLibraryWriterFactory.getWriter(LibraryContentType.XML.mimeType()).write(library, writer);
         return writer.getBuffer().toString();
