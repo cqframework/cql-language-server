@@ -1,23 +1,30 @@
 package org.opencds.cqf.cql.ls.server.command;
 
+import com.google.gson.JsonElement;
+import org.cqframework.cql.cql2elm.CqlCompiler;
+import org.cqframework.cql.cql2elm.CqlTranslator;
+import org.cqframework.cql.cql2elm.LibraryContentType;
+import org.cqframework.cql.elm.serializing.ElmLibraryWriterFactory;
+import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.hl7.elm.r1.Library;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
+import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+
+import java.io.IOException;
+import java.io.StringWriter;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.eclipse.lsp4j.ExecuteCommandParams;
-import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
-import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
-import com.google.gson.JsonElement;
 
 public class ViewElmCommandContribution implements CommandContribution {
     private static final String VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm";
 
-    private final CqlTranslationManager cqlTranslationManager;
+    private final CqlCompilationManager cqlCompilationManager;
 
-    public ViewElmCommandContribution(CqlTranslationManager cqlTranslationManager) {
-        this.cqlTranslationManager = cqlTranslationManager;
+    public ViewElmCommandContribution(CqlCompilationManager cqlCompilationManager) {
+        this.cqlCompilationManager = cqlCompilationManager;
     }
 
     @Override
@@ -44,14 +51,20 @@ public class ViewElmCommandContribution implements CommandContribution {
         try {
 
             URI uri = Uris.parseOrNull(uriString);
-            CqlTranslator translator = this.cqlTranslationManager.translate(uri);
-            if (translator != null) {
-                return CompletableFuture.completedFuture(translator.toXml());
+            CqlCompiler compiler = this.cqlCompilationManager.translate(uri);
+            if (compiler != null) {
+                return CompletableFuture.completedFuture(convertToXml(compiler.getLibrary()));
             }
 
             return CompletableFuture.completedFuture(null);
         } catch (Exception e) {
             return CompletableFuture.completedFuture(null);
         }
+    }
+
+    public static String convertToXml(Library library) throws IOException {
+        StringWriter writer = new StringWriter();
+        ElmLibraryWriterFactory.getWriter(LibraryContentType.XML.mimeType()).write(library, writer);
+        return writer.getBuffer().toString();
     }
 }

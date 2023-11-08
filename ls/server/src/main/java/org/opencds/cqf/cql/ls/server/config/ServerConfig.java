@@ -1,29 +1,25 @@
 package org.opencds.cqf.cql.ls.server.config;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Logger.JavaLogger;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
-import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
-import org.opencds.cqf.cql.ls.server.service.ActiveContentService;
-import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService;
-import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService;
-import org.opencds.cqf.cql.ls.server.service.DiagnosticsService;
-import org.opencds.cqf.cql.ls.server.service.FederatedContentService;
-import org.opencds.cqf.cql.ls.server.service.FileContentService;
+import org.opencds.cqf.cql.ls.server.service.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Configuration
 @Import(PluginConfig.class)
@@ -84,9 +80,9 @@ public class ServerConfig {
     }
 
     @Bean
-    TranslatorOptionsManager translatorOptionsManager(ContentService contentService,
-            EventBus eventBus) {
-        TranslatorOptionsManager t = new TranslatorOptionsManager(contentService);
+    CompilerOptionsManager compilerOptionsManager(ContentService contentService,
+                                                  EventBus eventBus) {
+        CompilerOptionsManager t = new CompilerOptionsManager(contentService);
 
         eventBus.register(t);
 
@@ -103,16 +99,16 @@ public class ServerConfig {
     }
 
     @Bean
-    CqlTranslationManager cqlTranslationManager(ContentService contentService,
-            TranslatorOptionsManager translatorOptionsManager, IgContextManager igContextManager) {
-        return new CqlTranslationManager(contentService, translatorOptionsManager, igContextManager);
+    CqlCompilationManager cqlCompilationManager(ContentService contentService,
+            CompilerOptionsManager compilerOptionsManager, IgContextManager igContextManager) {
+        return new CqlCompilationManager(contentService, compilerOptionsManager, igContextManager);
 
 
     }
 
     @Bean
-    HoverProvider hoverProvider(CqlTranslationManager cqlTranslationManager) {
-        return new HoverProvider(cqlTranslationManager);
+    HoverProvider hoverProvider(CqlCompilationManager cqlCompilationManager) {
+        return new HoverProvider(cqlCompilationManager);
     }
 
     @Bean
@@ -122,10 +118,10 @@ public class ServerConfig {
 
     @Bean
     DiagnosticsService diagnosticsService(CompletableFuture<LanguageClient> languageClient,
-            CqlTranslationManager cqlTranslationManager, ContentService contentService,
-            EventBus eventBus) {
+                                          CqlCompilationManager cqlCompilationManager, ContentService contentService,
+                                          EventBus eventBus) {
         DiagnosticsService ds =
-                new DiagnosticsService(languageClient, cqlTranslationManager, contentService);
+                new DiagnosticsService(languageClient, cqlCompilationManager, contentService);
 
         eventBus.register(ds);
 

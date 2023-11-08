@@ -1,15 +1,10 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
-import org.cqframework.cql.cql2elm.CqlTranslator;
-import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider;
+import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.ModelManager;
 import org.cqframework.cql.cql2elm.model.Model;
+import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider;
 import org.fhir.ucum.UcumEssenceService;
 import org.fhir.ucum.UcumService;
 import org.hl7.cql.model.ModelIdentifier;
@@ -19,13 +14,19 @@ import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class CqlTranslationManager {
-    private static final Logger log = LoggerFactory.getLogger(CqlTranslationManager.class);
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
+
+public class CqlCompilationManager {
+    private static final Logger log = LoggerFactory.getLogger(CqlCompilationManager.class);
 
     private final Map<ModelIdentifier, Model> globalCache;
     private final ContentService contentService;
     private static UcumService ucumService = null;
-    private final TranslatorOptionsManager translatorOptionsManager;
+    private final CompilerOptionsManager compilerOptionsManager;
 
     private final IgContextManager igContextManager;
 
@@ -38,15 +39,15 @@ public class CqlTranslationManager {
         }
     }
 
-    public CqlTranslationManager(ContentService contentService,
-            TranslatorOptionsManager translatorOptionsManager, IgContextManager igContextManager) {
+    public CqlCompilationManager(ContentService contentService,
+                                 CompilerOptionsManager compilerOptionsManager, IgContextManager igContextManager) {
         this.globalCache = new HashMap<>();
         this.contentService = contentService;
-        this.translatorOptionsManager = translatorOptionsManager;
+        this.compilerOptionsManager = compilerOptionsManager;
         this.igContextManager = igContextManager;
     }
 
-    public CqlTranslator translate(URI uri) {
+    public CqlCompiler translate(URI uri) {
         InputStream input = contentService.read(uri);
         if (input == null) {
             return null;
@@ -55,17 +56,18 @@ public class CqlTranslationManager {
         return this.translate(uri, input);
     }
 
-    public CqlTranslator translate(URI uri, InputStream stream) {
+    public CqlCompiler translate(URI uri, InputStream stream) {
         ModelManager modelManager = this.createModelManager();
 
         LibraryManager libraryManager = this.createLibraryManager(Uris.getHead(uri), modelManager);
 
         try {
-            return CqlTranslator.fromStream(stream, modelManager, libraryManager, ucumService,
-                    this.translatorOptionsManager.getOptions(uri));
+            CqlCompiler compiler = new CqlCompiler(libraryManager);
+            compiler.run(stream);
+            return compiler;
         } catch (IOException e) {
             throw new IllegalArgumentException(
-                    String.format("error creating translator for uri: %s", uri.toString()), e);
+                    String.format("error creating compiler for uri: %s", uri.toString()), e);
         }
     }
 

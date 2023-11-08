@@ -1,9 +1,5 @@
 package org.opencds.cqf.cql.ls.server.visitor;
 
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
@@ -13,10 +9,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
-import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.service.TestContentService;
+
+import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class ExpressionTrackBackVisitorTest {
     private static Library library;
@@ -24,11 +25,11 @@ public class ExpressionTrackBackVisitorTest {
     @BeforeAll
     public static void beforeAll() {
         ContentService cs = new TestContentService();
-        CqlTranslationManager cqlTranslationManager =
-                new CqlTranslationManager(cs, new TranslatorOptionsManager(cs), new IgContextManager(cs));
-        library = cqlTranslationManager.translate(Uris.parseOrNull(
+        CqlCompilationManager cqlCompilationManager =
+                new CqlCompilationManager(cs, new CompilerOptionsManager(cs), new IgContextManager(cs));
+        library = cqlCompilationManager.translate(Uris.parseOrNull(
                 "/org/opencds/cqf/cql/ls/server/visitor/ExpressionTrackBackVisitorTest.cql"))
-                .getTranslatedLibrary().getLibrary();
+                .getCompiledLibrary().getLibrary();
     }
 
     @Test

@@ -1,13 +1,14 @@
 package org.opencds.cqf.cql.ls.plugin.debug;
 
+import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.opencds.cqf.cql.ls.plugin.debug.session.DebugSession;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
+import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+import org.opencds.cqf.cql.ls.server.utility.Futures;
+
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import org.eclipse.lsp4j.ExecuteCommandParams;
-import org.opencds.cqf.cql.ls.plugin.debug.session.DebugSession;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
-import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
-import org.opencds.cqf.cql.ls.server.utility.Futures;
 
 public class DebugCommandContribution implements CommandContribution {
 
@@ -16,13 +17,13 @@ public class DebugCommandContribution implements CommandContribution {
 
     private DebugSession debugSession = null;
 
-    private CqlTranslationManager cqlTranslationManager;
+    private CqlCompilationManager cqlCompilationManager;
 
-    public DebugCommandContribution(CqlTranslationManager cqlTranslationManager) {
-        this.cqlTranslationManager = cqlTranslationManager;
+    public DebugCommandContribution(CqlCompilationManager cqlCompilationManager) {
+        this.cqlCompilationManager = cqlCompilationManager;
 
         // Temporary hack for unused variable
-        this.cqlTranslationManager.hashCode();
+        this.cqlCompilationManager.hashCode();
     }
 
     @Override

@@ -1,20 +1,15 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.HoverParams;
-import org.eclipse.lsp4j.MarkupContent;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.core.ContentService;
-import org.opencds.cqf.cql.ls.server.manager.CqlTranslationManager;
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager;
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
-import org.opencds.cqf.cql.ls.server.manager.TranslatorOptionsManager;
 import org.opencds.cqf.cql.ls.server.service.TestContentService;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 
 
@@ -25,9 +20,9 @@ public class HoverProviderTest {
     @BeforeAll
     public static void beforeAll() {
         ContentService cs = new TestContentService();
-        CqlTranslationManager cqlTranslationManager =
-                new CqlTranslationManager(cs, new TranslatorOptionsManager(cs), new IgContextManager(cs));
-        hoverProvider = new HoverProvider(cqlTranslationManager);
+        CqlCompilationManager cqlCompilationManager =
+                new CqlCompilationManager(cs, new CompilerOptionsManager(cs), new IgContextManager(cs));
+        hoverProvider = new HoverProvider(cqlCompilationManager);
     }
 
     @Test
