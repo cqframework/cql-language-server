@@ -1,11 +1,32 @@
 package org.opencds.cqf.cql.ls.server.service;
 
-import com.google.common.base.Joiner;
+import static com.google.common.base.Preconditions.checkNotNull;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.cql2elm.CqlCompilerException;
 import org.cqframework.cql.elm.tracking.TrackBack;
-import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.greenrobot.eventbus.Subscribe;
 import org.hl7.elm.r1.VersionedIdentifier;
@@ -18,14 +39,7 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.utility.Diagnostics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.net.URI;
-import java.util.*;
-import java.util.Map.Entry;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
-
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.common.base.Joiner;
 
 public class DiagnosticsService {
 
@@ -46,13 +60,17 @@ public class DiagnosticsService {
     private ContentService contentService;
 
     public DiagnosticsService(CompletableFuture<LanguageClient> client,
-                              CqlCompilationManager cqlCompilationManager, ContentService contentService) {
+            CqlCompilationManager cqlCompilationManager, ContentService contentService) {
         this.client = client;
         this.cqlCompilationManager = cqlCompilationManager;
         this.contentService = contentService;
     }
 
     protected void doLint(Collection<URI> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return;
+        }
+
         if (log.isDebugEnabled()) {
             log.debug("Lint: {}", Joiner.on(", ").join(paths));
         }
@@ -103,8 +121,8 @@ public class DiagnosticsService {
         // First, assign all unassociated exceptions to this library.
         for (CqlCompilerException exception : exceptions) {
             if (exception.getLocator() == null) {
-                exception.setLocator(new TrackBack(
-                        compiler.getCompiledLibrary().getIdentifier(), 0, 0, 0, 0));
+                exception.setLocator(
+                        new TrackBack(compiler.getCompiledLibrary().getIdentifier(), 0, 0, 0, 0));
             }
         }
 

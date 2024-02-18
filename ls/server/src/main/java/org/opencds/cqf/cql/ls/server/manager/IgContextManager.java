@@ -1,5 +1,9 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
+import java.io.InputStream;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.fhir.npm.ILibraryReader;
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider;
@@ -16,11 +20,6 @@ import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.InputStream;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
 
 public class IgContextManager {
     private static final Logger log = LoggerFactory.getLogger(IgContextManager.class);
@@ -56,10 +55,14 @@ public class IgContextManager {
         NpmProcessor npmProcessor = getContext(uri);
         if (npmProcessor != null) {
             libraryManager.getNamespaceManager().addNamespace(npmProcessor.getIgNamespace());
-            ILibraryReader reader = new org.cqframework.fhir.npm.LibraryLoader(npmProcessor.getIgContext().getFhirVersion());
+            ILibraryReader reader = new org.cqframework.fhir.npm.LibraryLoader(
+                    npmProcessor.getIgContext().getFhirVersion());
             LoggerAdapter adapter = new LoggerAdapter(log);
-            libraryManager.getLibrarySourceLoader().registerProvider(new NpmLibrarySourceProvider(npmProcessor.getPackageManager().getNpmList(), reader, adapter));
-            libraryManager.getModelManager().getModelInfoLoader().registerModelInfoProvider(new NpmModelInfoProvider(npmProcessor.getPackageManager().getNpmList(), reader, adapter));
+            libraryManager.getLibrarySourceLoader().registerProvider(new NpmLibrarySourceProvider(
+                    npmProcessor.getPackageManager().getNpmList(), reader, adapter));
+            libraryManager.getModelManager().getModelInfoLoader().registerModelInfoProvider(
+                    new NpmModelInfoProvider(npmProcessor.getPackageManager().getNpmList(), reader,
+                            adapter));
             for (NamespaceInfo ni : npmProcessor.getNamespaces()) {
                 libraryManager.getNamespaceManager().addNamespace(ni);
             }
@@ -68,19 +71,21 @@ public class IgContextManager {
 
     /**
      * Searches for an ig.ini file in the parent and grandparent of the given uri
+     * 
      * @param uri
      * @return
      */
     protected IGContext findIgContext(URI uri) {
-        // TODO: Support igs that don't have an ini by just looking for an implementation guide resource
-        log.info(String.format("Searching for ini file in %s", uri.toString()));
+        // TODO: Support igs that don't have an ini by just looking for an implementation guide
+        // resource
+        log.info("Searching for ini file in {}", uri);
         URI current = uri;
         for (int i = 0; i < 2; i++) {
             URI parent = Uris.getHead(current);
             if (!parent.equals(current)) {
                 current = parent;
                 URI igIniPath = Uris.addPath(parent, "/ig.ini");
-                log.info(String.format("Attempting to read ini from path %s", igIniPath.toString()));
+                log.info("Attempting to read ini from path {}", igIniPath);
                 InputStream input = contentService.read(igIniPath);
                 if (input != null) {
                     log.info("Initializing ig from ini...");

@@ -15,13 +15,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(classes = {TestConfig.class})
-public class DiagnosticsServiceTest {
+class DiagnosticsServiceTest {
 
     @Autowired
     DiagnosticsService diagnosticsService;
 
     @Test
-    public void missingInclude() {
+    void missingInclude() {
         URI uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/MissingInclude.cql");
         Map<URI, Set<Diagnostic>> diagnostics = diagnosticsService.lint(uri);
 

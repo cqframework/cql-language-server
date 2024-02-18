@@ -1,5 +1,10 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
+import java.io.IOException;
+import java.net.URI;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
 import org.eclipse.lsp4j.Position;
@@ -7,13 +12,6 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-
-import java.io.IOException;
-import java.net.URI;
-import java.util.Collections;
-import java.util.List;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 public class FormattingProvider {
     private ContentService contentService;
@@ -23,7 +21,7 @@ public class FormattingProvider {
     }
 
     public List<TextEdit> format(String uri) {
-        URI u = checkNotNull(Uris.parseOrNull(uri));
+        URI u = Objects.requireNonNull(Uris.parseOrNull(uri));
 
         FormatResult fr = null;
         try {

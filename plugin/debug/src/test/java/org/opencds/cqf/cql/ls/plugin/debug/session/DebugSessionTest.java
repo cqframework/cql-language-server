@@ -13,13 +13,13 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.plugin.debug.client.TestDebugClient;
 
-public class DebugSessionTest {
+class DebugSessionTest {
 
     // This test starts a Debug session on a background thread
     // which listens at a random socket. It creates a dummy client to
     // connect to that socket.
     @Test
-    public void simpleSessionTest() throws Exception {
+    void simpleSessionTest() throws Exception {
 
         DebugSession session = new DebugSession();
 

@@ -12,7 +12,7 @@
     "editor.formatOnSave": true,
     "java.format.settings.url": "https://raw.githubusercontent.com/google/styleguide/gh-pages/eclipse-java-google-style.xml",
     "editor.codeActionsOnSave": {
-        "source.organizeImports": true,
+        "source.organizeImports": "explicit"
     },
     "editor.tabSize": 4,
     "editor.insertSpaces": true,
@@ -24,6 +24,7 @@
         "hamcrest",
         "opencds",
         "testng",
+        "Ucum",
         "Unregistration"
     ],
     "formatAll.includeFileExtensions": [

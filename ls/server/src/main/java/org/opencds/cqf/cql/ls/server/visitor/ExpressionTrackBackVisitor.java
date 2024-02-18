@@ -1,13 +1,12 @@
 package org.opencds.cqf.cql.ls.server.visitor;
 
 import org.cqframework.cql.elm.tracking.TrackBack;
-import org.cqframework.cql.elm.visiting.ElmBaseLibraryVisitor;
+import org.cqframework.cql.elm.visiting.BaseElmLibraryVisitor;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
-import org.hl7.elm.r1.FunctionDef;
 import org.hl7.elm.r1.Retrieve;
 
-public class ExpressionTrackBackVisitor extends ElmBaseLibraryVisitor<Element, TrackBack> {
+public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, TrackBack> {
 
     // Return the child result if it's not null (IOW, it's more specific than this result).
     // Otherwise, return the current result
@@ -22,10 +21,7 @@ public class ExpressionTrackBackVisitor extends ElmBaseLibraryVisitor<Element, T
 
     @Override
     public Element visitExpressionDef(ExpressionDef elm, TrackBack context) {
-        if (elm instanceof FunctionDef) {
-            return visitFunctionDef((FunctionDef) elm, context);
-        }
-        Element childResult = visitChildren(elm, context);
+        Element childResult = super.visitExpressionDef(elm, context);
         return aggregateResult(elementCoversTrackBack(elm, context) ? elm : null, childResult);
     }
 

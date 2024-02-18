@@ -11,10 +11,10 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-public class DebugServerTest {
+class DebugServerTest {
 
     @Test
-    public void handshake() throws Exception {
+    void handshake() throws Exception {
         IDebugProtocolClient client = Mockito.mock(IDebugProtocolClient.class);
         CqlDebugServer server = new CqlDebugServer();
         server.connect(client);
