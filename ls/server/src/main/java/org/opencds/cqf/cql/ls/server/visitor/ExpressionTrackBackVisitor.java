@@ -69,5 +69,4 @@ public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, T
         // Same line
         return left.getEndChar() >= right.getEndChar();
     }
-
 }

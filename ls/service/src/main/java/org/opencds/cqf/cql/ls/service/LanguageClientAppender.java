@@ -1,12 +1,13 @@
 package org.opencds.cqf.cql.ls.service;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import org.eclipse.lsp4j.MessageParams;
-import org.eclipse.lsp4j.MessageType;
-import org.eclipse.lsp4j.services.LanguageClient;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
+import org.eclipse.lsp4j.services.LanguageClient;
 
 /**
  * This class allows logging to the LSP client's {@code} logMessage} API

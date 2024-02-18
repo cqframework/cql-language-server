@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
+import java.net.URI;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.elm.tracking.TrackBack;
@@ -9,8 +10,6 @@ import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
-
-import java.net.URI;
 
 public class HoverProvider {
     private CqlCompilationManager cqlCompilationManager;
@@ -48,7 +47,8 @@ public class HoverProvider {
         // less user friendly)
         //
         // The current code always picks the first ExpressionDef in the graph.
-        Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(position.getPosition(),
+        Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(
+                position.getPosition(),
                 compiler.getCompiledLibrary().getLibrary().getStatements());
 
         if (exp == null) {
@@ -63,9 +63,10 @@ public class HoverProvider {
         return new Hover(markup, exp.getLeft());
     }
 
-    private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position,
-                                                                   Statements statements) {
-        if (statements == null || statements.getDef() == null || statements.getDef().isEmpty()) {
+    private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position, Statements statements) {
+        if (statements == null
+                || statements.getDef() == null
+                || statements.getDef().isEmpty()) {
             return null;
         }
 
@@ -76,9 +77,9 @@ public class HoverProvider {
 
             for (TrackBack tb : def.getTrackbacks()) {
                 if (positionInTrackBack(position, tb)) {
-                    Range range =
-                            new Range(new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
-                                    new Position(tb.getEndLine() - 1, tb.getEndChar()));
+                    Range range = new Range(
+                            new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
+                            new Position(tb.getEndLine() - 1, tb.getEndChar()));
                     return Pair.of(range, def);
                 }
             }

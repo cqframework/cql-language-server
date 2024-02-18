@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.debug;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+
 import java.util.HashMap;
 import org.eclipse.lsp4j.debug.Capabilities;
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
@@ -32,10 +33,10 @@ class DebugServerTest {
 
         // do debugging loop...
 
-
         // server terminated
         // server exited
-        Capabilities capabilities = server.initialize(new InitializeRequestArguments()).get();
+        Capabilities capabilities =
+                server.initialize(new InitializeRequestArguments()).get();
         assertNotNull(capabilities);
 
         // Server should send the "initialized" event once it's ready
@@ -67,7 +68,5 @@ class DebugServerTest {
         Mockito.verify(client).terminated(any());
         Mockito.verify(client).exited(any());
         assertEquals(ServerState.STOPPED, server.getState());
-
     }
-
 }

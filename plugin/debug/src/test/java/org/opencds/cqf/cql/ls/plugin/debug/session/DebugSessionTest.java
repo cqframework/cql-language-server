@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.plugin.debug.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 import java.net.Socket;
 import java.util.concurrent.Future;
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
@@ -27,11 +28,10 @@ class DebugSessionTest {
         Integer port = session.start().join();
         TestDebugClient client = new TestDebugClient();
 
-
         try (Socket socket = new Socket("localhost", port)) {
 
-            Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(client,
-                    socket.getInputStream(), socket.getOutputStream());
+            Launcher<IDebugProtocolServer> launcher =
+                    DSPLauncher.createClientLauncher(client, socket.getInputStream(), socket.getOutputStream());
             Future<Void> clientThread = launcher.startListening();
             IDebugProtocolServer server = launcher.getRemoteProxy();
             server.initialize(new InitializeRequestArguments()).get();

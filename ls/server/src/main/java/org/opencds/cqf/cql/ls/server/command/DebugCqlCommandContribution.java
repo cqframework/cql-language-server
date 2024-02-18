@@ -1,22 +1,22 @@
-//package org.opencds.cqf.cql.ls.server.command;
+// package org.opencds.cqf.cql.ls.server.command;
 //
-//import java.io.ByteArrayOutputStream;
-//import java.io.FileDescriptor;
-//import java.io.FileOutputStream;
-//import java.io.PrintStream;
-//import java.util.Collections;
-//import java.util.List;
-//import java.util.Set;
-//import java.util.concurrent.CompletableFuture;
-//import java.util.stream.Collectors;
-//import org.eclipse.lsp4j.ExecuteCommandParams;
-//import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
-//import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
-//import com.google.gson.JsonElement;
-//import picocli.CommandLine;
+// import java.io.ByteArrayOutputStream;
+// import java.io.FileDescriptor;
+// import java.io.FileOutputStream;
+// import java.io.PrintStream;
+// import java.util.Collections;
+// import java.util.List;
+// import java.util.Set;
+// import java.util.concurrent.CompletableFuture;
+// import java.util.stream.Collectors;
+// import org.eclipse.lsp4j.ExecuteCommandParams;
+// import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
+// import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+// import com.google.gson.JsonElement;
+// import picocli.CommandLine;
 //
 //// TODO: This will be moved to the debug plugin once that's more fully baked..
-//public class DebugCqlCommandContribution implements CommandContribution {
+// public class DebugCqlCommandContribution implements CommandContribution {
 //
 //    // TODO: Delete once the plugin is fully supported
 //    public static final String START_DEBUG_COMMAND =
@@ -78,4 +78,4 @@
 //            return CommandContribution.super.executeCommand(params);
 //        }
 //    }
-//}
+// }

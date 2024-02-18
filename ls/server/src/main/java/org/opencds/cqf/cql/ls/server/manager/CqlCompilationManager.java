@@ -1,5 +1,10 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.cql.cql2elm.ModelManager;
@@ -14,12 +19,6 @@ import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
-
 public class CqlCompilationManager {
     private static final Logger log = LoggerFactory.getLogger(CqlCompilationManager.class);
 
@@ -32,15 +31,16 @@ public class CqlCompilationManager {
 
     static {
         try {
-            ucumService = new UcumEssenceService(
-                    UcumEssenceService.class.getResourceAsStream("/ucum-essence.xml"));
+            ucumService = new UcumEssenceService(UcumEssenceService.class.getResourceAsStream("/ucum-essence.xml"));
         } catch (Exception e) {
             log.warn("error initializing UcumService", e);
         }
     }
 
-    public CqlCompilationManager(ContentService contentService,
-                                 CompilerOptionsManager compilerOptionsManager, IgContextManager igContextManager) {
+    public CqlCompilationManager(
+            ContentService contentService,
+            CompilerOptionsManager compilerOptionsManager,
+            IgContextManager igContextManager) {
         this.globalCache = new HashMap<>();
         this.contentService = contentService;
         this.compilerOptionsManager = compilerOptionsManager;
@@ -66,8 +66,7 @@ public class CqlCompilationManager {
             compiler.run(stream);
             return compiler;
         } catch (IOException e) {
-            throw new IllegalArgumentException(
-                    String.format("error creating compiler for uri: %s", uri.toString()), e);
+            throw new IllegalArgumentException(String.format("error creating compiler for uri: %s", uri.toString()), e);
         }
     }
 
@@ -77,7 +76,8 @@ public class CqlCompilationManager {
 
     private LibraryManager createLibraryManager(URI root, ModelManager modelManager) {
         LibraryManager libraryManager = new LibraryManager(modelManager);
-        libraryManager.getLibrarySourceLoader()
+        libraryManager
+                .getLibrarySourceLoader()
                 .registerProvider(new ContentServiceSourceProvider(root, this.contentService));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
         igContextManager.setupLibraryManager(root, libraryManager);

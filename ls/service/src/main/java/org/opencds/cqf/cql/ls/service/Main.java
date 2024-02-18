@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.service;
 
+import java.util.concurrent.Future;
 import org.cqframework.cql.cql2elm.CqlTranslator;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.launch.LSPLauncher;
@@ -14,8 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.annotation.Import;
-
-import java.util.concurrent.Future;
 
 /**
  * This class starts a CqlLanguageServer running as a service listening on std-in/std-out
@@ -42,15 +41,14 @@ public class Main implements CommandLineRunner {
         configureLogging();
 
         log.info("java.version: {}", System.getProperty("java.version"));
-        log.info("cql-language-server version: {}",
+        log.info(
+                "cql-language-server version: {}",
                 CqlLanguageServer.class.getPackage().getImplementationVersion());
-        log.info("cql-translator version: {}",
-                CqlTranslator.class.getPackage().getImplementationVersion());
+        log.info("cql-translator version: {}", CqlTranslator.class.getPackage().getImplementationVersion());
         log.info("cql-engine version: {}", CqlEngine.class.getPackage().getImplementationVersion());
 
         @SuppressWarnings("java:S106")
-        Launcher<LanguageClient> launcher =
-                LSPLauncher.createServerLauncher(server, System.in, System.out);
+        Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, System.in, System.out);
 
         LanguageClient client = launcher.getRemoteProxy();
         server.connect(client);

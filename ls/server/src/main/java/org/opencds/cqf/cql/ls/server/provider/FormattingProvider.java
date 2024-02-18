@@ -31,14 +31,12 @@ public class FormattingProvider {
         }
 
         if (!fr.getErrors().isEmpty()) {
-            throw new IllegalArgumentException(
-                    String.join("\n", "Unable to format CQL due to syntax errors.",
-                            "Please fix the errors and try again."));
+            throw new IllegalArgumentException(String.join(
+                    "\n", "Unable to format CQL due to syntax errors.", "Please fix the errors and try again."));
         }
 
         TextEdit te = new TextEdit(
-                new Range(new Position(0, 0), new Position(Integer.MAX_VALUE, Integer.MAX_VALUE)),
-                fr.getOutput());
+                new Range(new Position(0, 0), new Position(Integer.MAX_VALUE, Integer.MAX_VALUE)), fr.getOutput());
 
         return Collections.singletonList(te);
     }

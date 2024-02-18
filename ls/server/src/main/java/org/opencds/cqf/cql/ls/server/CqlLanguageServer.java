@@ -16,7 +16,6 @@ import org.opencds.cqf.cql.ls.server.utility.Futures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
     private static final Logger log = LoggerFactory.getLogger(CqlLanguageServer.class);
 
@@ -26,8 +25,10 @@ public class CqlLanguageServer implements LanguageServer, LanguageClientAware {
 
     private final CompletableFuture<Void> exited;
 
-    public CqlLanguageServer(CompletableFuture<LanguageClient> client,
-            CqlWorkspaceService workspaceService, CqlTextDocumentService textDocumentService) {
+    public CqlLanguageServer(
+            CompletableFuture<LanguageClient> client,
+            CqlWorkspaceService workspaceService,
+            CqlTextDocumentService textDocumentService) {
         this.exited = new CompletableFuture<>();
         this.client = client;
         this.workspaceService = workspaceService;

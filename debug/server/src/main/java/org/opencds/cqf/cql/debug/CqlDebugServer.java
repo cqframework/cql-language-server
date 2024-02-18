@@ -49,8 +49,7 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
 
     @Override
     public CompletableFuture<Void> disconnect(DisconnectArguments args) {
-        return CompletableFuture.runAsync(() -> {
-        }).whenCompleteAsync((o, e) -> this.exitServer());
+        return CompletableFuture.runAsync(() -> {}).whenCompleteAsync((o, e) -> this.exitServer());
     }
 
     @Override
@@ -59,8 +58,7 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
         setState(ServerState.RUNNING);
 
         // Create CQL request arguments..
-        return CompletableFuture.runAsync(() -> {
-        }).thenRunAsync(() -> {
+        return CompletableFuture.runAsync(() -> {}).thenRunAsync(() -> {
             this.terminateServer();
             this.exitServer();
         });
@@ -94,9 +92,9 @@ public class CqlDebugServer implements IDebugProtocolServer, IDebugProtocolClien
 
     protected void checkState(ServerState requiredState) {
         if (this.serverState != requiredState) {
-            throw new IllegalStateException(
-                    String.format("Operation required state %s, server actual state: %s",
-                            requiredState.toString(), this.serverState.toString()));
+            throw new IllegalStateException(String.format(
+                    "Operation required state %s, server actual state: %s",
+                    requiredState.toString(), this.serverState.toString()));
         }
     }
 

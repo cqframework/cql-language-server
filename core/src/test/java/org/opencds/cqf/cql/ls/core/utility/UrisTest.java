@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.core.utility;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.net.URI;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -92,7 +93,6 @@ class UrisTest {
         uri = Uris.addPath(root, "test.cql");
         assertEquals("file:////home/src/test.cql", uri.toString());
     }
-
 
     @Test
     void uriWithPath() {

@@ -4,6 +4,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+
 import org.cqframework.cql.elm.tracking.TrackBack;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
@@ -24,11 +25,13 @@ class ExpressionTrackBackVisitorTest {
     @BeforeAll
     static void beforeAll() {
         ContentService cs = new TestContentService();
-        CqlCompilationManager cqlCompilationManager = new CqlCompilationManager(cs,
-                new CompilerOptionsManager(cs), new IgContextManager(cs));
-        library = cqlCompilationManager.translate(Uris.parseOrNull(
-                "/org/opencds/cqf/cql/ls/server/visitor/ExpressionTrackBackVisitorTest.cql"))
-                .getCompiledLibrary().getLibrary();
+        CqlCompilationManager cqlCompilationManager =
+                new CqlCompilationManager(cs, new CompilerOptionsManager(cs), new IgContextManager(cs));
+        library = cqlCompilationManager
+                .translate(
+                        Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/visitor/ExpressionTrackBackVisitorTest.cql"))
+                .getCompiledLibrary()
+                .getLibrary();
     }
 
     @Test

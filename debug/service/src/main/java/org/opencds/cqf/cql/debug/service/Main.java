@@ -31,14 +31,12 @@ public class Main {
         SLF4JBridgeHandler.install();
 
         log.info("java.version is {}", System.getProperty("java.version"));
-        log.info("cql-debug version is {}",
-                CqlDebugServer.class.getPackage().getImplementationVersion());
+        log.info("cql-debug version is {}", CqlDebugServer.class.getPackage().getImplementationVersion());
 
         CqlDebugServer server = new CqlDebugServer();
 
         @SuppressWarnings("java:S106")
-        Launcher<IDebugProtocolClient> launcher =
-                DSPLauncher.createServerLauncher(server, System.in, System.out);
+        Launcher<IDebugProtocolClient> launcher = DSPLauncher.createServerLauncher(server, System.in, System.out);
 
         server.connect(launcher.getRemoteProxy());
         Future<Void> serverThread = launcher.startListening();

@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.server.command;
 
+import com.google.gson.JsonElement;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.net.URI;
@@ -14,7 +15,6 @@ import org.hl7.elm.r1.Library;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
-import com.google.gson.JsonElement;
 
 public class ViewElmCommandContribution implements CommandContribution {
     private static final String VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm";

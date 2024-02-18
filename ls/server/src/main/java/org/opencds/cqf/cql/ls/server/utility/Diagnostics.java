@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.ls.server.utility;
 
 import java.util.HashSet;
 import java.util.Set;
-
 import org.cqframework.cql.cql2elm.CqlCompilerException;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -11,7 +10,6 @@ import org.eclipse.lsp4j.Range;
 
 public class Diagnostics {
     private Diagnostics() {}
-
 
     public static Diagnostic convert(CqlCompilerException error) {
         if (error.getLocator() != null) {
@@ -55,8 +53,10 @@ public class Diagnostics {
     private static Range position(CqlCompilerException error) {
         // The Language server API assumes 0 based indices and an exclusive range
         return new Range(
-                new Position(error.getLocator().getStartLine() - 1,
+                new Position(
+                        error.getLocator().getStartLine() - 1,
                         Math.max(error.getLocator().getStartChar() - 1, 0)),
-                new Position(error.getLocator().getEndLine() - 1, error.getLocator().getEndChar()));
+                new Position(
+                        error.getLocator().getEndLine() - 1, error.getLocator().getEndChar()));
     }
 }

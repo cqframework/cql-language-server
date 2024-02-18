@@ -30,14 +30,16 @@ import org.slf4j.LoggerFactory;
 public class CqlTextDocumentService implements TextDocumentService {
     private static final Logger log = LoggerFactory.getLogger(CqlTextDocumentService.class);
 
-
     private final CompletableFuture<LanguageClient> client;
     private final FormattingProvider formattingProvider;
     private final HoverProvider hoverProvider;
     private final EventBus eventBus;
 
-    public CqlTextDocumentService(CompletableFuture<LanguageClient> client,
-            HoverProvider hoverProvider, FormattingProvider formattingProvider, EventBus eventBus) {
+    public CqlTextDocumentService(
+            CompletableFuture<LanguageClient> client,
+            HoverProvider hoverProvider,
+            FormattingProvider formattingProvider,
+            EventBus eventBus) {
         this.client = client;
         this.formattingProvider = formattingProvider;
         this.hoverProvider = hoverProvider;
@@ -65,15 +67,12 @@ public class CqlTextDocumentService implements TextDocumentService {
                 .exceptionally(this::notifyClient);
     }
 
-
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
-        return CompletableFuture
-                .<List<? extends TextEdit>>supplyAsync(
-                        () -> this.formattingProvider.format(params.getTextDocument().getUri()))
+        return CompletableFuture.<List<? extends TextEdit>>supplyAsync(() ->
+                        this.formattingProvider.format(params.getTextDocument().getUri()))
                 .exceptionally(this::notifyClient);
     }
-
 
     private <T> T notifyClient(Throwable e) {
         log.error("error", e);

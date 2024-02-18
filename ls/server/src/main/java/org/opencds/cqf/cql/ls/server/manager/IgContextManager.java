@@ -58,11 +58,15 @@ public class IgContextManager {
             ILibraryReader reader = new org.cqframework.fhir.npm.LibraryLoader(
                     npmProcessor.getIgContext().getFhirVersion());
             LoggerAdapter adapter = new LoggerAdapter(log);
-            libraryManager.getLibrarySourceLoader().registerProvider(new NpmLibrarySourceProvider(
-                    npmProcessor.getPackageManager().getNpmList(), reader, adapter));
-            libraryManager.getModelManager().getModelInfoLoader().registerModelInfoProvider(
-                    new NpmModelInfoProvider(npmProcessor.getPackageManager().getNpmList(), reader,
-                            adapter));
+            libraryManager
+                    .getLibrarySourceLoader()
+                    .registerProvider(new NpmLibrarySourceProvider(
+                            npmProcessor.getPackageManager().getNpmList(), reader, adapter));
+            libraryManager
+                    .getModelManager()
+                    .getModelInfoLoader()
+                    .registerModelInfoProvider(new NpmModelInfoProvider(
+                            npmProcessor.getPackageManager().getNpmList(), reader, adapter));
             for (NamespaceInfo ni : npmProcessor.getNamespaces()) {
                 libraryManager.getNamespaceManager().addNamespace(ni);
             }
@@ -71,7 +75,7 @@ public class IgContextManager {
 
     /**
      * Searches for an ig.ini file in the parent and grandparent of the given uri
-     * 
+     *
      * @param uri
      * @return
      */

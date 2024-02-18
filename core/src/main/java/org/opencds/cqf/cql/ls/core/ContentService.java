@@ -27,8 +27,8 @@ public interface ContentService {
         }
 
         if (locations.size() > 1) {
-            String allLocations = String.join("%n",
-                    locations.stream().map(String::valueOf).collect(Collectors.toList()));
+            String allLocations =
+                    String.join("%n", locations.stream().map(String::valueOf).collect(Collectors.toList()));
             throw new IllegalStateException(String.format(
                     "more than one location was found for library: %s version: %s in the current workspace:%n%s",
                     identifier.getId(), identifier.getVersion(), allLocations));

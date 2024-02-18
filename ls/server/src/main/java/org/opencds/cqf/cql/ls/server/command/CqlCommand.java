@@ -1,32 +1,32 @@
-//package org.opencds.cqf.cql.ls.server.command;
+// package org.opencds.cqf.cql.ls.server.command;
 //
-//import ca.uhn.fhir.context.FhirVersionEnum;
-//import org.apache.commons.lang3.tuple.Pair;
-//import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
-//import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
-//import org.cqframework.cql.cql2elm.LibrarySourceProvider;
-//import org.cqframework.fhir.npm.NpmProcessor;
-//import org.hl7.elm.r1.VersionedIdentifier;
-//import org.hl7.fhir.instance.model.api.IBase;
-//import org.hl7.fhir.instance.model.api.IBaseDatatype;
-//import org.hl7.fhir.instance.model.api.IBaseResource;
-//import org.opencds.cqf.cql.engine.execution.EvaluationResult;
-//import org.opencds.cqf.cql.engine.execution.ExpressionResult;
-//import org.opencds.cqf.cql.engine.terminology.TerminologyProvider;
-//import org.opencds.cqf.fhir.cql.CqlOptions;
-//import picocli.CommandLine;
-//import picocli.CommandLine.ArgGroup;
-//import picocli.CommandLine.Command;
-//import picocli.CommandLine.Option;
+// import ca.uhn.fhir.context.FhirVersionEnum;
+// import org.apache.commons.lang3.tuple.Pair;
+// import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
+// import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
+// import org.cqframework.cql.cql2elm.LibrarySourceProvider;
+// import org.cqframework.fhir.npm.NpmProcessor;
+// import org.hl7.elm.r1.VersionedIdentifier;
+// import org.hl7.fhir.instance.model.api.IBase;
+// import org.hl7.fhir.instance.model.api.IBaseDatatype;
+// import org.hl7.fhir.instance.model.api.IBaseResource;
+// import org.opencds.cqf.cql.engine.execution.EvaluationResult;
+// import org.opencds.cqf.cql.engine.execution.ExpressionResult;
+// import org.opencds.cqf.cql.engine.terminology.TerminologyProvider;
+// import org.opencds.cqf.fhir.cql.CqlOptions;
+// import picocli.CommandLine;
+// import picocli.CommandLine.ArgGroup;
+// import picocli.CommandLine.Command;
+// import picocli.CommandLine.Option;
 //
-//import java.net.URI;
-//import java.util.HashMap;
-//import java.util.List;
-//import java.util.Map;
-//import java.util.concurrent.Callable;
+// import java.net.URI;
+// import java.util.HashMap;
+// import java.util.List;
+// import java.util.Map;
+// import java.util.concurrent.Callable;
 //
-//@Command(name = "cql", mixinStandardHelpOptions = true)
-//public class CqlCommand implements Callable<Integer> {
+// @Command(name = "cql", mixinStandardHelpOptions = true)
+// public class CqlCommand implements Callable<Integer> {
 //    @Option(names = { "-fv", "--fhir-version" }, required = true)
 //    public String fhirVersion;
 //
@@ -108,9 +108,11 @@
 //            }
 //
 //            for (LibraryParameter library : libraries) {
-//                CqlEvaluatorBuilder cqlEvaluatorBuilder = cqlEvaluatorComponent.createBuilder().withCqlOptions(cqlOptions);
+//                CqlEvaluatorBuilder cqlEvaluatorBuilder =
+// cqlEvaluatorComponent.createBuilder().withCqlOptions(cqlOptions);
 //
-//                NpmProcessor npmProcessor = parentCommand.getIgContextManager().getContext(URI.create(library.libraryUrl));
+//                NpmProcessor npmProcessor =
+// parentCommand.getIgContextManager().getContext(URI.create(library.libraryUrl));
 //                if (npmProcessor != null) {
 //                    cqlEvaluatorBuilder.withNpmProcessor(npmProcessor);
 //                }
@@ -126,7 +128,8 @@
 //                cqlEvaluatorBuilder.withLibrarySourceProvider(librarySourceProvider);
 //
 //                if (library.terminologyUrl != null) {
-//                    TerminologyProvider terminologyProvider = this.terminologyProviderIndex.get(library.terminologyUrl);
+//                    TerminologyProvider terminologyProvider =
+// this.terminologyProviderIndex.get(library.terminologyUrl);
 //                    if (terminologyProvider == null) {
 //                        terminologyProvider = cqlEvaluatorComponent.createTerminologyProviderFactory()
 //                                .create(new EndpointInfo().setAddress(library.terminologyUrl));
@@ -143,10 +146,12 @@
 //                }
 //                // default to FHIR
 //                else {
-//                    dataProvider = dataProviderFactory.create(new EndpointInfo().setType(Constants.HL7_FHIR_FILES_CODE));
+//                    dataProvider = dataProviderFactory.create(new
+// EndpointInfo().setType(Constants.HL7_FHIR_FILES_CODE));
 //                }
 //
-//                cqlEvaluatorBuilder.withModelResolverAndRetrieveProvider(dataProvider.getModelUri(), dataProvider.getModelResolver(),
+//                cqlEvaluatorBuilder.withModelResolverAndRetrieveProvider(dataProvider.getModelUri(),
+// dataProvider.getModelResolver(),
 //                        dataProvider.getRetrieveProvider());
 //
 //                CqlEvaluator evaluator = cqlEvaluatorBuilder.build();
@@ -162,7 +167,8 @@
 //                EvaluationResult result = evaluator.evaluate(identifier, contextParameter);
 //
 //                for (Map.Entry<String, ExpressionResult> libraryEntry : result.expressionResults.entrySet()) {
-//                    System.out.println(libraryEntry.getKey() + "=" + this.tempConvert(libraryEntry.getValue().value()));
+//                    System.out.println(libraryEntry.getKey() + "=" +
+// this.tempConvert(libraryEntry.getValue().value()));
 //                }
 //
 //                System.out.println();
@@ -210,4 +216,4 @@
 //        return result;
 //    }
 //
-//}
+// }

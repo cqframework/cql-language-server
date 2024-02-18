@@ -1,19 +1,17 @@
 package org.opencds.cqf.cql.ls.plugin.debug;
 
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.opencds.cqf.cql.ls.plugin.debug.session.DebugSession;
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.utility.Futures;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-
 public class DebugCommandContribution implements CommandContribution {
 
-    public static final String START_DEBUG_COMMAND =
-            "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
+    public static final String START_DEBUG_COMMAND = "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession";
 
     private DebugSession debugSession = null;
 
@@ -37,7 +35,8 @@ public class DebugCommandContribution implements CommandContribution {
             if (this.debugSession == null || !this.debugSession.isActive()) {
                 this.debugSession = new DebugSession();
                 try {
-                    return CompletableFuture.completedFuture(this.debugSession.start().get());
+                    return CompletableFuture.completedFuture(
+                            this.debugSession.start().get());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return Futures.failed(e);

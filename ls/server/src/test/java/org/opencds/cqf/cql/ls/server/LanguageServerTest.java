@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.MarkupContent;
@@ -47,8 +48,7 @@ public class LanguageServerTest {
     public void hoverInt() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
-                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
-                        new Position(5, 2)))
+                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(5, 2)))
                 .get();
 
         assertNotNull(hover);
@@ -63,8 +63,7 @@ public class LanguageServerTest {
     public void hoverNothing() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
-                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
-                        new Position(2, 0)))
+                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(2, 0)))
                 .get();
 
         assertNull(hover);
@@ -74,8 +73,7 @@ public class LanguageServerTest {
     public void hoverList() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
-                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
-                        new Position(8, 2)))
+                        new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(8, 2)))
                 .get();
 
         assertNotNull(hover);
