@@ -19,12 +19,14 @@ import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Registration;
 import org.eclipse.lsp4j.RegistrationParams;
+import org.eclipse.lsp4j.RelativePattern;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.Unregistration;
 import org.eclipse.lsp4j.UnregistrationParams;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.WorkspaceFoldersOptions;
 import org.eclipse.lsp4j.WorkspaceServerCapabilities;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import org.greenrobot.eventbus.EventBus;
@@ -91,8 +93,10 @@ public class CqlWorkspaceService implements WorkspaceService {
                         Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
                         Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD))));
 
-        List<FileSystemWatcher> watchers =
-                basicWatchers.stream().map(FileSystemWatcher::new).collect(Collectors.toList());
+        List<FileSystemWatcher> watchers = basicWatchers.stream()
+                .map(Either::<String, RelativePattern>forLeft)
+                .map(FileSystemWatcher::new)
+                .collect(Collectors.toList());
         DidChangeWatchedFilesRegistrationOptions registrationOptions =
                 new DidChangeWatchedFilesRegistrationOptions(watchers);
 
