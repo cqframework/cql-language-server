@@ -21,7 +21,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 // We'll need to split out a few components to make it easier.
 
 @SpringBootTest(classes = {TestConfig.class})
-public class LanguageServerTest {
+class LanguageServerTest {
 
     @Autowired
     CqlLanguageServer server;
@@ -29,7 +29,7 @@ public class LanguageServerTest {
     LanguageClient client = Mockito.mock(LanguageClient.class);
 
     @Test
-    public void handshake() throws Exception {
+    void handshake() throws Exception {
         // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#lifeCycleMessages
 
         // Sequence for initialization
@@ -45,7 +45,7 @@ public class LanguageServerTest {
     }
 
     @Test
-    public void hoverInt() throws Exception {
+    void hoverInt() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
                         new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(5, 2)))
@@ -60,7 +60,7 @@ public class LanguageServerTest {
     }
 
     @Test
-    public void hoverNothing() throws Exception {
+    void hoverNothing() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
                         new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(2, 0)))
@@ -70,7 +70,7 @@ public class LanguageServerTest {
     }
 
     @Test
-    public void hoverList() throws Exception {
+    void hoverList() throws Exception {
         Hover hover = server.getTextDocumentService()
                 .hover(new HoverParams(
                         new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(8, 2)))

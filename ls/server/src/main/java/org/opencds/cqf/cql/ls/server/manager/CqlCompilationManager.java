@@ -47,16 +47,16 @@ public class CqlCompilationManager {
         this.igContextManager = igContextManager;
     }
 
-    public CqlCompiler translate(URI uri) {
+    public CqlCompiler compile(URI uri) {
         InputStream input = contentService.read(uri);
         if (input == null) {
             return null;
         }
 
-        return this.translate(uri, input);
+        return this.compile(uri, input);
     }
 
-    public CqlCompiler translate(URI uri, InputStream stream) {
+    public CqlCompiler compile(URI uri, InputStream stream) {
         ModelManager modelManager = this.createModelManager();
 
         LibraryManager libraryManager = this.createLibraryManager(Uris.getHead(uri), modelManager);

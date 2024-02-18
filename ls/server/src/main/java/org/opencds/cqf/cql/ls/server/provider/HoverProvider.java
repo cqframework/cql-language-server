@@ -26,7 +26,7 @@ public class HoverProvider {
 
         // This translates on the fly. We may want to consider maintaining
         // an ELM index to reduce the need to do retranslation.
-        CqlCompiler compiler = this.cqlCompilationManager.translate(uri);
+        CqlCompiler compiler = this.cqlCompilationManager.compile(uri);
         if (compiler == null) {
             return null;
         }

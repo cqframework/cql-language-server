@@ -105,7 +105,7 @@ public class DiagnosticsService {
 
     public Map<URI, Set<Diagnostic>> lint(URI uri) {
         Map<URI, Set<Diagnostic>> diagnostics = new HashMap<>();
-        CqlCompiler compiler = this.cqlCompilationManager.translate(uri);
+        CqlCompiler compiler = this.cqlCompilationManager.compile(uri);
         if (compiler == null) {
             Diagnostic d = new Diagnostic(
                     new Range(new Position(0, 0), new Position(0, 0)),

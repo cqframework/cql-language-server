@@ -49,7 +49,7 @@ public class ViewElmCommandContribution implements CommandContribution {
         try {
 
             URI uri = Uris.parseOrNull(uriString);
-            CqlCompiler compiler = this.cqlCompilationManager.translate(uri);
+            CqlCompiler compiler = this.cqlCompilationManager.compile(uri);
             if (compiler != null) {
                 return CompletableFuture.completedFuture(convertToXml(compiler.getLibrary()));
             }

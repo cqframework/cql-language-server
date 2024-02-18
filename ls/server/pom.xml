@@ -39,6 +39,10 @@
         </dependency>
         <dependency>
             <groupId>info.cqframework</groupId>
+            <artifactId>model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>info.cqframework</groupId>
             <artifactId>cql-formatter</artifactId>
         </dependency>
 
@@ -51,12 +55,6 @@
         <dependency>
             <groupId>org.greenrobot</groupId>
             <artifactId>eventbus-java</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.opencds.cqf.fhir</groupId>
-            <artifactId>cqf-fhir-jaxb</artifactId>
-            <type>pom</type>
         </dependency>
 
         <dependency>

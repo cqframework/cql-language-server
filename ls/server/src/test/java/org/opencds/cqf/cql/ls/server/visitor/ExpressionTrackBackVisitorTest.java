@@ -28,8 +28,7 @@ class ExpressionTrackBackVisitorTest {
         CqlCompilationManager cqlCompilationManager =
                 new CqlCompilationManager(cs, new CompilerOptionsManager(cs), new IgContextManager(cs));
         library = cqlCompilationManager
-                .translate(
-                        Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/visitor/ExpressionTrackBackVisitorTest.cql"))
+                .compile(Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/visitor/ExpressionTrackBackVisitorTest.cql"))
                 .getCompiledLibrary()
                 .getLibrary();
     }
