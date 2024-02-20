@@ -16,7 +16,6 @@ import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.opencds.cqf.cql.ls.server.service.*;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -26,7 +25,7 @@ import org.springframework.context.annotation.Import;
 public class ServerConfig {
 
     @Bean(name = "fileContentService")
-    public FileContentService fileContentService(List<WorkspaceFolder> workspaceFolders) {
+    public ContentService fileContentService(List<WorkspaceFolder> workspaceFolders) {
         return new FileContentService(workspaceFolders);
     }
 
@@ -40,7 +39,8 @@ public class ServerConfig {
     }
 
     @Bean(name = {"federatedContentService"})
-    public FederatedContentService federatedContentService(ActiveContentService activeContentService, FileContentService fileContentService) {
+    public FederatedContentService federatedContentService(
+            ActiveContentService activeContentService, ContentService fileContentService) {
         return new FederatedContentService(activeContentService, fileContentService);
     }
 
@@ -81,7 +81,7 @@ public class ServerConfig {
     }
 
     @Bean
-    CompilerOptionsManager compilerOptionsManager(FileContentService contentService, EventBus eventBus) {
+    CompilerOptionsManager compilerOptionsManager(ContentService contentService, EventBus eventBus) {
         CompilerOptionsManager t = new CompilerOptionsManager(contentService);
 
         eventBus.register(t);
@@ -90,7 +90,7 @@ public class ServerConfig {
     }
 
     @Bean
-    IgContextManager igContextManager(FileContentService contentService, EventBus eventBus) {
+    IgContextManager igContextManager(ContentService contentService, EventBus eventBus) {
         IgContextManager i = new IgContextManager(contentService);
 
         eventBus.register(i);
