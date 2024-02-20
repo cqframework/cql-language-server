@@ -27,7 +27,7 @@ public class Main implements CommandLineRunner {
     /**
      * Entrypoint for the cql-ls-service
      *
-     * @param args the commandline parameters (none supported currently)
+     * @param args the command-line parameters (none supported currently)
      */
     public static void main(String[] args) {
         SpringApplication.run(Main.class, args);

@@ -16,6 +16,7 @@ import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.opencds.cqf.cql.ls.server.service.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -25,7 +26,7 @@ import org.springframework.context.annotation.Import;
 public class ServerConfig {
 
     @Bean(name = "fileContentService")
-    public ContentService fileContentService(List<WorkspaceFolder> workspaceFolders) {
+    public FileContentService fileContentService(List<WorkspaceFolder> workspaceFolders) {
         return new FileContentService(workspaceFolders);
     }
 
@@ -38,8 +39,8 @@ public class ServerConfig {
         return ac;
     }
 
-    @Bean(name = {"contentService"})
-    public ContentService contentService(ActiveContentService activeContentService, ContentService fileContentService) {
+    @Bean(name = {"federatedContentService"})
+    public FederatedContentService federatedContentService(ActiveContentService activeContentService, FileContentService fileContentService) {
         return new FederatedContentService(activeContentService, fileContentService);
     }
 
@@ -80,7 +81,7 @@ public class ServerConfig {
     }
 
     @Bean
-    CompilerOptionsManager compilerOptionsManager(ContentService contentService, EventBus eventBus) {
+    CompilerOptionsManager compilerOptionsManager(FileContentService contentService, EventBus eventBus) {
         CompilerOptionsManager t = new CompilerOptionsManager(contentService);
 
         eventBus.register(t);
@@ -89,7 +90,7 @@ public class ServerConfig {
     }
 
     @Bean
-    IgContextManager igContextManager(ContentService contentService, EventBus eventBus) {
+    IgContextManager igContextManager(FileContentService contentService, EventBus eventBus) {
         IgContextManager i = new IgContextManager(contentService);
 
         eventBus.register(i);
@@ -99,10 +100,10 @@ public class ServerConfig {
 
     @Bean
     CqlCompilationManager cqlCompilationManager(
-            ContentService contentService,
+            FederatedContentService federatedContentService,
             CompilerOptionsManager compilerOptionsManager,
             IgContextManager igContextManager) {
-        return new CqlCompilationManager(contentService, compilerOptionsManager, igContextManager);
+        return new CqlCompilationManager(federatedContentService, compilerOptionsManager, igContextManager);
     }
 
     @Bean
@@ -111,7 +112,7 @@ public class ServerConfig {
     }
 
     @Bean
-    FormattingProvider formattingProvider(ContentService contentService) {
+    FormattingProvider formattingProvider(FederatedContentService contentService) {
         return new FormattingProvider(contentService);
     }
 
@@ -119,7 +120,7 @@ public class ServerConfig {
     DiagnosticsService diagnosticsService(
             CompletableFuture<LanguageClient> languageClient,
             CqlCompilationManager cqlCompilationManager,
-            ContentService contentService,
+            FederatedContentService contentService,
             EventBus eventBus) {
         DiagnosticsService ds = new DiagnosticsService(languageClient, cqlCompilationManager, contentService);
 
