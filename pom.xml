@@ -15,11 +15,11 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <cqf-fhir-cr.version>3.0.0-PRE18-SNAPSHOT</cqf-fhir-cr.version>
+        <cqf-fhir-cr.version>3.0.0</cqf-fhir-cr.version>
         <picocli.version>4.6.1</picocli.version>
         <auto-service.version>1.0</auto-service.version>
         <slf4j.version>2.0.12</slf4j.version>
-        <spring.boot.version>3.2.2</spring.boot.version>
+        <spring.boot.version>2.7.18</spring.boot.version>
     </properties>
 
     <modules>
