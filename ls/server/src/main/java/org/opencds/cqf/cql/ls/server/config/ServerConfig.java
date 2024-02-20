@@ -41,7 +41,8 @@ public class ServerConfig {
 
     @Bean(name = {"federatedContentService"})
     public FederatedContentService federatedContentService(
-            ActiveContentService activeContentService, @Qualifier("fileContentService") ContentService fileContentService) {
+            ActiveContentService activeContentService,
+            @Qualifier("fileContentService") ContentService fileContentService) {
         return new FederatedContentService(activeContentService, fileContentService);
     }
 
@@ -82,7 +83,8 @@ public class ServerConfig {
     }
 
     @Bean
-    CompilerOptionsManager compilerOptionsManager(@Qualifier("federatedContentService") ContentService federatedContentService, EventBus eventBus) {
+    CompilerOptionsManager compilerOptionsManager(
+            @Qualifier("federatedContentService") ContentService federatedContentService, EventBus eventBus) {
         CompilerOptionsManager t = new CompilerOptionsManager(federatedContentService);
 
         eventBus.register(t);
@@ -91,7 +93,8 @@ public class ServerConfig {
     }
 
     @Bean
-    IgContextManager igContextManager(@Qualifier("federatedContentService") ContentService contentService, EventBus eventBus) {
+    IgContextManager igContextManager(
+            @Qualifier("federatedContentService") ContentService contentService, EventBus eventBus) {
         IgContextManager i = new IgContextManager(contentService);
 
         eventBus.register(i);
