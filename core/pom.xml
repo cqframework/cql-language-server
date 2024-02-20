@@ -19,26 +19,5 @@
             <groupId>org.opencds.cqf.fhir</groupId>
             <artifactId>cqf-fhir-cr</artifactId>
         </dependency>
-
-        <dependency>
-            <groupId>commons-io</groupId>
-            <artifactId>commons-io</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.opencds.cqf.fhir</groupId>
-            <artifactId>cqf-fhir-jackson</artifactId>
-            <type>pom</type>
-        </dependency>
-
-        <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-        </dependency>
     </dependencies>
 </project>

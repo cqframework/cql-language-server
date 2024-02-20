@@ -16,8 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <cqf-fhir-cr.version>3.0.0</cqf-fhir-cr.version>
-        <picocli.version>4.6.1</picocli.version>
-        <auto-service.version>1.0</auto-service.version>
+        <auto-service.version>1.1.1</auto-service.version>
         <slf4j.version>2.0.12</slf4j.version>
         <spring.boot.version>2.7.18</spring.boot.version>
     </properties>
@@ -96,19 +95,12 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- CLI -->
-            <dependency>
-                <groupId>info.picocli</groupId>
-                <artifactId>picocli</artifactId>
-                <version>${picocli.version}</version>
-            </dependency>
-
 
             <!-- CQL-to-ELM Translator -->
             <dependency>
                 <groupId>info.cqframework</groupId>
                 <artifactId>cql-formatter</artifactId>
-                <version>3.6.0</version>
+                <version>3.7.0</version>
             </dependency>
 
             <!-- Java implementation of VS Code language server protocol -->
@@ -138,8 +130,20 @@
                 <version>3.3.1</version>
             </dependency>
 
+            <dependency>
+                <groupId>jakarta.xml.bind</groupId>
+                <artifactId>jakarta.xml.bind-api</artifactId>
+                <version>3.0.1</version>
+            </dependency>
+
 
             <!-- test dependencies -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-simple</artifactId>
+                <version>${slf4j.version}</version>
+                <scope>test</scope>
+            </dependency>
             <dependency>
                 <groupId>org.hamcrest</groupId>
                 <artifactId>hamcrest-all</artifactId>
@@ -162,6 +166,10 @@
         </dependency>
 
         <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
         </dependency>
@@ -174,7 +182,6 @@
             <artifactId>mockito-core</artifactId>
         </dependency>
     </dependencies>
-
     <build>
         <pluginManagement>
             <plugins>
@@ -201,16 +208,11 @@
                             <arg>-implicit:none</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>
-                            <path>
+                            <!-- <path>
                                 <groupId>com.google.auto.service</groupId>
                                 <artifactId>auto-service</artifactId>
                                 <version>${auto-service.version}</version>
-                            </path>
-                            <path>
-                                <groupId>info.picocli</groupId>
-                                <artifactId>picocli-codegen</artifactId>
-                                <version>${picocli.version}</version>
-                            </path>
+                            </path> -->
                         </annotationProcessorPaths>
                     </configuration>
                 </plugin>

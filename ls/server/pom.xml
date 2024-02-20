@@ -32,6 +32,12 @@
             <artifactId>cqf-fhir-cr</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.opencds.cqf.fhir</groupId>
+            <artifactId>cqf-fhir-jackson</artifactId>
+            <type>pom</type>
+        </dependency>
+
         <!-- CQL-to-ELM Translator -->
         <dependency>
             <groupId>info.cqframework</groupId>
@@ -55,11 +61,6 @@
         <dependency>
             <groupId>org.greenrobot</groupId>
             <artifactId>eventbus-java</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>info.picocli</groupId>
-            <artifactId>picocli</artifactId>
         </dependency>
     </dependencies>
 </project>
