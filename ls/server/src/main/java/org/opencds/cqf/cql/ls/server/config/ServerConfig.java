@@ -16,6 +16,7 @@ import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.opencds.cqf.cql.ls.server.service.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -40,7 +41,7 @@ public class ServerConfig {
 
     @Bean(name = {"federatedContentService"})
     public FederatedContentService federatedContentService(
-            ActiveContentService activeContentService, ContentService fileContentService) {
+            ActiveContentService activeContentService, @Qualifier("fileContentService") ContentService fileContentService) {
         return new FederatedContentService(activeContentService, fileContentService);
     }
 
@@ -81,8 +82,8 @@ public class ServerConfig {
     }
 
     @Bean
-    CompilerOptionsManager compilerOptionsManager(ContentService contentService, EventBus eventBus) {
-        CompilerOptionsManager t = new CompilerOptionsManager(contentService);
+    CompilerOptionsManager compilerOptionsManager(@Qualifier("federatedContentService") ContentService federatedContentService, EventBus eventBus) {
+        CompilerOptionsManager t = new CompilerOptionsManager(federatedContentService);
 
         eventBus.register(t);
 
@@ -90,7 +91,7 @@ public class ServerConfig {
     }
 
     @Bean
-    IgContextManager igContextManager(ContentService contentService, EventBus eventBus) {
+    IgContextManager igContextManager(@Qualifier("federatedContentService") ContentService contentService, EventBus eventBus) {
         IgContextManager i = new IgContextManager(contentService);
 
         eventBus.register(i);
