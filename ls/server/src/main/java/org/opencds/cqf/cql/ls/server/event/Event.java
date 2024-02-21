@@ -11,5 +11,4 @@ abstract class Event<T> {
     public T params() {
         return this.params;
     }
-
 }

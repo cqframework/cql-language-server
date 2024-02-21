@@ -1,5 +1,10 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 import org.cqframework.cql.cql2elm.CqlCompilerOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
@@ -13,12 +18,6 @@ import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
-
 public class CompilerOptionsManager {
 
     private static final Logger log = LoggerFactory.getLogger(CompilerOptionsManager.class);
@@ -30,7 +29,6 @@ public class CompilerOptionsManager {
     }
 
     private final Map<URI, CqlCompilerOptions> cachedOptions = new HashMap<>();
-
 
     public CqlCompilerOptions getOptions(URI uri) {
         URI root = Uris.getHead(uri);
@@ -49,7 +47,8 @@ public class CompilerOptionsManager {
         InputStream input = contentService.read(Uris.addPath(rootUri, "/cql-options.json"));
 
         if (input != null) {
-            options = CqlTranslatorOptionsMapper.fromReader(new InputStreamReader(input)).getCqlCompilerOptions();
+            options = CqlTranslatorOptionsMapper.fromReader(new InputStreamReader(input))
+                    .getCqlCompilerOptions();
         } else {
             log.info("cql-options.json not found, using default options");
             options = CqlTranslatorOptions.defaultOptions().getCqlCompilerOptions();
@@ -57,8 +56,10 @@ public class CompilerOptionsManager {
 
         // For the purposes of debugging and authoring support, always add detailed
         // translation information.
-        return options.withOptions(CqlCompilerOptions.Options.EnableLocators,
-                        CqlCompilerOptions.Options.EnableResultTypes, CqlCompilerOptions.Options.EnableAnnotations)
+        return options.withOptions(
+                        CqlCompilerOptions.Options.EnableLocators,
+                        CqlCompilerOptions.Options.EnableResultTypes,
+                        CqlCompilerOptions.Options.EnableAnnotations)
                 .withSignatureLevel(SignatureLevel.All);
     }
 

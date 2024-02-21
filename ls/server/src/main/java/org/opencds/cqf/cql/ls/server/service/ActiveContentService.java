@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.server.service;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -74,8 +75,7 @@ public class ActiveContentService implements ContentService {
         TextDocumentItem document = e.params().getTextDocument();
         URI uri = Uris.parseOrNull(document.getUri());
 
-        String encodedText = new String(document.getText().getBytes(StandardCharsets.UTF_8),
-                StandardCharsets.UTF_8);
+        String encodedText = new String(document.getText().getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
 
         activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
     }
@@ -99,14 +99,11 @@ public class ActiveContentService implements ContentService {
             for (TextDocumentContentChangeEvent change : e.params().getContentChanges()) {
                 if (change.getRange() == null) {
                     String encodedText =
-                            new String(change.getText().getBytes(StandardCharsets.UTF_8),
-                                    StandardCharsets.UTF_8);
-                    activeContent.put(uri,
-                            new VersionedContent(encodedText, document.getVersion()));
+                            new String(change.getText().getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+                    activeContent.put(uri, new VersionedContent(encodedText, document.getVersion()));
                 } else {
                     String newText = patch(existingText, change);
                     activeContent.put(uri, new VersionedContent(newText, document.getVersion()));
-
                 }
             }
         }
@@ -114,8 +111,7 @@ public class ActiveContentService implements ContentService {
 
     // Break this out into its own thing for test purposes.
     @SuppressWarnings("deprecation")
-    protected String patch(String sourceText, TextDocumentContentChangeEvent change)
-            throws IOException {
+    protected String patch(String sourceText, TextDocumentContentChangeEvent change) throws IOException {
         Range range = change.getRange();
         BufferedReader reader = new BufferedReader(new StringReader(sourceText));
         StringWriter writer = new StringWriter();
@@ -129,12 +125,10 @@ public class ActiveContentService implements ContentService {
         }
 
         // Skip unchanged chars
-        for (int character = 0; character < range.getStart().getCharacter(); character++)
-            writer.write(reader.read());
+        for (int character = 0; character < range.getStart().getCharacter(); character++) writer.write(reader.read());
 
         // Write replacement text
-        String encodedText = new String(change.getText().getBytes(StandardCharsets.UTF_8),
-                StandardCharsets.UTF_8);
+        String encodedText = new String(change.getText().getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
         writer.write(encodedText);
 
         // Skip replaced text
@@ -144,10 +138,8 @@ public class ActiveContentService implements ContentService {
         while (true) {
             int next = reader.read();
 
-            if (next == -1)
-                return writer.toString();
-            else
-                writer.write(next);
+            if (next == -1) return writer.toString();
+            else writer.write(next);
         }
     }
 

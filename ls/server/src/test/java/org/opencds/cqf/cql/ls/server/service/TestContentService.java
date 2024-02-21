@@ -13,11 +13,11 @@ public class TestContentService implements ContentService {
     @Override
     public Set<URI> locate(URI root, VersionedIdentifier libraryIdentifier) {
         try {
-            return Collections.singleton(new URI(
-                    "/org/opencds/cqf/cql/ls/server/" + libraryIdentifier.getId() + ".cql"));
+            return Collections.singleton(
+                    new URI("/org/opencds/cqf/cql/ls/server/" + libraryIdentifier.getId() + ".cql"));
         } catch (URISyntaxException e) {
-            throw new RuntimeException(String.format("error locating test contest for: %s",
-                    libraryIdentifier.toString()));
+            throw new RuntimeException(
+                    String.format("error locating test contest for: %s", libraryIdentifier.toString()));
         }
     }
 

@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.service;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+
 import java.io.InputStream;
 import java.net.URI;
 import java.util.Set;
@@ -12,8 +13,7 @@ public class FederatedContentService implements ContentService {
     private ActiveContentService activeContentService;
     private ContentService fileContentService;
 
-    public FederatedContentService(ActiveContentService activeContentService,
-            ContentService fileContentService) {
+    public FederatedContentService(ActiveContentService activeContentService, ContentService fileContentService) {
         this.activeContentService = activeContentService;
         this.fileContentService = fileContentService;
     }
@@ -40,5 +40,4 @@ public class FederatedContentService implements ContentService {
 
         return this.fileContentService.read(uri);
     }
-
 }

@@ -1,5 +1,8 @@
 package org.opencds.cqf.cql.ls.server.config;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.greenrobot.eventbus.EventBus;
@@ -13,13 +16,10 @@ import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider;
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider;
 import org.opencds.cqf.cql.ls.server.service.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 @Configuration
 @Import(PluginConfig.class)
@@ -39,15 +39,16 @@ public class ServerConfig {
         return ac;
     }
 
-    @Bean(name = {"contentService"})
-    public ContentService contentService(ActiveContentService activeContentService,
-            ContentService fileContentService) {
+    @Bean(name = {"federatedContentService"})
+    public FederatedContentService federatedContentService(
+            ActiveContentService activeContentService,
+            @Qualifier("fileContentService") ContentService fileContentService) {
         return new FederatedContentService(activeContentService, fileContentService);
     }
 
-
     @Bean
-    public CqlLanguageServer cqlLanguageServer(CompletableFuture<LanguageClient> languageClient,
+    public CqlLanguageServer cqlLanguageServer(
+            CompletableFuture<LanguageClient> languageClient,
             CqlWorkspaceService cqlWorkspaceService,
             CqlTextDocumentService cqlTextDocumentService) {
         return new CqlLanguageServer(languageClient, cqlWorkspaceService, cqlTextDocumentService);
@@ -65,24 +66,26 @@ public class ServerConfig {
 
     @Bean
     public CqlTextDocumentService cqlTextDocumentService(
-            CompletableFuture<LanguageClient> languageClient, HoverProvider hoverProvider,
-            FormattingProvider formattingProvider, EventBus eventBus) {
-        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider,
-                eventBus);
+            CompletableFuture<LanguageClient> languageClient,
+            HoverProvider hoverProvider,
+            FormattingProvider formattingProvider,
+            EventBus eventBus) {
+        return new CqlTextDocumentService(languageClient, hoverProvider, formattingProvider, eventBus);
     }
 
     @Bean
-    CqlWorkspaceService cqlWorkspaceService(CompletableFuture<LanguageClient> languageClient,
+    CqlWorkspaceService cqlWorkspaceService(
+            CompletableFuture<LanguageClient> languageClient,
             CompletableFuture<List<CommandContribution>> commandContributions,
-            List<WorkspaceFolder> workspaceFolders, EventBus eventBus) {
-        return new CqlWorkspaceService(languageClient, commandContributions, workspaceFolders,
-                eventBus);
+            List<WorkspaceFolder> workspaceFolders,
+            EventBus eventBus) {
+        return new CqlWorkspaceService(languageClient, commandContributions, workspaceFolders, eventBus);
     }
 
     @Bean
-    CompilerOptionsManager compilerOptionsManager(ContentService contentService,
-                                                  EventBus eventBus) {
-        CompilerOptionsManager t = new CompilerOptionsManager(contentService);
+    CompilerOptionsManager compilerOptionsManager(
+            @Qualifier("federatedContentService") ContentService federatedContentService, EventBus eventBus) {
+        CompilerOptionsManager t = new CompilerOptionsManager(federatedContentService);
 
         eventBus.register(t);
 
@@ -90,7 +93,8 @@ public class ServerConfig {
     }
 
     @Bean
-    IgContextManager igContextManager(ContentService contentService, EventBus eventBus) {
+    IgContextManager igContextManager(
+            @Qualifier("federatedContentService") ContentService contentService, EventBus eventBus) {
         IgContextManager i = new IgContextManager(contentService);
 
         eventBus.register(i);
@@ -99,11 +103,11 @@ public class ServerConfig {
     }
 
     @Bean
-    CqlCompilationManager cqlCompilationManager(ContentService contentService,
-            CompilerOptionsManager compilerOptionsManager, IgContextManager igContextManager) {
-        return new CqlCompilationManager(contentService, compilerOptionsManager, igContextManager);
-
-
+    CqlCompilationManager cqlCompilationManager(
+            FederatedContentService federatedContentService,
+            CompilerOptionsManager compilerOptionsManager,
+            IgContextManager igContextManager) {
+        return new CqlCompilationManager(federatedContentService, compilerOptionsManager, igContextManager);
     }
 
     @Bean
@@ -112,16 +116,17 @@ public class ServerConfig {
     }
 
     @Bean
-    FormattingProvider formattingProvider(ContentService contentService) {
+    FormattingProvider formattingProvider(FederatedContentService contentService) {
         return new FormattingProvider(contentService);
     }
 
     @Bean
-    DiagnosticsService diagnosticsService(CompletableFuture<LanguageClient> languageClient,
-                                          CqlCompilationManager cqlCompilationManager, ContentService contentService,
-                                          EventBus eventBus) {
-        DiagnosticsService ds =
-                new DiagnosticsService(languageClient, cqlCompilationManager, contentService);
+    DiagnosticsService diagnosticsService(
+            CompletableFuture<LanguageClient> languageClient,
+            CqlCompilationManager cqlCompilationManager,
+            FederatedContentService contentService,
+            EventBus eventBus) {
+        DiagnosticsService ds = new DiagnosticsService(languageClient, cqlCompilationManager, contentService);
 
         eventBus.register(ds);
 

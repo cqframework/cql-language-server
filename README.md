@@ -14,7 +14,7 @@ Build the project with:
 mvn package
 ```
 
-The language server itself is designed to be used by IDE plugins, such as the [CQL Support for VS Code]([https://atom.io/packages/language-cql](https://marketplace.visualstudio.com/items?itemName=cqframework.cql)) package.
+The language server itself is designed to be used by IDE plugins, such as the [CQL Support for VS Code](<[https://atom.io/packages/language-cql](https://marketplace.visualstudio.com/items?itemName=cqframework.cql)>) package.
 
 ## Getting Help
 
@@ -42,7 +42,7 @@ Merges to `master` trigger a deployment to the Maven Snapshots repositories. Onc
 
 ## License
 
-Copyright 2019+ Dynamic Content Group, LLC (dba Alphora)
+Copyright 2019+ Smile Digital Health
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

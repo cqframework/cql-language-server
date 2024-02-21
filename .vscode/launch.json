@@ -7,10 +7,17 @@
     "configurations": [
         {
             "type": "java",
+            "name": "Main",
+            "request": "launch",
+            "mainClass": "org.opencds.cqf.cql.debug.service.Main",
+            "projectName": "cql-debug-service"
+        },
+        {
+            "type": "java",
             "name": "Launch Main w/ Plugin",
             "request": "launch",
             "mainClass": "org.opencds.cqf.cql.ls.service.Main",
-            "projectName": "cql-ls-plugin-debug",
+            "projectName": "cql-ls-plugin-debug"
         },
         {
             "type": "java",

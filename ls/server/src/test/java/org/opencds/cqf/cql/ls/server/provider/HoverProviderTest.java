@@ -1,6 +1,14 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
-import org.eclipse.lsp4j.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.MarkupContent;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.opencds.cqf.cql.ls.core.ContentService;
@@ -9,16 +17,12 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.service.TestContentService;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-
-
-public class HoverProviderTest {
+class HoverProviderTest {
 
     private static HoverProvider hoverProvider;
 
     @BeforeAll
-    public static void beforeAll() {
+    static void beforeAll() {
         ContentService cs = new TestContentService();
         CqlCompilationManager cqlCompilationManager =
                 new CqlCompilationManager(cs, new CompilerOptionsManager(cs), new IgContextManager(cs));
@@ -26,10 +30,9 @@ public class HoverProviderTest {
     }
 
     @Test
-    public void hoverInt() throws Exception {
+    void hoverInt() throws Exception {
         Hover hover = hoverProvider.hover(new HoverParams(
-                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
-                new Position(5, 2)));
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(5, 2)));
 
         assertNotNull(hover);
         assertNotNull(hover.getContents().getRight());
@@ -40,19 +43,17 @@ public class HoverProviderTest {
     }
 
     @Test
-    public void hoverNothing() throws Exception {
+    void hoverNothing() throws Exception {
         Hover hover = hoverProvider.hover(new HoverParams(
-                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
-                new Position(2, 0)));
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(2, 0)));
 
         assertNull(hover);
     }
 
     @Test
-    public void hoverList() throws Exception {
+    void hoverList() throws Exception {
         Hover hover = hoverProvider.hover(new HoverParams(
-                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"),
-                new Position(8, 2)));
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(8, 2)));
 
         assertNotNull(hover);
         assertNotNull(hover.getContents().getRight());
@@ -61,5 +62,4 @@ public class HoverProviderTest {
         assertEquals("markdown", markup.getKind());
         assertEquals("```cql\nlist<System.Integer>\n```", markup.getValue());
     }
-
 }

@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.service;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
@@ -71,9 +72,9 @@ public class FileContentService implements ContentService {
 
         // First, try a direct match
         String libraryName = libraryIdentifier.getId();
-        Path libraryPath = path.resolve(String.format("%s%s.cql", libraryName,
-                libraryIdentifier.getVersion() != null ? ("-" + libraryIdentifier.getVersion())
-                        : ""));
+        Path libraryPath = path.resolve(String.format(
+                "%s%s.cql",
+                libraryName, libraryIdentifier.getVersion() != null ? ("-" + libraryIdentifier.getVersion()) : ""));
         File libraryFile = libraryPath.toFile();
 
         if (libraryFile.exists()) {
@@ -103,8 +104,7 @@ public class FileContentService implements ContentService {
     }
 
     private static File nearestMatch(Path directory, String name, String version) {
-        Collection<File> files =
-                FileUtils.listFiles(directory.toFile(), ioFilter(name), TrueFileFilter.INSTANCE);
+        Collection<File> files = FileUtils.listFiles(directory.toFile(), ioFilter(name), TrueFileFilter.INSTANCE);
         if (files == null || files.isEmpty()) {
             return null;
         }

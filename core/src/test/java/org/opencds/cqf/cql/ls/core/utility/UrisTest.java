@@ -1,16 +1,17 @@
 package org.opencds.cqf.cql.ls.core.utility;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.net.URI;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
-public class UrisTest {
+class UrisTest {
 
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
-    public void encodedUriGetHead() {
+    void encodedUriGetHead() {
         URI uri = Uris.parseOrNull("file:///d%3A/src/test.cql");
         URI root = Uris.getHead(uri);
         assertEquals("file:///d%3A/src", root.toString());
@@ -19,7 +20,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs({OS.WINDOWS})
-    public void encodedUriGetHeadWindows() {
+    void encodedUriGetHeadWindows() {
         URI uri = Uris.parseOrNull("file:///d%3A/src/test.cql");
         URI root = Uris.getHead(uri);
         assertEquals("file:///d:/src", root.toString());
@@ -27,7 +28,7 @@ public class UrisTest {
     }
 
     @Test
-    public void unencodedUriGetHeadHttps() {
+    void unencodedUriGetHeadHttps() {
         URI uri = Uris.parseOrNull("https://hl7.org/fhir/test.cql");
         URI root = Uris.getHead(uri);
         assertEquals("https://hl7.org/fhir", root.toString());
@@ -36,7 +37,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
-    public void unencodedUriGetHeadFile() {
+    void unencodedUriGetHeadFile() {
         URI uri = Uris.parseOrNull("file:///home/src/test.cql");
         URI root = Uris.getHead(uri);
         assertEquals("file:///home/src", root.toString());
@@ -45,7 +46,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
-    public void unencodedUriGetHeadFileWindows() {
+    void unencodedUriGetHeadFileWindows() {
         URI uri = Uris.parseOrNull("file:///home/src/test.cql");
         URI root = Uris.getHead(uri);
         assertEquals("file:////home/src", root.toString());
@@ -53,7 +54,7 @@ public class UrisTest {
     }
 
     @Test
-    public void uriAddPathHttp() {
+    void uriAddPathHttp() {
         URI root = Uris.parseOrNull("http://localhost:8080/home/src");
         URI uri = Uris.addPath(root, "test.cql");
         assertEquals("http://localhost:8080/home/src/test.cql", uri.toString());
@@ -61,7 +62,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
-    public void uriAddPath() {
+    void uriAddPath() {
         // With trailing slash
         URI root = Uris.parseOrNull("file:///d%3A/src/");
         URI uri = Uris.addPath(root, "test.cql");
@@ -78,7 +79,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
-    public void uriAddPathWindows() {
+    void uriAddPathWindows() {
         // With trailing slash
         URI root = Uris.parseOrNull("file:///d%3A/src/");
         URI uri = Uris.addPath(root, "test.cql");
@@ -93,9 +94,8 @@ public class UrisTest {
         assertEquals("file:////home/src/test.cql", uri.toString());
     }
 
-
     @Test
-    public void uriWithPath() {
+    void uriWithPath() {
         URI initial = Uris.parseOrNull("file:///d%3A/src/");
         URI uri = Uris.withPath(initial, "/home/src/test.cql");
         assertEquals("file:///home/src/test.cql", uri.toString());
@@ -122,7 +122,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
-    public void toClientStringUnix() {
+    void toClientStringUnix() {
         URI initial = Uris.parseOrNull("file:////d%3A/src/");
         String client = Uris.toClientUri(initial);
         assertEquals("file:////d%3A/src/", client);
@@ -130,7 +130,7 @@ public class UrisTest {
 
     @Test
     @EnabledOnOs({OS.WINDOWS})
-    public void toClientStringWindows() {
+    void toClientStringWindows() {
         URI initial = Uris.parseOrNull("file://d%3A/src/");
         String client = Uris.toClientUri(initial);
         assertEquals("file:/d:/src", client);

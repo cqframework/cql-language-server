@@ -9,11 +9,6 @@
         ".idea": true,
     },
     "java.configuration.updateBuildConfiguration": "automatic",
-    "editor.formatOnSave": true,
-    "java.format.settings.url": "https://raw.githubusercontent.com/google/styleguide/gh-pages/eclipse-java-google-style.xml",
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": true,
-    },
     "editor.tabSize": 4,
     "editor.insertSpaces": true,
     "editor.detectIndentation": false,
@@ -24,10 +19,8 @@
         "hamcrest",
         "opencds",
         "testng",
+        "Ucum",
         "Unregistration"
-    ],
-    "formatAll.includeFileExtensions": [
-        ".java"
     ],
     "java.compile.nullAnalysis.mode": "automatic"
 }

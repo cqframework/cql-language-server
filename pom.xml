@@ -1,5 +1,6 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.opencds.cqf.cql.ls</groupId>
@@ -14,14 +15,10 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <jackson-2.version>2.5.0</jackson-2.version>
-        <jersey-2.version>2.10</jersey-2.version>
-        <cqframework.version>3.3.2</cqframework.version>
-        <cqf-fhir-cr.version>3.0.0-PRE9</cqf-fhir-cr.version>
-        <picocli.version>4.6.1</picocli.version>
-        <auto-service.version>1.0</auto-service.version>
-        <slf4j.version>1.7.29</slf4j.version>
-        <spring.boot.version>2.7.2</spring.boot.version>
+        <cqf-fhir-cr.version>3.0.0</cqf-fhir-cr.version>
+        <auto-service.version>1.1.1</auto-service.version>
+        <slf4j.version>1.7.36</slf4j.version>
+        <spring.boot.version>2.7.18</spring.boot.version>
     </properties>
 
     <modules>
@@ -90,49 +87,32 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- CLI -->
             <dependency>
-                <groupId>info.picocli</groupId>
-                <artifactId>picocli</artifactId>
-                <version>${picocli.version}</version>
+                <groupId>org.opencds.cqf.fhir</groupId>
+                <artifactId>cqf-fhir-bom</artifactId>
+                <version>${cqf-fhir-cr.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
+
 
             <!-- CQL-to-ELM Translator -->
             <dependency>
                 <groupId>info.cqframework</groupId>
-                <artifactId>cql-to-elm</artifactId>
-                <version>${cqframework.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>info.cqframework</groupId>
                 <artifactId>cql-formatter</artifactId>
-                <version>${cqframework.version}</version>
-            </dependency>
-
-            <!-- cqf-fhir-cr -->
-            <dependency>
-                <groupId>org.opencds.cqf.fhir</groupId>
-                <artifactId>cqf-fhir-cr</artifactId>
-                <version>${cqf-fhir-cr.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>org.opencds.cqf.fhir</groupId>
-                <artifactId>cqf-fhir-jaxb</artifactId>
-                <version>3.0.0-PRE8</version>
-                <type>pom</type>
+                <version>3.7.0</version>
             </dependency>
 
             <!-- Java implementation of VS Code language server protocol -->
             <dependency>
                 <groupId>org.eclipse.lsp4j</groupId>
                 <artifactId>org.eclipse.lsp4j</artifactId>
-                <version>0.12.0</version>
+                <version>0.22.0</version>
             </dependency>
             <dependency>
                 <groupId>org.eclipse.lsp4j</groupId>
                 <artifactId>org.eclipse.lsp4j.debug</artifactId>
-                <version>0.12.0</version>
+                <version>0.22.0</version>
             </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
@@ -151,40 +131,11 @@
             </dependency>
 
             <dependency>
-                <groupId>commons-io</groupId>
-                <artifactId>commons-io</artifactId>
-                <version>2.11.0</version>
+                <groupId>jakarta.xml.bind</groupId>
+                <artifactId>jakarta.xml.bind-api</artifactId>
+                <version>3.0.1</version>
             </dependency>
 
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>3.12.0</version>
-            </dependency>
-
-            <dependency>
-                <groupId>ch.qos.logback</groupId>
-                <artifactId>logback-core</artifactId>
-                <version>1.2.11</version>
-            </dependency>
-
-            <dependency>
-                <groupId>ch.qos.logback</groupId>
-                <artifactId>logback-classic</artifactId>
-                <version>1.2.11</version>
-            </dependency>
-
-            <!-- JAXB implementation dependencies -->
-            <dependency>
-                <groupId>org.eclipse.persistence</groupId>
-                <artifactId>org.eclipse.persistence.moxy</artifactId>
-                <version>2.7.7</version>
-            </dependency>
-            <dependency>
-                <groupId>org.glassfish</groupId>
-                <artifactId>javax.json</artifactId>
-                <version>1.0.4</version>
-            </dependency>
 
             <!-- test dependencies -->
             <dependency>
@@ -207,10 +158,10 @@
             <groupId>com.google.auto.service</groupId>
             <artifactId>auto-service-annotations</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
@@ -221,7 +172,6 @@
             <artifactId>mockito-core</artifactId>
         </dependency>
     </dependencies>
-
     <build>
         <pluginManagement>
             <plugins>
@@ -253,12 +203,19 @@
                                 <artifactId>auto-service</artifactId>
                                 <version>${auto-service.version}</version>
                             </path>
-                            <path>
-                                <groupId>info.picocli</groupId>
-                                <artifactId>picocli-codegen</artifactId>
-                                <version>${picocli.version}</version>
-                            </path>
                         </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>2.39.0</version>
+                    <configuration>
+                        <java>
+                            <palantirJavaFormat>
+                                <version>2.38.0</version>
+                            </palantirJavaFormat>
+                        </java>
                     </configuration>
                 </plugin>
                 <plugin>
