@@ -36,7 +36,7 @@ public class LanguageClientAppender extends AppenderBase<ILoggingEvent> {
     MessageParams createMessageParams(ILoggingEvent eventObject) {
         checkNotNull(eventObject);
 
-        return new MessageParams(toType(eventObject.getLevel()), eventObject.getMessage());
+        return new MessageParams(toType(eventObject.getLevel()), eventObject.getFormattedMessage());
     }
 
     MessageType toType(Level level) {

@@ -54,9 +54,10 @@ public class Diagnostics {
         // The Language server API assumes 0 based indices and an exclusive range
         return new Range(
                 new Position(
-                        error.getLocator().getStartLine() - 1,
+                        Math.max(error.getLocator().getStartLine() - 1, 0),
                         Math.max(error.getLocator().getStartChar() - 1, 0)),
                 new Position(
-                        error.getLocator().getEndLine() - 1, error.getLocator().getEndChar()));
+                        Math.max(error.getLocator().getEndLine() - 1, 0),
+                        Math.max(error.getLocator().getEndChar(), 0)));
     }
 }

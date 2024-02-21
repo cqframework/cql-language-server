@@ -73,17 +73,17 @@ public class DiagnosticsService {
             return;
         }
 
-        if (log.isDebugEnabled()) {
-            log.debug("Lint: {}", Joiner.on(", ").join(paths));
-        }
+        log.debug("Lint: {}", Joiner.on(", ").join(paths));
 
         Map<URI, Set<Diagnostic>> allDiagnostics = new HashMap<>();
         for (URI uri : paths) {
             Map<URI, Set<Diagnostic>> currentDiagnostics = this.lint(uri);
+            log.debug("Merging Diagnostics: {}", uri);
             this.mergeDiagnostics(allDiagnostics, currentDiagnostics);
         }
 
         for (Map.Entry<URI, Set<Diagnostic>> entry : allDiagnostics.entrySet()) {
+            log.debug("Publishing {} Diagnostics for: {}", entry.getValue().size(), entry.getKey());
             PublishDiagnosticsParams params =
                     new PublishDiagnosticsParams(Uris.toClientUri(entry.getKey()), new ArrayList<>(entry.getValue()));
             client.join().publishDiagnostics(params);
@@ -178,12 +178,16 @@ public class DiagnosticsService {
 
     @Subscribe
     public void didOpen(DidOpenTextDocumentEvent e) {
+        log.debug("didOpen: {}", e.params().getTextDocument().getUri());
+
         doLint(Collections.singletonList(
                 Uris.parseOrNull(e.params().getTextDocument().getUri())));
     }
 
     @Subscribe
     public void didClose(DidCloseTextDocumentEvent e) {
+        log.debug("didClose: {}", e.params().getTextDocument().getUri());
+
         PublishDiagnosticsParams params =
                 new PublishDiagnosticsParams(e.params().getTextDocument().getUri(), new ArrayList<>());
         client.join().publishDiagnostics(params);
@@ -191,6 +195,8 @@ public class DiagnosticsService {
 
     @Subscribe
     public void didChange(DidChangeTextDocumentEvent e) {
+        log.debug("didChange: {}", e.params().getTextDocument().getUri());
+
         debounce(
                 BOUNCE_DELAY,
                 () -> doLint(Collections.singletonList(

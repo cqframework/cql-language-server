@@ -75,7 +75,8 @@ public class CqlCompilationManager {
     }
 
     private LibraryManager createLibraryManager(URI root, ModelManager modelManager) {
-        LibraryManager libraryManager = new LibraryManager(modelManager);
+        LibraryManager libraryManager = new LibraryManager(modelManager, this.compilerOptionsManager.getOptions(root));
+
         libraryManager
                 .getLibrarySourceLoader()
                 .registerProvider(new ContentServiceSourceProvider(root, this.contentService));

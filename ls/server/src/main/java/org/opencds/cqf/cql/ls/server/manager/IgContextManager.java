@@ -54,7 +54,8 @@ public class IgContextManager {
     public void setupLibraryManager(URI uri, LibraryManager libraryManager) {
         NpmProcessor npmProcessor = getContext(uri);
         if (npmProcessor != null) {
-            libraryManager.getNamespaceManager().addNamespace(npmProcessor.getIgNamespace());
+            var namespaceManager = libraryManager.getNamespaceManager();
+            namespaceManager.ensureNamespaceRegistered(npmProcessor.getIgNamespace());
             ILibraryReader reader = new org.cqframework.fhir.npm.LibraryLoader(
                     npmProcessor.getIgContext().getFhirVersion());
             LoggerAdapter adapter = new LoggerAdapter(log);
@@ -68,7 +69,7 @@ public class IgContextManager {
                     .registerModelInfoProvider(new NpmModelInfoProvider(
                             npmProcessor.getPackageManager().getNpmList(), reader, adapter));
             for (NamespaceInfo ni : npmProcessor.getNamespaces()) {
-                libraryManager.getNamespaceManager().addNamespace(ni);
+                namespaceManager.ensureNamespaceRegistered(ni);
             }
         }
     }
