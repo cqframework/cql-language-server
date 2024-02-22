@@ -2,7 +2,11 @@ package org.opencds.cqf.cql.ls.server.service;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -177,5 +181,14 @@ public class FileContentService implements ContentService {
         }
 
         return Pair.of(fileName, version);
+    }
+
+    @Override
+    public InputStream read(URI uri) {
+        try {
+            return new BufferedInputStream(new FileInputStream(new File(uri)));
+        } catch (FileNotFoundException e) {
+            return null;
+        }
     }
 }
