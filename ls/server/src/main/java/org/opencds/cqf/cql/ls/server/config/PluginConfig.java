@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.opencds.cqf.cql.ls.server.command.DebugCqlCommandContribution;
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution;
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
@@ -49,7 +50,7 @@ public class PluginConfig {
         }
 
         pluginCommandContributions.add(new ViewElmCommandContribution(cqlCompilationManager));
-        //        pluginCommandContributions.add(new DebugCqlCommandContribution(igContextManager));
+        pluginCommandContributions.add(new DebugCqlCommandContribution(igContextManager));
 
         futureCommandContributions.complete(pluginCommandContributions);
 

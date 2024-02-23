@@ -47,6 +47,10 @@ public class CqlCompilationManager {
         this.igContextManager = igContextManager;
     }
 
+    private synchronized IgContextManager getIgContextManager() {
+        return this.igContextManager;
+    }
+
     public CqlCompiler compile(URI uri) {
         InputStream input = contentService.read(uri);
         if (input == null) {
@@ -81,7 +85,7 @@ public class CqlCompilationManager {
                 .getLibrarySourceLoader()
                 .registerProvider(new ContentServiceSourceProvider(root, this.contentService));
         libraryManager.getLibrarySourceLoader().registerProvider(new FhirLibrarySourceProvider());
-        igContextManager.setupLibraryManager(root, libraryManager);
+        getIgContextManager().setupLibraryManager(root, libraryManager);
         return libraryManager;
     }
 }

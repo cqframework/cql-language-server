@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager;
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution;
+import picocli.CommandLine;
 
 // TODO: This will be moved to the debug plugin once that's more fully baked..
 public class DebugCqlCommandContribution implements CommandContribution {
@@ -40,13 +41,13 @@ public class DebugCqlCommandContribution implements CommandContribution {
             ByteArrayOutputStream baosErr = new ByteArrayOutputStream();
             System.setErr(new PrintStream(baosErr));
 
-            // try {
-            //     CommandLine cli = new CommandLine(new CliCommand(igContextManager));
-            //     int result = cli.execute(arguments.toArray(new String[arguments.size()]));
-            // } catch (Exception e) {
-            //     System.err.println("Exception occurred attempting to evaluate:");
-            //     System.err.println(e.getMessage());
-            // }
+            try {
+                CommandLine cli = new CommandLine(new CliCommand(igContextManager));
+                int result = cli.execute(arguments.toArray(new String[arguments.size()]));
+            } catch (Exception e) {
+                System.err.println("Exception occurred attempting to evaluate:");
+                System.err.println(e.getMessage());
+            }
 
             String out = baosOut.toString();
             String err = baosErr.toString();

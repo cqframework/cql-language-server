@@ -19,6 +19,9 @@
         <auto-service.version>1.1.1</auto-service.version>
         <slf4j.version>1.7.36</slf4j.version>
         <spring.boot.version>2.7.18</spring.boot.version>
+        <picocli.version>4.6.1</picocli.version>
+        <jackson.version>2.16.1</jackson.version>
+        <jackson.databind.version>2.16.0</jackson.databind.version>
     </properties>
 
     <modules>
@@ -94,6 +97,39 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson.module</groupId>
+                <artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.databind.version}</version>
+            </dependency>
+            
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+
 
 
             <!-- CQL-to-ELM Translator -->

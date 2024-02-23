@@ -2,8 +2,9 @@ package org.opencds.cqf.cql.ls.server.manager;
 
 import java.io.InputStream;
 import java.net.URI;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.fhir.npm.ILibraryReader;
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider;
@@ -30,11 +31,11 @@ public class IgContextManager {
         this.contentService = contentService;
     }
 
-    private final Map<URI, NpmProcessor> cachedContext = new HashMap<>();
+    private final Map<URI, Optional<NpmProcessor>> cachedContext = new ConcurrentHashMap<>();
 
     public NpmProcessor getContext(URI uri) {
         URI root = Uris.getHead(uri);
-        return cachedContext.computeIfAbsent(root, this::readContext);
+        return cachedContext.computeIfAbsent(root, this::readContext).orElse(null);
     }
 
     protected void clearContext(URI uri) {
@@ -42,16 +43,16 @@ public class IgContextManager {
         this.cachedContext.remove(root);
     }
 
-    protected NpmProcessor readContext(URI rootUri) {
+    protected Optional<NpmProcessor> readContext(URI rootUri) {
         IGContext igContext = findIgContext(rootUri);
         if (igContext != null) {
-            return new NpmProcessor(igContext);
+            return Optional.of(new NpmProcessor(igContext));
         }
 
-        return null;
+        return Optional.empty();
     }
 
-    public void setupLibraryManager(URI uri, LibraryManager libraryManager) {
+    public synchronized void setupLibraryManager(URI uri, LibraryManager libraryManager) {
         NpmProcessor npmProcessor = getContext(uri);
         if (npmProcessor != null) {
             var namespaceManager = libraryManager.getNamespaceManager();
