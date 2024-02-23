@@ -205,7 +205,7 @@ public class CqlCommand implements Callable<Integer> {
                     ? Uris.parseOrNull(library.terminologyUrl).toURL().getPath()
                     : null;
 
-            var repository = createRepository(fhirContext, terminologyPath, modelPath, library.context.contextValue);
+            var repository = createRepository(fhirContext, terminologyPath, modelPath, library.context != null ? library.context.contextValue : null);
             var engine = Engines.forRepositoryAndSettings(
                     evaluationSettings, repository, null, new NpmProcessor(igContext), true);
 
