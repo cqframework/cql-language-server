@@ -19,6 +19,7 @@ import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.context.IWorkerContext.ILoggingService;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.fhir.api.Repository;
 import org.opencds.cqf.fhir.cql.CqlOptions;
 import org.opencds.cqf.fhir.cql.Engines;
@@ -172,7 +173,8 @@ public class CqlCommand implements Callable<Integer> {
         CqlOptions cqlOptions = CqlOptions.defaultOptions();
 
         if (optionsPath != null) {
-            CqlTranslatorOptions options = CqlTranslatorOptionsMapper.fromFile(optionsPath);
+            var op = Uris.parseOrNull(optionsPath).toURL().getPath();
+            CqlTranslatorOptions options = CqlTranslatorOptionsMapper.fromFile(op);
             cqlOptions.setCqlCompilerOptions(options.getCqlCompilerOptions());
         }
 
@@ -193,13 +195,22 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setRetrieveSettings(retrieveSettings);
 
         for (LibraryParameter library : libraries) {
-            var repository = createRepository(
-                    fhirContext, library.terminologyUrl, library.model.modelUrl, library.context.contextValue);
+            var libraryPath = Uris.parseOrNull(library.libraryUrl).toURL().getPath();
+
+            var modelPath = library.model != null
+                    ? Uris.parseOrNull(library.model.modelUrl).toURL().getPath()
+                    : null;
+
+            var terminologyPath = library.terminologyUrl != null
+                    ? Uris.parseOrNull(library.terminologyUrl).toURL().getPath()
+                    : null;
+
+            var repository = createRepository(fhirContext, terminologyPath, modelPath, library.context.contextValue);
             var engine = Engines.forRepositoryAndSettings(
                     evaluationSettings, repository, null, new NpmProcessor(igContext), true);
 
             if (library.libraryUrl != null) {
-                var provider = new DefaultLibrarySourceProvider(Path.of(library.libraryUrl));
+                var provider = new DefaultLibrarySourceProvider(Path.of(libraryPath));
                 engine.getEnvironment()
                         .getLibraryManager()
                         .getLibrarySourceLoader()
