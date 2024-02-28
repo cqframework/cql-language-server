@@ -206,10 +206,7 @@ public class CqlCommand implements Callable<Integer> {
                     ? Uris.parseOrNull(library.terminologyUrl).toURL().getPath()
                     : null;
 
-            var repository = createRepository(
-                    fhirContext,
-                    terminologyPath,
-                    modelPath);
+            var repository = createRepository(fhirContext, terminologyPath, modelPath);
             var engine = Engines.forRepositoryAndSettings(
                     evaluationSettings, repository, null, new NpmProcessor(igContext), true);
 
@@ -237,8 +234,7 @@ public class CqlCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Repository createRepository(
-            FhirContext fhirContext, String terminologyUrl, String modelUrl) {
+    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl) {
         Repository data = null;
         Repository terminology = null;
 
@@ -249,15 +245,13 @@ public class CqlCommand implements Callable<Integer> {
         if (modelUrl != null) {
             Path path = Path.of(modelUrl);
             data = new IgRepository(fhirContext, path);
-        }
-        else {
+        } else {
             data = new NoOpRepository(fhirContext);
         }
 
         if (terminologyUrl != null) {
             terminology = new IgRepository(fhirContext, Paths.get(terminologyUrl));
-        }
-        else {
+        } else {
             terminology = new NoOpRepository(fhirContext);
         }
 
