@@ -209,8 +209,7 @@ public class CqlCommand implements Callable<Integer> {
             var repository = createRepository(
                     fhirContext,
                     terminologyPath,
-                    modelPath,
-                    library.context != null ? library.context.contextValue : null);
+                    modelPath);
             var engine = Engines.forRepositoryAndSettings(
                     evaluationSettings, repository, null, new NpmProcessor(igContext), true);
 
@@ -239,24 +238,30 @@ public class CqlCommand implements Callable<Integer> {
     }
 
     private Repository createRepository(
-            FhirContext fhirContext, String terminologyUrl, String modelUrl, String contextValue) {
+            FhirContext fhirContext, String terminologyUrl, String modelUrl) {
         Repository data = null;
         Repository terminology = null;
 
+        if (terminologyUrl == null && modelUrl == null) {
+            return new NoOpRepository(fhirContext);
+        }
+
         if (modelUrl != null) {
             Path path = Path.of(modelUrl);
-            if (contextValue != null && !path.endsWith(contextValue)) {
-                path = path.resolve(contextValue);
-            }
-
             data = new IgRepository(fhirContext, path);
+        }
+        else {
+            data = new NoOpRepository(fhirContext);
         }
 
         if (terminologyUrl != null) {
             terminology = new IgRepository(fhirContext, Paths.get(terminologyUrl));
         }
+        else {
+            terminology = new NoOpRepository(fhirContext);
+        }
 
-        return new ProxyRepository(data, null, terminology);
+        return new ProxyRepository(data, data, terminology);
     }
 
     @SuppressWarnings("java:S106") // We are intending to output to the console here as a CLI tool
