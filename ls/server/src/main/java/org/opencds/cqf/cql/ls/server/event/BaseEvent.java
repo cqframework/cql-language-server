@@ -1,10 +1,10 @@
 package org.opencds.cqf.cql.ls.server.event;
 
-abstract class Event<T> {
+abstract class BaseEvent<T> {
 
     private T params;
 
-    protected Event(T params) {
+    protected BaseEvent(T params) {
         this.params = params;
     }
 
