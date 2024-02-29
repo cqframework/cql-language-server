@@ -19,9 +19,6 @@ public class DebugCommandContribution implements CommandContribution {
 
     public DebugCommandContribution(CqlCompilationManager cqlCompilationManager) {
         this.cqlCompilationManager = cqlCompilationManager;
-
-        // Temporary hack for unused variable
-        this.cqlCompilationManager.hashCode();
     }
 
     @Override
