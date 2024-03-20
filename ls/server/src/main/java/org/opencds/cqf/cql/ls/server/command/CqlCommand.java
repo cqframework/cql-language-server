@@ -196,14 +196,14 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setRetrieveSettings(retrieveSettings);
 
         for (LibraryParameter library : libraries) {
-            var libraryPath = Uris.parseOrNull(library.libraryUrl).toURL().getPath();
+            var libraryPath = Paths.get(Uris.parseOrNull(library.libraryUrl));
 
             var modelPath = library.model != null
-                    ? Uris.parseOrNull(library.model.modelUrl).toURL().getPath()
+                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl))
                     : null;
 
             var terminologyPath = library.terminologyUrl != null
-                    ? Uris.parseOrNull(library.terminologyUrl).toURL().getPath()
+                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl))
                     : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
@@ -211,7 +211,7 @@ public class CqlCommand implements Callable<Integer> {
                     evaluationSettings, repository, null, new NpmProcessor(igContext), true);
 
             if (library.libraryUrl != null) {
-                var provider = new DefaultLibrarySourceProvider(Path.of(libraryPath));
+                var provider = new DefaultLibrarySourceProvider(libraryPath);
                 engine.getEnvironment()
                         .getLibraryManager()
                         .getLibrarySourceLoader()
@@ -234,23 +234,22 @@ public class CqlCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl) {
+    private Repository createRepository(FhirContext fhirContext, Path terminologyPath, Path modelPath) {
         Repository data = null;
         Repository terminology = null;
 
-        if (terminologyUrl == null && modelUrl == null) {
+        if (terminologyPath == null && modelPath == null) {
             return new NoOpRepository(fhirContext);
         }
 
-        if (modelUrl != null) {
-            Path path = Path.of(modelUrl);
-            data = new IgRepository(fhirContext, path);
+        if (modelPath != null) {
+            data = new IgRepository(fhirContext, modelPath);
         } else {
             data = new NoOpRepository(fhirContext);
         }
 
-        if (terminologyUrl != null) {
-            terminology = new IgRepository(fhirContext, Paths.get(terminologyUrl));
+        if (terminologyPath != null) {
+            terminology = new IgRepository(fhirContext, terminologyPath);
         } else {
             terminology = new NoOpRepository(fhirContext);
         }
