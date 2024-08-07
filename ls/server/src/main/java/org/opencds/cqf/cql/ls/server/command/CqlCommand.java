@@ -2,14 +2,10 @@ package org.opencds.cqf.cql.ls.server.command;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
-
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-
-import ca.uhn.fhir.rest.client.apache.ApacheHttpClient;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
@@ -239,12 +235,14 @@ public class CqlCommand implements Callable<Integer> {
             return new NoOpRepository(fhirContext);
         }
 
-        if(modelUrl == null) {
+        if (modelUrl == null) {
             data = new NoOpRepository(fhirContext);
-        } else if(modelUrl.startsWith("file:///")) {
+        } else if (modelUrl.startsWith("file:///")) {
             data = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(modelUrl)));
-        } else if(modelUrl.startsWith("http://") || modelUrl.startsWith(("https://"))) {
+        } else if (modelUrl.startsWith("http://") || modelUrl.startsWith(("https://"))) {
             data = new RestRepository(fhirContext.newRestfulGenericClient(modelUrl));
+        } else {
+            data = new NoOpRepository(fhirContext);
         }
 
         if (terminologyUrl != null) {
