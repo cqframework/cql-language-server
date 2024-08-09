@@ -6,7 +6,5 @@ class CqlCommandTest {
     private static DebugCqlCommandContribution contribution;
 
     @Test
-    void executeCommand() {
-
-    }
+    void executeCommand() {}
 }
