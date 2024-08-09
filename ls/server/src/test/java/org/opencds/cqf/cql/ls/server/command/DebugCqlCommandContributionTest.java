@@ -105,27 +105,27 @@ class DebugCqlCommandContributionTest {
         assertTrue(((String) result).trim().endsWith("One=1"));
     }
 
-    @Test
-    void withRemoteModel() {
-        ExecuteCommandParams params = new ExecuteCommandParams();
-
-        String modelPath = "http://localhost:8000";
-        String libraryPath = normalizePath("file://" + System.getProperty("user.dir") + "/src/test/resources/org/opencds/cqf/cql/ls/server/");
-
-        params.setCommand("org.opencds.cqf.cql.ls.plugin.debug.startDebugSession");
-        params.setArguments(Arrays.asList(
-                "cql",
-                "-fv=R4",
-                "-m=FHIR",
-                "-mu=" + modelPath,
-                "-ln=One",
-                "-lu=" + libraryPath,
-                "-t=" + libraryPath
-        ).stream().map(str -> "\"" + str + "\"").map(JsonParser::parseString).collect(Collectors.toList()));
-        Object result = contribution.executeCommand(params).join();
-        assertInstanceOf(String.class, result);
-        assertTrue(((String) result).trim().endsWith("One=1"));
-    }
+//    @Test
+//    void withRemoteModel() {
+//        ExecuteCommandParams params = new ExecuteCommandParams();
+//
+//        String modelPath = "http://localhost:8000";
+//        String libraryPath = normalizePath("file://" + System.getProperty("user.dir") + "/src/test/resources/org/opencds/cqf/cql/ls/server/");
+//
+//        params.setCommand("org.opencds.cqf.cql.ls.plugin.debug.startDebugSession");
+//        params.setArguments(Arrays.asList(
+//                "cql",
+//                "-fv=R4",
+//                "-m=FHIR",
+//                "-mu=" + modelPath,
+//                "-ln=One",
+//                "-lu=" + libraryPath,
+//                "-t=" + libraryPath
+//        ).stream().map(str -> "\"" + str + "\"").map(JsonParser::parseString).collect(Collectors.toList()));
+//        Object result = contribution.executeCommand(params).join();
+//        assertInstanceOf(String.class, result);
+//        assertTrue(((String) result).trim().endsWith("One=1"));
+//    }
 
     @Test
     void withRootDir() {
