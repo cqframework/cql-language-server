@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.ls.server.command;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +36,7 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_MEMBERSHIP_MODE;
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE;
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
+import org.opencds.cqf.fhir.utility.repository.RestRepository;
 import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
 
@@ -130,10 +130,9 @@ public class CqlCommand implements Callable<Integer> {
         }
     }
 
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(Logger.class);
+
     private static class Logger implements ILoggingService {
-
-        private final org.slf4j.Logger log = LoggerFactory.getLogger(Logger.class);
-
         @Override
         public void logMessage(String s) {
             log.warn(s);
@@ -203,15 +202,9 @@ public class CqlCommand implements Callable<Integer> {
         for (LibraryParameter library : libraries) {
             var libraryPath = Paths.get(Uris.parseOrNull(library.libraryUrl));
 
-            var modelPath = library.model != null
-                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl))
-                    : null;
+            var modelUrl = library.model != null ? library.model.modelUrl : null;
 
-            var terminologyPath = library.terminologyUrl != null
-                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl))
-                    : null;
-
-            var repository = createRepository(fhirContext, terminologyPath, modelPath);
+            var repository = createRepository(fhirContext, library.terminologyUrl, modelUrl);
             var engine = Engines.forRepositoryAndSettings(
                     evaluationSettings, repository, null, new NpmProcessor(igContext), true);
 
@@ -239,22 +232,26 @@ public class CqlCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Repository createRepository(FhirContext fhirContext, Path terminologyPath, Path modelPath) {
+    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl) {
         Repository data = null;
         Repository terminology = null;
 
-        if (terminologyPath == null && modelPath == null) {
+        if (terminologyUrl == null && modelUrl == null) {
             return new NoOpRepository(fhirContext);
         }
 
-        if (modelPath != null) {
-            data = new IgRepository(fhirContext, modelPath);
+        if (modelUrl == null) {
+            data = new NoOpRepository(fhirContext);
+        } else if (modelUrl.startsWith("file:///")) {
+            data = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(modelUrl)));
+        } else if (modelUrl.startsWith("http://") || modelUrl.startsWith(("https://"))) {
+            data = new RestRepository(fhirContext.newRestfulGenericClient(modelUrl));
         } else {
             data = new NoOpRepository(fhirContext);
         }
 
-        if (terminologyPath != null) {
-            terminology = new IgRepository(fhirContext, terminologyPath);
+        if (terminologyUrl != null) {
+            terminology = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(terminologyUrl)));
         } else {
             terminology = new NoOpRepository(fhirContext);
         }
