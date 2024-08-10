@@ -5,6 +5,7 @@ import ca.uhn.fhir.context.FhirVersionEnum;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
@@ -95,7 +96,7 @@ public class CqlCommand implements Callable<Integer> {
         public List<ParameterParameter> parameters;
 
         @Option(names = {"-e", "--expression"})
-        public String[] expression;
+        public Set<String> expression;
 
         @ArgGroup(multiplicity = "0..1", exclusive = false)
         public ContextParameter context;
@@ -219,7 +220,7 @@ public class CqlCommand implements Callable<Integer> {
                 contextParameter = Pair.of(library.context.contextName, library.context.contextValue);
             }
 
-            EvaluationResult result = engine.evaluate(identifier, contextParameter);
+            EvaluationResult result = engine.evaluate(identifier, library.expression, contextParameter);
 
             writeResult(result);
         }
