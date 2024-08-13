@@ -151,6 +151,6 @@ class DebugCqlCommandContributionTest {
             return wPath.replace('\\', '/');
         }
 
-        return path;
+        return path.replace('\\', '/');
     }
 }
