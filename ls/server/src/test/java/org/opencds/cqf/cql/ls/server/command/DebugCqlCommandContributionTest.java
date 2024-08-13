@@ -141,12 +141,14 @@ class DebugCqlCommandContributionTest {
 
     private static String normalizePath(String path) {
         if (SystemUtils.IS_OS_WINDOWS && path.startsWith(FILE_UNC_PREFIX)) {
+            String wPath = path;
             try {
                 URI uri = new URI(path);
-                return new File(uri.getSchemeSpecificPart()).toURI().getRawPath();
+                wPath = new File(uri.getSchemeSpecificPart()).toURI().getRawPath();
             } catch (Exception e) {
-                return path;
             }
+
+            return wPath.replace('\\', '/');
         }
 
         return path;
