@@ -248,11 +248,7 @@ public class CqlCommand implements Callable<Integer> {
             terminology = new NoOpRepository(fhirContext);
         }
 
-        if (libraryUrl != null) {
-            content = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(libraryUrl)));
-        } else {
-            content = new NoOpRepository(fhirContext);
-        }
+        content = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(libraryUrl)));
 
         return new ProxyRepository(data, content, terminology);
     }
