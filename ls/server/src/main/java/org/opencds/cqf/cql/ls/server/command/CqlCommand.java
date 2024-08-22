@@ -203,13 +203,12 @@ public class CqlCommand implements Callable<Integer> {
 
             var modelUrl = library.model != null ? library.model.modelUrl : null;
 
-            Repository repository = null;
             CqlEngine engine = null;
 
             if (library.libraryUrl != null) {
-                repository = createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
+                Repository libraryRepository = createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
                 engine = Engines.forRepositoryAndSettings(
-                    evaluationSettings, repository, null, new NpmProcessor(igContext), true);
+                    evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
                 var provider = new DefaultLibrarySourceProvider(libraryPath);
                 engine.getEnvironment()
                         .getLibraryManager()
@@ -227,9 +226,9 @@ public class CqlCommand implements Callable<Integer> {
             EvaluationResult result = null;
             if (engine != null) {
                 result = engine.evaluate(identifier, library.expression, contextParameter);
-            }
+                writeResult(result);
 
-            writeResult(result);
+            }
         }
 
         return 0;
