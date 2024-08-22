@@ -201,19 +201,15 @@ public class CqlCommand implements Callable<Integer> {
 
             var modelUrl = library.model != null ? library.model.modelUrl : null;
 
-            CqlEngine engine = null;
-
-            if (library.libraryUrl != null) {
-                Repository libraryRepository =
-                        createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
-                engine = Engines.forRepositoryAndSettings(
-                        evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
-                var provider = new DefaultLibrarySourceProvider(libraryPath);
-                engine.getEnvironment()
-                        .getLibraryManager()
-                        .getLibrarySourceLoader()
-                        .registerProvider(provider);
-            }
+            Repository libraryRepository =
+                    createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
+            CqlEngine engine = Engines.forRepositoryAndSettings(
+                    evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
+            var provider = new DefaultLibrarySourceProvider(libraryPath);
+            engine.getEnvironment()
+                    .getLibraryManager()
+                    .getLibrarySourceLoader()
+                    .registerProvider(provider);
 
             VersionedIdentifier identifier = new VersionedIdentifier().withId(library.libraryName);
 
@@ -222,11 +218,8 @@ public class CqlCommand implements Callable<Integer> {
             if (library.context != null) {
                 contextParameter = Pair.of(library.context.contextName, library.context.contextValue);
             }
-            EvaluationResult result = null;
-            if (engine != null) {
-                result = engine.evaluate(identifier, library.expression, contextParameter);
-                writeResult(result);
-            }
+            EvaluationResult result = engine.evaluate(identifier, library.expression, contextParameter);
+            writeResult(result);
         }
 
         return 0;
