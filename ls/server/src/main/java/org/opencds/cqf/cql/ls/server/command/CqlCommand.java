@@ -18,6 +18,7 @@ import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseDatatype;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.context.IWorkerContext.ILoggingService;
+import org.opencds.cqf.cql.engine.execution.CqlEngine;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
@@ -200,17 +201,12 @@ public class CqlCommand implements Callable<Integer> {
 
             var modelUrl = library.model != null ? library.model.modelUrl : null;
 
-            var repository = createRepository(fhirContext, library.terminologyUrl, modelUrl);
-            var engine = Engines.forRepositoryAndSettings(
-                    evaluationSettings, repository, null, new NpmProcessor(igContext), true);
-
-            if (library.libraryUrl != null) {
-                var provider = new DefaultLibrarySourceProvider(libraryPath);
-                engine.getEnvironment()
-                        .getLibraryManager()
-                        .getLibrarySourceLoader()
-                        .registerProvider(provider);
-            }
+            Repository libraryRepository =
+                    createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
+            CqlEngine engine = Engines.forRepositoryAndSettings(
+                    evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
+            var provider = new DefaultLibrarySourceProvider(libraryPath);
+            engine.getEnvironment().getLibraryManager().getLibrarySourceLoader().registerProvider(provider);
 
             VersionedIdentifier identifier = new VersionedIdentifier().withId(library.libraryName);
 
@@ -219,18 +215,18 @@ public class CqlCommand implements Callable<Integer> {
             if (library.context != null) {
                 contextParameter = Pair.of(library.context.contextName, library.context.contextValue);
             }
-
             EvaluationResult result = engine.evaluate(identifier, library.expression, contextParameter);
-
             writeResult(result);
         }
 
         return 0;
     }
 
-    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl) {
+    private Repository createRepository(
+            FhirContext fhirContext, String terminologyUrl, String modelUrl, String libraryUrl) {
         Repository data = null;
         Repository terminology = null;
+        Repository content = null;
 
         if (terminologyUrl == null && modelUrl == null) {
             return new NoOpRepository(fhirContext);
@@ -252,7 +248,9 @@ public class CqlCommand implements Callable<Integer> {
             terminology = new NoOpRepository(fhirContext);
         }
 
-        return new ProxyRepository(data, data, terminology);
+        content = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(libraryUrl)));
+
+        return new ProxyRepository(data, content, terminology);
     }
 
     @SuppressWarnings("java:S106") // We are intending to output to the console here as a CLI tool
