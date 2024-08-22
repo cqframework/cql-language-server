@@ -1,12 +1,11 @@
 package org.opencds.cqf.cql.ls.server.command;
 
-import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.context.FhirVersionEnum;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
@@ -18,6 +17,7 @@ import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseDatatype;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.context.IWorkerContext.ILoggingService;
+import org.opencds.cqf.cql.engine.execution.CqlEngine;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
@@ -38,6 +38,9 @@ import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
 import org.opencds.cqf.fhir.utility.repository.RestRepository;
 import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
+
+import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.context.FhirVersionEnum;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -200,11 +203,13 @@ public class CqlCommand implements Callable<Integer> {
 
             var modelUrl = library.model != null ? library.model.modelUrl : null;
 
-            var repository = createRepository(fhirContext, library.terminologyUrl, modelUrl);
-            var engine = Engines.forRepositoryAndSettings(
-                    evaluationSettings, repository, null, new NpmProcessor(igContext), true);
+            Repository repository = null;
+            CqlEngine engine = null;
 
             if (library.libraryUrl != null) {
+                repository = createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
+                engine = Engines.forRepositoryAndSettings(
+                    evaluationSettings, repository, null, new NpmProcessor(igContext), true);
                 var provider = new DefaultLibrarySourceProvider(libraryPath);
                 engine.getEnvironment()
                         .getLibraryManager()
@@ -219,8 +224,10 @@ public class CqlCommand implements Callable<Integer> {
             if (library.context != null) {
                 contextParameter = Pair.of(library.context.contextName, library.context.contextValue);
             }
-
-            EvaluationResult result = engine.evaluate(identifier, library.expression, contextParameter);
+            EvaluationResult result = null;
+            if (engine != null) {
+                result = engine.evaluate(identifier, library.expression, contextParameter);
+            }
 
             writeResult(result);
         }
@@ -228,9 +235,10 @@ public class CqlCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl) {
+    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl, String libraryUrl) {
         Repository data = null;
         Repository terminology = null;
+        Repository content = null;
 
         if (terminologyUrl == null && modelUrl == null) {
             return new NoOpRepository(fhirContext);
@@ -252,7 +260,13 @@ public class CqlCommand implements Callable<Integer> {
             terminology = new NoOpRepository(fhirContext);
         }
 
-        return new ProxyRepository(data, data, terminology);
+        if (libraryUrl != null) {
+            content = new IgRepository(fhirContext, Paths.get(Uris.parseOrNull(libraryUrl)));
+        } else {
+            content = new NoOpRepository(fhirContext);
+        }
+
+        return new ProxyRepository(data, content, terminology);
     }
 
     @SuppressWarnings("java:S106") // We are intending to output to the console here as a CLI tool
