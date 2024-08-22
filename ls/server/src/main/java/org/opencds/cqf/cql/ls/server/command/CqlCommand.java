@@ -206,10 +206,7 @@ public class CqlCommand implements Callable<Integer> {
             CqlEngine engine = Engines.forRepositoryAndSettings(
                     evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
             var provider = new DefaultLibrarySourceProvider(libraryPath);
-            engine.getEnvironment()
-                    .getLibraryManager()
-                    .getLibrarySourceLoader()
-                    .registerProvider(provider);
+            engine.getEnvironment().getLibraryManager().getLibrarySourceLoader().registerProvider(provider);
 
             VersionedIdentifier identifier = new VersionedIdentifier().withId(library.libraryName);
 
