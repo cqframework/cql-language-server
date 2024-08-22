@@ -1,11 +1,12 @@
 package org.opencds.cqf.cql.ls.server.command;
 
+import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.context.FhirVersionEnum;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
-
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
@@ -38,9 +39,6 @@ import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
 import org.opencds.cqf.fhir.utility.repository.RestRepository;
 import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
-
-import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.context.FhirVersionEnum;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -206,9 +204,10 @@ public class CqlCommand implements Callable<Integer> {
             CqlEngine engine = null;
 
             if (library.libraryUrl != null) {
-                Repository libraryRepository = createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
+                Repository libraryRepository =
+                        createRepository(fhirContext, library.terminologyUrl, modelUrl, library.libraryUrl);
                 engine = Engines.forRepositoryAndSettings(
-                    evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
+                        evaluationSettings, libraryRepository, null, new NpmProcessor(igContext), true);
                 var provider = new DefaultLibrarySourceProvider(libraryPath);
                 engine.getEnvironment()
                         .getLibraryManager()
@@ -227,14 +226,14 @@ public class CqlCommand implements Callable<Integer> {
             if (engine != null) {
                 result = engine.evaluate(identifier, library.expression, contextParameter);
                 writeResult(result);
-
             }
         }
 
         return 0;
     }
 
-    private Repository createRepository(FhirContext fhirContext, String terminologyUrl, String modelUrl, String libraryUrl) {
+    private Repository createRepository(
+            FhirContext fhirContext, String terminologyUrl, String modelUrl, String libraryUrl) {
         Repository data = null;
         Repository terminology = null;
         Repository content = null;
