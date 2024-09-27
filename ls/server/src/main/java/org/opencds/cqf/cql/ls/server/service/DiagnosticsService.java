@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.cql2elm.CqlCompilerException;
-import org.cqframework.cql.elm.tracking.TrackBack;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -122,12 +121,6 @@ public class DiagnosticsService {
 
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
-        // First, assign all unassociated exceptions to this library.
-        for (CqlCompilerException exception : exceptions) {
-            if (exception.getLocator() == null) {
-                exception.setLocator(new TrackBack(compiler.getCompiledLibrary().getIdentifier(), 0, 0, 0, 0));
-            }
-        }
 
         List<VersionedIdentifier> uniqueLibraries = exceptions.stream()
                 .map(x -> x.getLocator().getLibrary())

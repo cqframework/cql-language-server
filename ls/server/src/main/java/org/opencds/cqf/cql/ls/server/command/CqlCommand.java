@@ -125,6 +125,7 @@ public class CqlCommand implements Callable<Integer> {
         }
     }
 
+    @SuppressWarnings("removal") // TODO: Missed a spot upstream in the CQL library
     private static class Logger implements ILoggingService {
 
         private final org.slf4j.Logger log = LoggerFactory.getLogger(Logger.class);
