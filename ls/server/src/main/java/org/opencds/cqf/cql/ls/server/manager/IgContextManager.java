@@ -2,8 +2,10 @@ package org.opencds.cqf.cql.ls.server.manager;
 
 import java.io.InputStream;
 import java.net.URI;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.cqframework.cql.cql2elm.LibraryManager;
 import org.cqframework.fhir.npm.ILibraryReader;
@@ -69,8 +71,20 @@ public class IgContextManager {
                     .getModelInfoLoader()
                     .registerModelInfoProvider(new NpmModelInfoProvider(
                             npmProcessor.getPackageManager().getNpmList(), reader, adapter));
-            for (NamespaceInfo ni : npmProcessor.getNamespaces()) {
-                namespaceManager.ensureNamespaceRegistered(ni);
+
+            // TODO: This is a workaround for: a) multiple packages with the same package id will be in the dependency
+            // list, and b) there are packages with different package ids but the same base canonical (e.g.
+            // fhir.r4.examples has the same base canonical as fhir.r4)
+            // NOTE: Using ensureNamespaceRegistered works around a but not b
+            // NOTE: This logic is also used in org.opencds.cqf.fhir.cql.Engines.buildEnvironment()
+            Set<String> keys = new HashSet<String>();
+            Set<String> uris = new HashSet<String>();
+            for (var n : npmProcessor.getNamespaces()) {
+                if (!keys.contains(n.getName()) && !uris.contains(n.getUri())) {
+                    libraryManager.getNamespaceManager().addNamespace(n);
+                    keys.add(n.getName());
+                    uris.add(n.getUri());
+                }
             }
         }
     }
