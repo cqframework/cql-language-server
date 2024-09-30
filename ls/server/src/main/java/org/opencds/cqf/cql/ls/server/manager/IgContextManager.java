@@ -17,7 +17,6 @@ import org.cqframework.fhir.utilities.LoggerAdapter;
 import org.eclipse.lsp4j.FileEvent;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
-import org.hl7.cql.model.NamespaceInfo;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;

@@ -121,7 +121,6 @@ public class DiagnosticsService {
 
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
-
         List<VersionedIdentifier> uniqueLibraries = exceptions.stream()
                 .map(x -> x.getLocator().getLibrary())
                 .distinct()

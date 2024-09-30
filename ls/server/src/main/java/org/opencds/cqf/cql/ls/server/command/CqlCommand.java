@@ -199,13 +199,10 @@ public class CqlCommand implements Callable<Integer> {
         for (LibraryParameter library : libraries) {
             var libraryPath = Paths.get(Uris.parseOrNull(library.libraryUrl));
 
-            var modelPath = library.model != null
-                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl))
-                    : null;
+            var modelPath = library.model != null ? Paths.get(Uris.parseOrNull(library.model.modelUrl)) : null;
 
-            var terminologyPath = library.terminologyUrl != null
-                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl))
-                    : null;
+            var terminologyPath =
+                    library.terminologyUrl != null ? Paths.get(Uris.parseOrNull(library.terminologyUrl)) : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
             var engine = Engines.forRepositoryAndSettings(
