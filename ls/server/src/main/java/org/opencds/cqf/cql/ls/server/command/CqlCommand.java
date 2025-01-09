@@ -195,6 +195,7 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setCqlOptions(cqlOptions);
         evaluationSettings.setTerminologySettings(terminologySettings);
         evaluationSettings.setRetrieveSettings(retrieveSettings);
+        evaluationSettings.setNpmProcessor(new NpmProcessor(igContext));
 
         for (LibraryParameter library : libraries) {
             var libraryPath = Paths.get(Uris.parseOrNull(library.libraryUrl));
@@ -205,8 +206,8 @@ public class CqlCommand implements Callable<Integer> {
                     library.terminologyUrl != null ? Paths.get(Uris.parseOrNull(library.terminologyUrl)) : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
-            var engine = Engines.forRepositoryAndSettings(
-                    evaluationSettings, repository, null, new NpmProcessor(igContext), true);
+            var engine = Engines.forRepository(
+                    repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
                 var provider = new DefaultLibrarySourceProvider(libraryPath);
