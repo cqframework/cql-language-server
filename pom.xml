@@ -6,7 +6,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>3.3.0</version>
+    <version>3.3.1</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -139,7 +139,7 @@
             <dependency>
                 <groupId>info.cqframework</groupId>
                 <artifactId>cql-formatter</artifactId>
-                <version>3.7.0</version>
+                <version>3.20.0</version>
             </dependency>
 
             <!-- Java implementation of VS Code language server protocol -->
