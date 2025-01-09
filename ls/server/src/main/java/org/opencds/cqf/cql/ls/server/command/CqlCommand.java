@@ -206,8 +206,7 @@ public class CqlCommand implements Callable<Integer> {
                     library.terminologyUrl != null ? Paths.get(Uris.parseOrNull(library.terminologyUrl)) : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
-            var engine = Engines.forRepository(
-                    repository, evaluationSettings);
+            var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
                 var provider = new DefaultLibrarySourceProvider(libraryPath);
