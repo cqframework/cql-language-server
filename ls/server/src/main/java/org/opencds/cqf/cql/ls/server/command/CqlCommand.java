@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.ls.server.command;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
-
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -176,9 +175,10 @@ public class CqlCommand implements Callable<Integer> {
         if (rootDir != null && igPath != null) {
             igContext = new IGContext(new Logger());
             igContext.initializeFromIg(rootDir, igPath, toVersionNumber(fhirVersionEnum));
-        }
-        else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
-            var npmProcessor = parentCommand.getIgContextManager().getContext(Uris.addPath(Uris.addPath(URI.create(rootDir), "input"), "cql"));
+        } else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
+            var npmProcessor = parentCommand
+                    .getIgContextManager()
+                    .getContext(Uris.addPath(Uris.addPath(URI.create(rootDir), "input"), "cql"));
             igContext = npmProcessor.getIgContext();
         }
 
