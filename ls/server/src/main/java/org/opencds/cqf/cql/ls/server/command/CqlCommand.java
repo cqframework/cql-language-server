@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.command;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.repository.IRepository;
+import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -37,6 +38,7 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
 import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
+import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -159,6 +161,9 @@ public class CqlCommand implements Callable<Integer> {
         }
     }
 
+    @CommandLine.ParentCommand
+    private CliCommand parentCommand;
+
     @Override
     public Integer call() throws Exception {
 
@@ -170,6 +175,11 @@ public class CqlCommand implements Callable<Integer> {
         if (rootDir != null && igPath != null) {
             igContext = new IGContext(new Logger());
             igContext.initializeFromIg(rootDir, igPath, toVersionNumber(fhirVersionEnum));
+        } else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
+            var npmProcessor = parentCommand
+                    .getIgContextManager()
+                    .getContext(Uris.addPath(Uris.addPath(URI.create(rootDir), "input"), "cql"));
+            igContext = npmProcessor.getIgContext();
         }
 
         CqlOptions cqlOptions = CqlOptions.defaultOptions();
