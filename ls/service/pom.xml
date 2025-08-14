@@ -9,7 +9,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>3.6.0-SNAPSHOT</version>
+        <version>3.6.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -17,7 +17,7 @@
         <dependency>
             <groupId>org.opencds.cqf.cql.ls</groupId>
             <artifactId>cql-ls-server</artifactId>
-            <version>3.6.0-SNAPSHOT</version>
+            <version>3.6.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
