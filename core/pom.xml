@@ -6,11 +6,14 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls-core</artifactId>
     <packaging>jar</packaging>
+    <name>CQL Language Server Core</name>
+    <description>Core Library for CQL Language Server</description>
+    <url>https://github.com/cqframework/cql-language-server/tree/master</url>
 
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>3.6.0-SNAPSHOT</version>
+        <version>3.6.0</version>
     </parent>
 
     <dependencies>

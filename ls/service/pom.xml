@@ -5,11 +5,14 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls-service</artifactId>
     <packaging>jar</packaging>
+    <name>CQL Language Server Service</name>
+    <description>Service Component of the CQL Language Server</description>
+    <url>https://github.com/cqframework/cql-language-server/tree/master</url>
 
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>3.6.0-SNAPSHOT</version>
+        <version>3.6.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -17,7 +20,7 @@
         <dependency>
             <groupId>org.opencds.cqf.cql.ls</groupId>
             <artifactId>cql-ls-server</artifactId>
-            <version>3.6.0-SNAPSHOT</version>
+            <version>3.6.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
