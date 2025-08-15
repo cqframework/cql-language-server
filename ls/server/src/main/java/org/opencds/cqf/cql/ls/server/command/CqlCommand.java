@@ -13,6 +13,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider;
+import org.cqframework.cql.cql2elm.DefaultModelInfoProvider;
 import org.cqframework.fhir.npm.NpmProcessor;
 import org.cqframework.fhir.utilities.IGContext;
 import org.hl7.elm.r1.VersionedIdentifier;
@@ -224,6 +225,13 @@ public class CqlCommand implements Callable<Integer> {
                         .getLibraryManager()
                         .getLibrarySourceLoader()
                         .registerProvider(provider);
+
+                var modelProvider = new DefaultModelInfoProvider(libraryPath);
+                engine.getEnvironment()
+                        .getLibraryManager()
+                        .getModelManager()
+                        .getModelInfoLoader()
+                        .registerModelInfoProvider(modelProvider);
             }
 
             VersionedIdentifier identifier = new VersionedIdentifier().withId(library.libraryName);
