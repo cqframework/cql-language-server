@@ -15,6 +15,7 @@ import org.fhir.ucum.UcumService;
 import org.hl7.cql.model.ModelIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
+import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider;
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,8 +80,11 @@ public class CqlCompilationManager {
     }
 
     private LibraryManager createLibraryManager(URI root, ModelManager modelManager) {
+        // TODO: Build a manager similar CompilerOptionsManager to support reacting to modelInfo file changes
+        modelManager
+                .getModelInfoLoader()
+                .registerModelInfoProvider(new ContentServiceModelInfoProvider(root, this.contentService));
         LibraryManager libraryManager = new LibraryManager(modelManager, this.compilerOptionsManager.getOptions(root));
-
         libraryManager
                 .getLibrarySourceLoader()
                 .registerProvider(new ContentServiceSourceProvider(root, this.contentService));

@@ -12,7 +12,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -122,9 +121,11 @@ public class DiagnosticsService {
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
         List<VersionedIdentifier> uniqueLibraries = exceptions.stream()
-                .map(x -> x.getLocator().getLibrary())
+                .map(x -> x == null || x.getLocator() == null
+                        ? null
+                        : x.getLocator().getLibrary())
                 .distinct()
-                .filter(Objects::nonNull)
+                .filter(x -> x != null && x.getId() != null)
                 .collect(Collectors.toList());
 
         URI root = Uris.getHead(uri);
@@ -142,23 +143,32 @@ public class DiagnosticsService {
         libraryUris.put(new VersionedIdentifier().withId("unknown"), uri);
 
         for (CqlCompilerException exception : exceptions) {
-            URI eUri = libraryUris.get(exception.getLocator().getLibrary());
-            if (eUri == null) {
-                continue;
+            if (exception != null) {
+                URI eUri = exception.getLocator() != null
+                                && exception.getLocator().getLibrary() != null
+                                && exception.getLocator().getLibrary().getId() != null
+                        ? libraryUris.get(exception.getLocator().getLibrary())
+                        : null;
+                if (eUri == null) {
+                    eUri = uri; // put all unknown or indeterminate errors to the current uri so at least they get
+                    // reported
+                }
+
+                Diagnostic d = Diagnostics.convert(exception);
+
+                if (d != null) {
+                    log.debug(
+                            "diagnostic: {} {}:{}-{}:{}: {}",
+                            eUri,
+                            d.getRange().getStart().getLine(),
+                            d.getRange().getStart().getCharacter(),
+                            d.getRange().getEnd().getLine(),
+                            d.getRange().getEnd().getCharacter(),
+                            d.getMessage());
+
+                    diagnostics.computeIfAbsent(eUri, k -> new HashSet<>()).add(d);
+                }
             }
-
-            Diagnostic d = Diagnostics.convert(exception);
-
-            log.debug(
-                    "diagnostic: {} {}:{}-{}:{}: {}",
-                    eUri,
-                    d.getRange().getStart().getLine(),
-                    d.getRange().getStart().getCharacter(),
-                    d.getRange().getEnd().getLine(),
-                    d.getRange().getEnd().getCharacter(),
-                    d.getMessage());
-
-            diagnostics.computeIfAbsent(eUri, k -> new HashSet<>()).add(d);
         }
 
         // Ensure there is an entry for the library in the case that there are no

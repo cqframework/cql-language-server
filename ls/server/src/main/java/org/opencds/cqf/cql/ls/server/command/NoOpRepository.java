@@ -1,12 +1,16 @@
 package org.opencds.cqf.cql.ls.server.command;
 
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.context.api.BundleInclusionRule;
 import ca.uhn.fhir.model.api.IQueryParameterType;
+import ca.uhn.fhir.model.valueset.BundleTypeEnum;
 import ca.uhn.fhir.repository.IRepository;
 import ca.uhn.fhir.rest.api.MethodOutcome;
 import com.google.common.collect.Multimap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.hl7.fhir.instance.model.api.IBaseBundle;
 import org.hl7.fhir.instance.model.api.IBaseParameters;
 import org.hl7.fhir.instance.model.api.IBaseResource;
@@ -42,13 +46,17 @@ public class NoOpRepository implements IRepository {
         throw new UnsupportedOperationException("Unimplemented method 'delete'");
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public <B extends IBaseBundle, T extends IBaseResource> B search(
             Class<B> aClass,
             Class<T> aClass1,
             Multimap<String, List<IQueryParameterType>> multimap,
             Map<String, String> map) {
-        throw new UnsupportedOperationException("Unimplemented method 'search'");
+        var factory = this.fhirContext.newBundleFactory();
+        factory.addResourcesToBundle(
+                Collections.emptyList(), BundleTypeEnum.SEARCHSET, "", BundleInclusionRule.BASED_ON_INCLUDES, Set.of());
+        return (B) factory.getResourceBundle();
     }
 
     @Override
