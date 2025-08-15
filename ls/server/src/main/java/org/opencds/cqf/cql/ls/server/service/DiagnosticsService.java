@@ -12,7 +12,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -122,7 +121,9 @@ public class DiagnosticsService {
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size());
 
         List<VersionedIdentifier> uniqueLibraries = exceptions.stream()
-                .map(x -> x == null || x.getLocator() == null ? null : x.getLocator().getLibrary())
+                .map(x -> x == null || x.getLocator() == null
+                        ? null
+                        : x.getLocator().getLibrary())
                 .distinct()
                 .filter(x -> x != null && x.getId() != null)
                 .collect(Collectors.toList());
@@ -144,12 +145,13 @@ public class DiagnosticsService {
         for (CqlCompilerException exception : exceptions) {
             if (exception != null) {
                 URI eUri = exception.getLocator() != null
-                        && exception.getLocator().getLibrary() != null
-                        && exception.getLocator().getLibrary().getId() != null
+                                && exception.getLocator().getLibrary() != null
+                                && exception.getLocator().getLibrary().getId() != null
                         ? libraryUris.get(exception.getLocator().getLibrary())
                         : null;
                 if (eUri == null) {
-                    eUri = uri; // put all unknown or indeterminate errors to the current uri so at least they get reported
+                    eUri = uri; // put all unknown or indeterminate errors to the current uri so at least they get
+                    // reported
                 }
 
                 Diagnostic d = Diagnostics.convert(exception);
