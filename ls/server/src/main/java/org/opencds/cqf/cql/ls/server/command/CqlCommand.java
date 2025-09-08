@@ -180,7 +180,9 @@ public class CqlCommand implements Callable<Integer> {
             var npmProcessor = parentCommand
                     .getIgContextManager()
                     .getContext(Uris.addPath(Uris.addPath(URI.create(rootDir), "input"), "cql"));
-            igContext = npmProcessor.getIgContext();
+            if (npmProcessor != null) {
+                igContext = npmProcessor.getIgContext();
+            }
         }
 
         CqlOptions cqlOptions = CqlOptions.defaultOptions();
