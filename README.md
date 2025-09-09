@@ -26,11 +26,11 @@ Inquires for commercial support can be directed to [info@alphora.com](info@alpho
 
 ## Related Projects
 
-[Clinical Quality Language](https://github.com/cqframework/clinical_quality_language) - Tooling in support of the CQL specification, including the CQL verifier/translator used in this project.
+[Clinical Quality Language](https://github.com/cqframework/clinical_quality_language) - Tooling in support of the CQL specification, including the CQL verifier/translator and engine used in this project.
 
-[CQL Engine](https://github.com/DBCG/cql_engine) - Open source Java-based ELM evaluation engine.
+[Clinical Reasoning](https://github.com/cqframework/clinical-reasoning) - Provides for complete evaluation of CQL logic, as well as implementations of operations defined by the FHIR Clinical Reasoning module and related FHIR IGs.
 
-[CQL Evaluator](https://github.com/DBCG/cql-evaluator) - Integrates the CQL Translator and CQL Engine into an execution environment, and provides implementations of operations defined by FHIR IGs.
+[VSCode Plugin](https://github.com/cqframework/vscode-cql) - Makes use of this CQL Language Server to provide CQL language capabilities for the VSCode environment.
 
 ## Commit Policy
 
@@ -38,7 +38,24 @@ All new development takes place on `<feature>` branches off `master`. Once featu
 
 Changes to the `master` branch must be done through an approved PR. Delete branches after merging to keep the repository clean.
 
-Merges to `master` trigger a deployment to the Maven Snapshots repositories. Once ready for a release, the `master` branch is updated with the correct version number and is tagged. Tags trigger a full release to Maven Central and a corresponding release to Github. Releases SHALL NOT have a SNAPSHOT version, nor any SNAPSHOT dependencies.
+Merges to `master` trigger a deployment to the Maven Snapshots repositories. 
+
+Once ready for a release, the `master` branch is updated with the correct version number and is tagged. Releases SHALL NOT have a SNAPSHOT version, nor any SNAPSHOT dependencies. Releases must be deployed manually.
+
+## Release Process
+
+To release a new version of the language server:
+
+1. Update master to be a release version (and all the reviews, bug fixes, etc. that that requires)
+   1. Example version: `3.8.0`
+2. Passed CI Build = ready for release
+3. Use the following command to release from your local build (releases are not automatic)
+   1. `mvn deploy -DskipTests=true -Dmaven.test.skip=true -T 4 -B -P release`
+4. Create a Github Release (specify a tag of `vX.X.X` (e.g. `v3.8.0`) pointing at master to be created on release)
+   1. Choose the "Auto-generate release notes" option
+   2. Provide any additional detail/cleanup on the release notes
+6. Update master version to the next snapshot version `X.X.X-SNAPSHOT` (e.g. `3.9.0-SNAPSHOT`)
+7. Close all issues included in the release
 
 ## License
 
