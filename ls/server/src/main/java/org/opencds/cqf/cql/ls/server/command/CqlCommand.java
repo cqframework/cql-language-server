@@ -11,7 +11,6 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
-import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider;
 import org.cqframework.fhir.npm.NpmProcessor;
@@ -20,7 +19,7 @@ import org.hl7.elm.r1.VersionedIdentifier;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseDatatype;
 import org.hl7.fhir.instance.model.api.IBaseResource;
-import org.hl7.fhir.r5.context.IWorkerContext.ILoggingService;
+import org.hl7.fhir.r5.context.ILoggingService;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
@@ -43,6 +42,9 @@ import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+
+import static kotlinx.io.files.PathsKt.Path;
+import static org.opencds.cqf.cql.ls.server.utility.ConvertersKt.convertKotlinPathToJavaPath;
 
 @Command(name = "cql", mixinStandardHelpOptions = true)
 public class CqlCommand implements Callable<Integer> {
@@ -188,8 +190,8 @@ public class CqlCommand implements Callable<Integer> {
         CqlOptions cqlOptions = CqlOptions.defaultOptions();
 
         if (optionsPath != null) {
-            var op = Uris.parseOrNull(optionsPath).toURL().getPath();
-            CqlTranslatorOptions options = CqlTranslatorOptionsMapper.fromFile(op);
+            var op = Path(Uris.parseOrNull(optionsPath).toURL().getPath());
+            CqlTranslatorOptions options = CqlTranslatorOptions.fromFile(Path(op));
             cqlOptions.setCqlCompilerOptions(options.getCqlCompilerOptions());
         }
 
@@ -211,14 +213,23 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setNpmProcessor(new NpmProcessor(igContext));
 
         for (LibraryParameter library : libraries) {
-            var libraryPath = Paths.get(Uris.parseOrNull(library.libraryUrl));
+            var libraryPath = library.libraryUrl != null
+                    ? Path(Uris.parseOrNull(library.libraryUrl).toURL().getPath())
+                    : null;
 
-            var modelPath = library.model != null ? Paths.get(Uris.parseOrNull(library.model.modelUrl)) : null;
+            //Path(Uris.parseOrNull(optionsPath).toURL().getPath())
+            var modelPath = library.model != null
+                    ? Path(Uris.parseOrNull(library.model.modelUrl).toURL().getPath())
+                    : null;
 
-            var terminologyPath =
-                    library.terminologyUrl != null ? Paths.get(Uris.parseOrNull(library.terminologyUrl)) : null;
+            var terminologyPath = library.terminologyUrl != null
+                    ? Path(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
+                    : null;
 
-            var repository = createRepository(fhirContext, terminologyPath, modelPath);
+            var repository = createRepository(
+                    fhirContext,
+                    convertKotlinPathToJavaPath(terminologyPath),
+                    convertKotlinPathToJavaPath(modelPath));
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
@@ -277,7 +288,7 @@ public class CqlCommand implements Callable<Integer> {
 
     @SuppressWarnings("java:S106") // We are intending to output to the console here as a CLI tool
     private void writeResult(EvaluationResult result) {
-        for (Map.Entry<String, ExpressionResult> libraryEntry : result.expressionResults.entrySet()) {
+        for (Map.Entry<String, ExpressionResult> libraryEntry : result.getExpressionResults().entrySet()) {
             System.out.println(libraryEntry.getKey() + "="
                     + this.tempConvert(libraryEntry.getValue().value()));
         }

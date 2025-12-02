@@ -3,7 +3,7 @@ package org.opencds.cqf.cql.ls.server.provider;
 import java.net.URI;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
-import org.cqframework.cql.elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.TrackBack;
 import org.eclipse.lsp4j.*;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;

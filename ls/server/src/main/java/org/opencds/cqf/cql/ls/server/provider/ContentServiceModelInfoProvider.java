@@ -5,9 +5,10 @@ import java.net.URI;
 import org.hl7.cql.model.ModelIdentifier;
 import org.hl7.cql.model.ModelInfoProvider;
 import org.hl7.elm_modelinfo.r1.ModelInfo;
-import org.hl7.elm_modelinfo.r1.serializing.ModelInfoReaderFactory;
+import org.hl7.elm_modelinfo.r1.serializing.XmlModelInfoReaderKt;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
+import org.opencds.cqf.cql.ls.server.utility.ConvertersKt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,24 +37,9 @@ public class ContentServiceModelInfoProvider implements ModelInfoProvider {
                                 modelName.toLowerCase(), modelVersion != null ? ("-" + modelVersion) : ""));
                 InputStream modelInputStream = contentService.read(modelUri);
                 if (modelInputStream != null) {
-                    return ModelInfoReaderFactory.getReader("application/xml").read(modelInputStream);
+                    return XmlModelInfoReaderKt.parseModelInfoXml(ConvertersKt.convertInputStreamToSource(modelInputStream));
                 }
-            } catch (IOException e) {
-                throw new IllegalArgumentException(
-                        String.format("Could not load definition for model info %s.", modelIdentifier.getId()), e);
-            }
-
-            try {
-                URI modelUri = Uris.addPath(
-                        root,
-                        String.format(
-                                "/%s-modelinfo%s.json",
-                                modelName.toLowerCase(), modelVersion != null ? ("-" + modelVersion) : ""));
-                InputStream modelInputStream = contentService.read(modelUri);
-                if (modelInputStream != null) {
-                    return ModelInfoReaderFactory.getReader("application/json").read(modelInputStream);
-                }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 throw new IllegalArgumentException(
                         String.format("Could not load definition for model info %s.", modelIdentifier.getId()), e);
             }

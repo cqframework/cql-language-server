@@ -76,7 +76,7 @@ public class CqlCompilationManager {
     }
 
     private ModelManager createModelManager() {
-        return new CacheAwareModelManager(this.globalCache);
+        return new ModelManager(this.globalCache);
     }
 
     private LibraryManager createLibraryManager(URI root, ModelManager modelManager) {

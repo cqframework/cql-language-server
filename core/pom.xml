@@ -21,6 +21,7 @@
         <dependency>
             <groupId>org.opencds.cqf.fhir</groupId>
             <artifactId>cqf-fhir-cr</artifactId>
+            <version>4.0.0</version>
         </dependency>
     </dependencies>
 </project>
