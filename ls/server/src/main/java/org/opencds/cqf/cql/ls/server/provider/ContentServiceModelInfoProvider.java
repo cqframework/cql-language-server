@@ -7,8 +7,8 @@ import org.hl7.cql.model.ModelInfoProvider;
 import org.hl7.elm_modelinfo.r1.ModelInfo;
 import org.hl7.elm_modelinfo.r1.serializing.XmlModelInfoReaderKt;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Converters;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.utility.ConvertersKt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +37,7 @@ public class ContentServiceModelInfoProvider implements ModelInfoProvider {
                                 modelName.toLowerCase(), modelVersion != null ? ("-" + modelVersion) : ""));
                 InputStream modelInputStream = contentService.read(modelUri);
                 if (modelInputStream != null) {
-                    return XmlModelInfoReaderKt.parseModelInfoXml(ConvertersKt.convertInputStreamToSource(modelInputStream));
+                    return XmlModelInfoReaderKt.parseModelInfoXml(Converters.inputStreamToString(modelInputStream));
                 }
             } catch (Exception e) {
                 throw new IllegalArgumentException(

@@ -3,7 +3,6 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls-core</artifactId>
     <packaging>jar</packaging>
     <name>CQL Language Server Core</name>
@@ -13,7 +12,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>4.0.0</version>
+        <version>4.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -21,7 +20,6 @@
         <dependency>
             <groupId>org.opencds.cqf.fhir</groupId>
             <artifactId>cqf-fhir-cr</artifactId>
-            <version>4.0.0</version>
         </dependency>
     </dependencies>
 </project>

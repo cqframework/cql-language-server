@@ -5,7 +5,7 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import org.cqframework.cql.tools.formatter.CqlFormatterVisitor;
+
 import org.cqframework.cql.tools.formatter.CqlFormatterVisitor.FormatResult;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -13,8 +13,10 @@ import org.eclipse.lsp4j.TextEdit;
 import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 
+import static org.cqframework.cql.tools.formatter.CqlFormatterVisitor.*;
+
 public class FormattingProvider {
-    private ContentService contentService;
+    private final ContentService contentService;
 
     public FormattingProvider(ContentService contentService) {
         this.contentService = contentService;
@@ -23,9 +25,9 @@ public class FormattingProvider {
     public List<TextEdit> format(String uri) {
         URI u = Objects.requireNonNull(Uris.parseOrNull(uri));
 
-        FormatResult fr = null;
+        FormatResult fr;
         try {
-            fr = CqlFormatterVisitor.getFormattedOutput(this.contentService.read(u));
+            fr = Companion.getFormattedOutput(this.contentService.read(u));
         } catch (IOException e) {
             throw new IllegalArgumentException("Unable to format CQL due to an error.", e);
         }

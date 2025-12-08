@@ -1,10 +1,14 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
-import java.io.InputStream;
+import kotlinx.io.Source;
+
+import java.io.IOException;
 import java.net.URI;
 import org.cqframework.cql.cql2elm.LibrarySourceProvider;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+
+import static org.opencds.cqf.cql.ls.core.utility.Converters.inputStreamToSource;
 
 public class ContentServiceSourceProvider implements LibrarySourceProvider {
 
@@ -16,8 +20,11 @@ public class ContentServiceSourceProvider implements LibrarySourceProvider {
         this.root = root;
     }
 
-    @Override
-    public InputStream getLibrarySource(VersionedIdentifier libraryIdentifier) {
-        return this.contentService.read(this.root, libraryIdentifier);
+    public Source getLibrarySource(VersionedIdentifier libraryIdentifier) {
+        try {
+            return inputStreamToSource(this.contentService.read(this.root, libraryIdentifier));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

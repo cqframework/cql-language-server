@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>4.0.0</version>
+    <version>4.0.0-SNAPSHOT</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -14,8 +14,12 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.release>11</maven.compiler.release>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
+
         <cqf-fhir-cr.version>4.0.0</cqf-fhir-cr.version>
+        <cqframework.version>4.1.0</cqframework.version>
         <auto-service.version>1.1.1</auto-service.version>
         <slf4j.version>1.7.36</slf4j.version>
         <spring.boot.version>2.7.18</spring.boot.version>
@@ -88,14 +92,6 @@
             </dependency>
 
             <dependency>
-                <groupId>org.opencds.cqf.fhir</groupId>
-                <artifactId>cqf-fhir-bom</artifactId>
-                <version>${cqf-fhir-cr.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
-            <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
                 <version>${jackson.version}</version>
@@ -125,13 +121,6 @@
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-annotations</artifactId>
                 <version>${jackson.version}</version>
-            </dependency>
-
-            <!-- CQL-to-ELM Translator -->
-            <dependency>
-                <groupId>org.cqframework</groupId>
-                <artifactId>cql-formatter</artifactId>
-                <version>4.1.0</version>
             </dependency>
 
             <!-- Java implementation of VS Code language server protocol -->
@@ -167,6 +156,27 @@
                 <version>3.0.1</version>
             </dependency>
 
+            <!-- CQL Tooling Related -->
+            <dependency>
+                <groupId>org.opencds.cqf.fhir</groupId>
+                <artifactId>cqf-fhir-bom</artifactId>
+                <version>${cqf-fhir-cr.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.cqframework</groupId>
+                <artifactId>cql-bom</artifactId>
+                <version>${cqframework.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- CQL-to-ELM Translator -->
+            <dependency>
+                <groupId>org.cqframework</groupId>
+                <artifactId>cql-formatter</artifactId>
+            </dependency>
 
             <!-- test dependencies -->
             <dependency>
@@ -240,13 +250,13 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.11.0</version>
+                    <version>3.14.0</version>
                     <configuration>
                         <failOnWarning>true</failOnWarning>
                         <showWarnings>true</showWarnings>
                         <compilerArgs>
                             <arg>-XDcompilePolicy=simple</arg>
-                            <!-- TODO: Ramp up error prone checkts to include warnings as well -->
+                            <!-- TODO: Ramp up error prone checks to include warnings as well -->
                             <arg>-Xplugin:ErrorProne -XepDisableAllWarnings</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>

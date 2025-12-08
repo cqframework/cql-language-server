@@ -5,7 +5,6 @@ import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.repository.IRepository;
 import java.net.URI;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -44,7 +43,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import static kotlinx.io.files.PathsKt.Path;
-import static org.opencds.cqf.cql.ls.server.utility.ConvertersKt.convertKotlinPathToJavaPath;
+import static org.opencds.cqf.cql.ls.core.utility.Converters.kotlinPathToJavaPath;
 
 @Command(name = "cql", mixinStandardHelpOptions = true)
 public class CqlCommand implements Callable<Integer> {
@@ -228,8 +227,8 @@ public class CqlCommand implements Callable<Integer> {
 
             var repository = createRepository(
                     fhirContext,
-                    convertKotlinPathToJavaPath(terminologyPath),
-                    convertKotlinPathToJavaPath(modelPath));
+                    kotlinPathToJavaPath(terminologyPath),
+                    kotlinPathToJavaPath(modelPath));
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {

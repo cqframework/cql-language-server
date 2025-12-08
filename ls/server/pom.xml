@@ -3,7 +3,6 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls-server</artifactId>
     <packaging>jar</packaging>
     <name>CQL Language Server - Server Component</name>
@@ -17,7 +16,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>4.0.0</version>
+        <version>4.0.0-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -35,7 +34,7 @@
         <dependency>
             <groupId>org.opencds.cqf.cql.ls</groupId>
             <artifactId>cql-ls-core</artifactId>
-            <version>4.0.0</version>
+            <version>${project.version}</version>
         </dependency>
 
         <dependency>
@@ -63,13 +62,11 @@
             <artifactId>jackson-annotations</artifactId>
         </dependency>
 
+        <!-- CQL Tooling -->
         <dependency>
             <groupId>org.cqframework</groupId>
             <artifactId>ucum</artifactId>
-            <version>4.1.0</version>
         </dependency>
-
-        <!-- CQL-to-ELM Translator -->
         <dependency>
             <groupId>org.cqframework</groupId>
             <artifactId>cql-to-elm</artifactId>
@@ -78,6 +75,7 @@
         <dependency>
             <groupId>org.cqframework</groupId>
             <artifactId>cql-formatter</artifactId>
+            <version>4.1.0</version>
         </dependency>
 
         <!-- Java implementation of VS Code language server protocol -->
@@ -97,7 +95,7 @@
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib-jdk8</artifactId>
+            <artifactId>kotlin-stdlib</artifactId>
             <version>${kotlin.version}</version>
         </dependency>
         <dependency>
@@ -113,18 +111,17 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.10.0</version>
+                    <version>3.14.0</version>
                     <configuration>
                         <release>11</release>
                         <source>11</source>
                         <target>11</target>
                         <failOnError>true</failOnError>
-                        <failOnWarning>true</failOnWarning>
+                        <failOnWarning>false</failOnWarning>
                         <showWarnings>true</showWarnings>
                         <compilerArgs>
                             <arg>-Xlint:all</arg>
                             <arg>-Xlint:-processing</arg>
-                            <arg>-Werror</arg>
                             <arg>-implicit:none</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>

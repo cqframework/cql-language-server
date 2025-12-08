@@ -14,6 +14,7 @@ import org.fhir.ucum.UcumEssenceService;
 import org.fhir.ucum.UcumService;
 import org.hl7.cql.model.ModelIdentifier;
 import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Converters;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider;
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider;
@@ -67,8 +68,8 @@ public class CqlCompilationManager {
         LibraryManager libraryManager = this.createLibraryManager(Uris.getHead(uri), modelManager);
 
         try {
-            CqlCompiler compiler = new CqlCompiler(libraryManager);
-            compiler.run(stream);
+            CqlCompiler compiler = new CqlCompiler(null,null,libraryManager);
+            compiler.run(Converters.inputStreamToString(stream));
             return compiler;
         } catch (IOException e) {
             throw new IllegalArgumentException(String.format("error creating compiler for uri: %s", uri.toString()), e);
