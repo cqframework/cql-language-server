@@ -12,10 +12,16 @@
     <url>https://github.com/cqframework/cql-language-server/tree/master</url>
 
     <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
+
+        <kotlin.version>2.2.0</kotlin.version>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.release>11</maven.compiler.release>
-        <cqf-fhir-cr.version>3.23.0</cqf-fhir-cr.version>
+        <cqf-fhir-cr.version>4.0.0</cqf-fhir-cr.version>
+        <cql.version>4.1.0</cql.version>
         <auto-service.version>1.1.1</auto-service.version>
         <slf4j.version>1.7.36</slf4j.version>
         <spring.boot.version>2.7.18</spring.boot.version>
@@ -78,6 +84,12 @@
     </repositories>
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib</artifactId>
+                <version>${kotlin.version}</version>
+            </dependency>
+
             <!-- Spring Boot-->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
@@ -87,10 +99,20 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- Clinical Reasoning -->
             <dependency>
                 <groupId>org.opencds.cqf.fhir</groupId>
                 <artifactId>cqf-fhir-bom</artifactId>
                 <version>${cqf-fhir-cr.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- CQL -->
+            <dependency>
+                <groupId>org.cqframework</groupId>
+                <artifactId>cql-bom</artifactId>
+                <version>${cql.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -127,15 +149,6 @@
                 <version>${jackson.version}</version>
             </dependency>
 
-
-
-            <!-- CQL-to-ELM Translator -->
-            <dependency>
-                <groupId>info.cqframework</groupId>
-                <artifactId>cql-formatter</artifactId>
-                <version>3.27.0</version>
-            </dependency>
-
             <!-- Java implementation of VS Code language server protocol -->
             <dependency>
                 <groupId>org.eclipse.lsp4j</groupId>
@@ -169,8 +182,7 @@
                 <version>3.0.1</version>
             </dependency>
 
-
-            <!-- test dependencies -->
+            <!-- Testing -->
             <dependency>
                 <groupId>org.hamcrest</groupId>
                 <artifactId>hamcrest-all</artifactId>
@@ -248,7 +260,7 @@
                         <showWarnings>true</showWarnings>
                         <compilerArgs>
                             <arg>-XDcompilePolicy=simple</arg>
-                            <!-- TODO: Ramp up error prone checkts to include warnings as well -->
+                            <!-- TODO: Ramp up error prone checks to include warnings as well -->
                             <arg>-Xplugin:ErrorProne -XepDisableAllWarnings</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>
@@ -313,7 +325,6 @@
                     <artifactId>maven-javadoc-plugin</artifactId>
                     <version>3.3.1</version>
                     <configuration>
-                        <source>11</source>
                         <show>private</show>
                         <doclint>-missing</doclint>
                     </configuration>

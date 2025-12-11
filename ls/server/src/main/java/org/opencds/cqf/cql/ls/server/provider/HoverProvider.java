@@ -3,16 +3,15 @@ package org.opencds.cqf.cql.ls.server.provider;
 import java.net.URI;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
-import org.cqframework.cql.elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.TrackBack;
 import org.eclipse.lsp4j.*;
-import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 
 public class HoverProvider {
-    private CqlCompilationManager cqlCompilationManager;
+    private final CqlCompilationManager cqlCompilationManager;
 
     public HoverProvider(CqlCompilationManager cqlCompilationManager) {
         this.cqlCompilationManager = cqlCompilationManager;
@@ -69,21 +68,21 @@ public class HoverProvider {
                 || statements.getDef().isEmpty()) {
             return null;
         }
-
-        for (ExpressionDef def : statements.getDef()) {
-            if (def.getTrackbacks() == null || def.getTrackbacks().isEmpty()) {
-                continue;
-            }
-
-            for (TrackBack tb : def.getTrackbacks()) {
-                if (positionInTrackBack(position, tb)) {
-                    Range range = new Range(
-                            new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
-                            new Position(tb.getEndLine() - 1, tb.getEndChar()));
-                    return Pair.of(range, def);
-                }
-            }
-        }
+// TODO: RGT 2025-12-03 - Address missing getTrackbacks functionality
+//        for (ExpressionDef def : statements.getDef()) {
+//            if (def.getTrackbacks() == null || def.getTrackbacks().isEmpty()) {
+//                continue;
+//            }
+//
+//            for (TrackBack tb : def.getTrackbacks()) {
+//                if (positionInTrackBack(position, tb)) {
+//                    Range range = new Range(
+//                            new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
+//                            new Position(tb.getEndLine() - 1, tb.getEndChar()));
+//                    return Pair.of(range, def);
+//                }
+//            }
+//        }
 
         return null;
     }
@@ -105,15 +104,18 @@ public class HoverProvider {
             return null;
         }
 
-        DataType resultType = def.getExpression().getResultType();
-        if (resultType == null) {
-            return null;
-        }
+        return null;
 
-        // Specifying the Markdown type as cql allows the client to apply
-        // cql syntax highlighting the resulting pop-up
-        String result = String.join("\n", "```cql", resultType.toString(), "```");
-
-        return new MarkupContent("markdown", result);
+        // TODO - RGT -2025-12-03 - address getResultType functionality
+//        DataType resultType = def.getExpression().getResultType();
+//        if (resultType == null) {
+//            return null;
+//        }
+//
+//        // Specifying the Markdown type as cql allows the client to apply
+//        // cql syntax highlighting the resulting pop-up
+//        String result = String.join("\n", "```cql", resultType.toString(), "```");
+//
+//        return new MarkupContent("markdown", result);
     }
 }
