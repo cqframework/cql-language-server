@@ -1,18 +1,16 @@
 package org.opencds.cqf.cql.ls.server.command;
 
+import static kotlinx.io.files.PathsKt.Path;
+import static org.opencds.cqf.cql.ls.core.utility.Converters.kotlinPathToJavaPath;
+
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.repository.IRepository;
-
-import java.io.IOException;
 import java.net.URI;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.stream.Stream;
-
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider;
@@ -41,17 +39,12 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_MEMBERSHIP_MODE;
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE;
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
-import org.opencds.cqf.fhir.utility.repository.ig.IgConventions;
 import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
-
-import static kotlinx.io.files.PathsKt.Path;
-import static org.opencds.cqf.cql.ls.core.utility.Converters.kotlinPathToJavaPath;
-import static org.opencds.cqf.fhir.utility.repository.ig.IgConventions.STANDARD;
 
 @Command(name = "cql", mixinStandardHelpOptions = true)
 public class CqlCommand implements Callable<Integer> {
@@ -224,7 +217,7 @@ public class CqlCommand implements Callable<Integer> {
                     ? Path(Uris.parseOrNull(library.libraryUrl).toURL().getPath())
                     : null;
 
-            //Path(Uris.parseOrNull(optionsPath).toURL().getPath())
+            // Path(Uris.parseOrNull(optionsPath).toURL().getPath())
             var modelPath = library.model != null
                     ? Path(Uris.parseOrNull(library.model.modelUrl).toURL().getPath())
                     : null;
@@ -234,9 +227,7 @@ public class CqlCommand implements Callable<Integer> {
                     : null;
 
             var repository = createRepository(
-                    fhirContext,
-                    kotlinPathToJavaPath(terminologyPath),
-                    kotlinPathToJavaPath(modelPath));
+                    fhirContext, kotlinPathToJavaPath(terminologyPath), kotlinPathToJavaPath(modelPath));
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
@@ -285,7 +276,8 @@ public class CqlCommand implements Callable<Integer> {
         }
 
         if (terminologyPath != null) {
-            terminology = new IgRepository(fhirContext, terminologyPath, IgConventionsHelper.autoDetect(terminologyPath), null);
+            terminology = new IgRepository(
+                    fhirContext, terminologyPath, IgConventionsHelper.autoDetect(terminologyPath), null);
         } else {
             terminology = new NoOpRepository(fhirContext);
         }
@@ -295,7 +287,8 @@ public class CqlCommand implements Callable<Integer> {
 
     @SuppressWarnings("java:S106") // We are intending to output to the console here as a CLI tool
     private void writeResult(EvaluationResult result) {
-        for (Map.Entry<String, ExpressionResult> libraryEntry : result.getExpressionResults().entrySet()) {
+        for (Map.Entry<String, ExpressionResult> libraryEntry :
+                result.getExpressionResults().entrySet()) {
             System.out.println(libraryEntry.getKey() + "="
                     + this.tempConvert(libraryEntry.getValue().value()));
         }
@@ -325,9 +318,9 @@ public class CqlCommand implements Callable<Integer> {
             IBaseResource resource = (IBaseResource) value;
             result = resource.fhirType()
                     + (resource.getIdElement() != null
-                    && resource.getIdElement().hasIdPart()
-                    ? "(id=" + resource.getIdElement().getIdPart() + ")"
-                    : "");
+                                    && resource.getIdElement().hasIdPart()
+                            ? "(id=" + resource.getIdElement().getIdPart() + ")"
+                            : "");
         } else if (value instanceof IBase) {
             result = ((IBase) value).fhirType();
         } else if (value instanceof IBaseDatatype) {

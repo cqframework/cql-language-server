@@ -1,7 +1,8 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
+import static kotlinx.io.files.PathsKt.Path;
+
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
@@ -16,8 +17,6 @@ import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static kotlinx.io.files.PathsKt.Path;
 
 public class CompilerOptionsManager {
 

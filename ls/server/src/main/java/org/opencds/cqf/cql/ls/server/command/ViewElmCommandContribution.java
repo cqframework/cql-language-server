@@ -2,13 +2,11 @@ package org.opencds.cqf.cql.ls.server.command;
 
 import com.google.gson.JsonElement;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.cqframework.cql.cql2elm.CqlCompiler;
-import org.cqframework.cql.cql2elm.LibraryContentType;
 import org.cqframework.cql.elm.serializing.ElmXmlLibraryWriter;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.hl7.elm.r1.Library;

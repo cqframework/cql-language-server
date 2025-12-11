@@ -1,5 +1,7 @@
 package org.opencds.cqf.cql.ls.server.utility;
 
+import static org.opencds.cqf.fhir.utility.repository.ig.IgConventions.STANDARD;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,8 +17,6 @@ import org.opencds.cqf.fhir.utility.repository.ig.IgConventions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.opencds.cqf.fhir.utility.repository.ig.IgConventions.STANDARD;
-
 public class IgConventionsHelper {
 
     private static final Logger logger = LoggerFactory.getLogger(IgConventionsHelper.class);
@@ -26,7 +26,7 @@ public class IgConventionsHelper {
             .map(String::toLowerCase)
             .distinct()
             .collect(Collectors.toUnmodifiableList());
-    
+
     /**
      * Auto-detect the IG conventions based on the structure of the IG. If the path is null or the
      * convention can not be reliably detected, the default configuration is returned.
@@ -114,7 +114,9 @@ public class IgConventionsHelper {
 
         var config = new IgConventions(
                 hasTypeDirectory ? IgConventions.FhirTypeLayout.DIRECTORY_PER_TYPE : IgConventions.FhirTypeLayout.FLAT,
-                hasCategoryDirectory ? IgConventions.CategoryLayout.DIRECTORY_PER_CATEGORY : IgConventions.CategoryLayout.FLAT,
+                hasCategoryDirectory
+                        ? IgConventions.CategoryLayout.DIRECTORY_PER_CATEGORY
+                        : IgConventions.CategoryLayout.FLAT,
                 CompartmentMode.NONE,
                 // TODO: Cannot auto-detect this yet, default to FULL
                 // We can check for non-compartment resources in compartment directories to detect FHIR vs FULL
@@ -176,8 +178,7 @@ public class IgConventionsHelper {
             // Check that the contents contain the claimed type, and that the id is not the same as the filename
             // NOTE: This does not work for XML files.
             return contents.toUpperCase().contains(String.format("\"RESOURCETYPE\": \"%s\"", claimedFhirType.name()))
-                    && !contents.toUpperCase()
-                    .contains(String.format("\"ID\": \"%s\"", fileNameWithoutExtension));
+                    && !contents.toUpperCase().contains(String.format("\"ID\": \"%s\"", fileNameWithoutExtension));
 
         } catch (IOException e) {
             return false;

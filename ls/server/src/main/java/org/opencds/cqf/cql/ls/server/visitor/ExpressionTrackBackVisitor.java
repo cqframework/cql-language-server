@@ -38,10 +38,10 @@ public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, T
     protected boolean elementCoversTrackBack(Element elm, TrackBack context) {
         // TODO: RGT 2025-12-03 - Address missing getTrackbacks functionality
         //        for (TrackBack tb : elm.getTrackbacks()) {
-//            if (startsOnOrBefore(tb, context) && endsOnOrAfter(tb, context)) {
-//                return true;
-//            }
-//        }
+        //            if (startsOnOrBefore(tb, context) && endsOnOrAfter(tb, context)) {
+        //                return true;
+        //            }
+        //        }
 
         return false;
     }

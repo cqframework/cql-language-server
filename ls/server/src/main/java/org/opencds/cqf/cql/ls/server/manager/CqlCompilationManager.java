@@ -68,7 +68,7 @@ public class CqlCompilationManager {
         LibraryManager libraryManager = this.createLibraryManager(Uris.getHead(uri), modelManager);
 
         try {
-            CqlCompiler compiler = new CqlCompiler(null,null,libraryManager);
+            CqlCompiler compiler = new CqlCompiler(null, null, libraryManager);
             compiler.run(Converters.inputStreamToString(stream));
             return compiler;
         } catch (IOException e) {
