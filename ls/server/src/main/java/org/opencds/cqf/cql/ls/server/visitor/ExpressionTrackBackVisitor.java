@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.visitor;
 
 import org.cqframework.cql.cql2elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.Trackable;
 import org.cqframework.cql.elm.visiting.BaseElmLibraryVisitor;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
@@ -36,12 +37,11 @@ public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, T
     }
 
     protected boolean elementCoversTrackBack(Element elm, TrackBack context) {
-        // TODO: RGT 2025-12-03 - Address missing getTrackbacks functionality
-        //        for (TrackBack tb : elm.getTrackbacks()) {
-        //            if (startsOnOrBefore(tb, context) && endsOnOrAfter(tb, context)) {
-        //                return true;
-        //            }
-        //        }
+        for (TrackBack tb : Trackable.INSTANCE.getTrackbacks(elm)) {
+            if (startsOnOrBefore(tb, context) && endsOnOrAfter(tb, context)) {
+                return true;
+            }
+        }
 
         return false;
     }

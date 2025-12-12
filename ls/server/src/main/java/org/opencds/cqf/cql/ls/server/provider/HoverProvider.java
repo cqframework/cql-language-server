@@ -4,7 +4,9 @@ import java.net.URI;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
 import org.cqframework.cql.cql2elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.Trackable;
 import org.eclipse.lsp4j.*;
+import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Library.Statements;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
@@ -42,8 +44,7 @@ public class HoverProvider {
         // For that given position, we want to select the most specific node we support generating
         // hover information for and return that.
         //
-        // (maybe.. the alternative is to select the specific node under the cursor, but that may be
-        // less user friendly)
+        // (maybe the alternative is to select the specific node under the cursor, but that may be less user-friendly)
         //
         // The current code always picks the first ExpressionDef in the graph.
         Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(
@@ -63,26 +64,23 @@ public class HoverProvider {
     }
 
     private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position, Statements statements) {
-        if (statements == null
-                || statements.getDef() == null
-                || statements.getDef().isEmpty()) {
+        if (statements == null || statements.getDef().isEmpty()) {
             return null;
         }
-        // TODO: RGT 2025-12-03 - Address missing getTrackbacks functionality
-        //        for (ExpressionDef def : statements.getDef()) {
-        //            if (def.getTrackbacks() == null || def.getTrackbacks().isEmpty()) {
-        //                continue;
-        //            }
-        //
-        //            for (TrackBack tb : def.getTrackbacks()) {
-        //                if (positionInTrackBack(position, tb)) {
-        //                    Range range = new Range(
-        //                            new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
-        //                            new Position(tb.getEndLine() - 1, tb.getEndChar()));
-        //                    return Pair.of(range, def);
-        //                }
-        //            }
-        //        }
+        for (ExpressionDef def : statements.getDef()) {
+            if (Trackable.INSTANCE.getTrackbacks(def).isEmpty()) {
+                continue;
+            }
+
+            for (TrackBack tb : Trackable.INSTANCE.getTrackbacks(def)) {
+                if (positionInTrackBack(position, tb)) {
+                    Range range = new Range(
+                            new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
+                            new Position(tb.getEndLine() - 1, tb.getEndChar()));
+                    return Pair.of(range, def);
+                }
+            }
+        }
 
         return null;
     }
@@ -104,18 +102,15 @@ public class HoverProvider {
             return null;
         }
 
-        return null;
+        DataType resultType = Trackable.INSTANCE.getResultType(def);
+        if (resultType == null) {
+            return null;
+        }
 
-        // TODO - RGT -2025-12-03 - address getResultType functionality
-        //        DataType resultType = def.getExpression().getResultType();
-        //        if (resultType == null) {
-        //            return null;
-        //        }
-        //
-        //        // Specifying the Markdown type as cql allows the client to apply
-        //        // cql syntax highlighting the resulting pop-up
-        //        String result = String.join("\n", "```cql", resultType.toString(), "```");
-        //
-        //        return new MarkupContent("markdown", result);
+        // Specifying the Markdown type as cql allows the client to apply
+        // cql syntax highlighting the resulting pop-up
+        String result = String.join("\n", "```cql", resultType.toString(), "```");
+
+        return new MarkupContent("markdown", result);
     }
 }
