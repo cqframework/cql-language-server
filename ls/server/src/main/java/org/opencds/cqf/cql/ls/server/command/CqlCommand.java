@@ -226,8 +226,12 @@ public class CqlCommand implements Callable<Integer> {
                     ? Path(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
                     : null;
 
+//            var repository = createRepository(
+//                    fhirContext, kotlinPathToJavaPath(terminologyPath), kotlinPathToJavaPath(modelPath));
+
+            var rootPath = Path(Uris.parseOrNull(rootDir).toURL().getPath());
             var repository = createRepository(
-                    fhirContext, kotlinPathToJavaPath(terminologyPath), kotlinPathToJavaPath(modelPath));
+                    fhirContext, kotlinPathToJavaPath(rootPath), kotlinPathToJavaPath(rootPath));
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
@@ -270,14 +274,16 @@ public class CqlCommand implements Callable<Integer> {
         }
 
         if (modelPath != null) {
-            data = new IgRepository(fhirContext, modelPath, IgConventionsHelper.autoDetect(modelPath), null);
+            // data = new IgRepository(fhirContext, modelPath, IgConventionsHelper.autoDetect(modelPath), null);
+            data = new IgRepository(fhirContext, modelPath);
         } else {
             data = new NoOpRepository(fhirContext);
         }
 
         if (terminologyPath != null) {
-            terminology = new IgRepository(
-                    fhirContext, terminologyPath, IgConventionsHelper.autoDetect(terminologyPath), null);
+//            terminology = new IgRepository(
+//                    fhirContext, terminologyPath, IgConventionsHelper.autoDetect(terminologyPath), null);
+            terminology = new IgRepository(fhirContext, terminologyPath);
         } else {
             terminology = new NoOpRepository(fhirContext);
         }
