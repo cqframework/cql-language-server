@@ -60,10 +60,7 @@ public record IgStandardConventions(
     }
 
     public static final IgStandardConventions FLAT = new IgStandardConventions(
-            FhirTypeLayout.FLAT,
-            CategoryLayout.FLAT,
-            CompartmentLayout.FLAT,
-            FilenameMode.TYPE_AND_ID);
+            FhirTypeLayout.FLAT, CategoryLayout.FLAT, CompartmentLayout.FLAT, FilenameMode.TYPE_AND_ID);
 
     public static final IgStandardConventions STANDARD = new IgStandardConventions(
             FhirTypeLayout.DIRECTORY_PER_TYPE,
@@ -219,7 +216,7 @@ public record IgStandardConventions(
             // NOTE: This does not work for XML files.
             return contents.toUpperCase().contains("\"RESOURCETYPE\": \"%s\"".formatted(claimedFhirType.name()))
                     && !contents.toUpperCase()
-                    .contains("\"ID\": \"%s\"".formatted(fileNameWithoutExtension.toUpperCase()));
+                            .contains("\"ID\": \"%s\"".formatted(fileNameWithoutExtension.toUpperCase()));
 
         } catch (IOException e) {
             return false;
@@ -265,4 +262,3 @@ public record IgStandardConventions(
                 .formatted(typeLayout, categoryLayout, compartmentLayout, filenameMode);
     }
 }
-

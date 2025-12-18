@@ -1,11 +1,10 @@
 package org.opencds.cqf.cql.ls.server.repository.ig.standard;
 
-import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
-
 import static java.util.Objects.requireNonNull;
 
 import java.util.Objects;
 import java.util.StringJoiner;
+import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 
 /**
  * Class that represents the compartment context for a given request within {@link IgRepository} only.

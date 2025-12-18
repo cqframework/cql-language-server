@@ -1,41 +1,72 @@
 package org.opencds.cqf.cql.ls.server.repository.ig.standard;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.repository.IRepository;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
 import org.hl7.fhir.r4.model.Library;
+import org.hl7.fhir.r4.model.Patient;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.opencds.cqf.fhir.test.Resources;
 import org.opencds.cqf.fhir.utility.Ids;
 
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.nio.file.Path;
-
-import static org.junit.jupiter.api.Assertions.*;
-
 public class MultiMeasureTest {
 
-    private static String resourcePath = "/sample-igs/ig/standard/cql-measures/multi-measure";
-    private static IRepository repository;
+    private static final String rootDir = "/sample-igs/ig/standard/cql-measures/multi-measure";
+    private static final String modelPathMeasure100TestCase1111 = "input/tests/measure/measure100/1111";
+    private static final String modelPathMeasure100TestCase2222 = "input/tests/measure/measure100/2222";
+    private static final String modelPathMeasure200TestCase1111 = "input/tests/measure/measure200/1111";
+    private static final String terminologyPath = "input/vocabulary/valueset";
 
     @TempDir
     static Path tempDir;
+
+    static IRepository model1111Measure100Repo;
+    static IRepository model2222Measure100Repo;
+    static IRepository model1111Measure200Repo;
+    static IRepository terminologyRepo;
 
     @BeforeAll
     static void setup() throws URISyntaxException, IOException, ClassNotFoundException {
         // This copies the sample IG to a temporary directory so that
         // we can test against an actual filesystem
-        Resources.copyFromJar(resourcePath, tempDir);
-        repository = new IgStandardRepository(FhirContext.forR4Cached(), tempDir);
+        Resources.copyFromJar(rootDir, tempDir);
+        model1111Measure100Repo =
+                new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(modelPathMeasure100TestCase1111));
+        model2222Measure100Repo =
+                new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(modelPathMeasure100TestCase2222));
+        model1111Measure200Repo =
+                new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(modelPathMeasure200TestCase1111));
+        terminologyRepo = new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(terminologyPath));
     }
 
     @Test
-    void readMeasure100Resources() {
+    void should_throwException_when_libraryDoesNotExist() {
         var id = Ids.newId(Library.class, "DoesNotExist");
-        assertThrows(ResourceNotFoundException.class, () -> repository.read(Library.class, id));
+        assertThrows(ResourceNotFoundException.class, () -> model1111Measure100Repo.read(Library.class, id));
+        assertThrows(ResourceNotFoundException.class, () -> model2222Measure100Repo.read(Library.class, id));
+        assertThrows(ResourceNotFoundException.class, () -> model1111Measure200Repo.read(Library.class, id));
+        assertThrows(ResourceNotFoundException.class, () -> terminologyRepo.read(Library.class, id));
     }
 
+    @Test
+    void should_findResourceInCorrectRepo_when_resourcesIsolatedByRepo() {
+        var id = Ids.newId(Patient.class, "1111");
+        var patientFrommModel1111Measure100Repo = model1111Measure100Repo.read(Patient.class, id);
+        var patientFrommModel1111Measure200Repo = model1111Measure200Repo.read(Patient.class, id);
+
+        assertEquals(
+                id.getIdPart(),
+                patientFrommModel1111Measure100Repo.getIdElement().getIdPart());
+        assertEquals(
+                id.getIdPart(),
+                patientFrommModel1111Measure200Repo.getIdElement().getIdPart());
+        assertNotEquals(patientFrommModel1111Measure100Repo.getName(), patientFrommModel1111Measure200Repo.getName());
+    }
 }

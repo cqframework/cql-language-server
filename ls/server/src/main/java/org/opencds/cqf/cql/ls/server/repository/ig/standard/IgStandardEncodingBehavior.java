@@ -19,13 +19,14 @@ public class IgStandardEncodingBehavior {
         OVERWRITE_WITH_PREFERRED_ENCODING
     }
 
-    public static final IgStandardEncodingBehavior DEFAULT =
-            new IgStandardEncodingBehavior(EncodingEnum.JSON, IgStandardEncodingBehavior.PreserveEncoding.PRESERVE_ORIGINAL_ENCODING);
+    public static final IgStandardEncodingBehavior DEFAULT = new IgStandardEncodingBehavior(
+            EncodingEnum.JSON, IgStandardEncodingBehavior.PreserveEncoding.PRESERVE_ORIGINAL_ENCODING);
 
     private final EncodingEnum preferredEncoding;
     private final IgStandardEncodingBehavior.PreserveEncoding preserveEncoding;
 
-    public IgStandardEncodingBehavior(EncodingEnum preferredEncoding, IgStandardEncodingBehavior.PreserveEncoding preserveEncoding) {
+    public IgStandardEncodingBehavior(
+            EncodingEnum preferredEncoding, IgStandardEncodingBehavior.PreserveEncoding preserveEncoding) {
         this.preferredEncoding = preferredEncoding;
         this.preserveEncoding = preserveEncoding;
     }
@@ -38,4 +39,3 @@ public class IgStandardEncodingBehavior {
         return preserveEncoding;
     }
 }
-

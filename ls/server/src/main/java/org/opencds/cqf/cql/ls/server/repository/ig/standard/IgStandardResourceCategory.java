@@ -22,4 +22,3 @@ enum IgStandardResourceCategory {
         return DATA;
     }
 }
-

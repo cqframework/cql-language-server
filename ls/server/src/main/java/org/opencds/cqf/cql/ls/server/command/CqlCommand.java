@@ -25,7 +25,7 @@ import org.hl7.fhir.r5.context.ILoggingService;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
-import org.opencds.cqf.cql.ls.server.utility.IgConventionsHelper;
+import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository;
 import org.opencds.cqf.fhir.cql.CqlOptions;
 import org.opencds.cqf.fhir.cql.Engines;
 import org.opencds.cqf.fhir.cql.EvaluationSettings;
@@ -39,7 +39,6 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_MEMBERSHIP_MODE;
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE;
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
-import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
@@ -226,12 +225,9 @@ public class CqlCommand implements Callable<Integer> {
                     ? Path(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
                     : null;
 
-//            var repository = createRepository(
-//                    fhirContext, kotlinPathToJavaPath(terminologyPath), kotlinPathToJavaPath(modelPath));
-
-            var rootPath = Path(Uris.parseOrNull(rootDir).toURL().getPath());
             var repository = createRepository(
-                    fhirContext, kotlinPathToJavaPath(rootPath), kotlinPathToJavaPath(rootPath));
+                    fhirContext, kotlinPathToJavaPath(terminologyPath), kotlinPathToJavaPath(modelPath));
+
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
@@ -274,16 +270,13 @@ public class CqlCommand implements Callable<Integer> {
         }
 
         if (modelPath != null) {
-            // data = new IgRepository(fhirContext, modelPath, IgConventionsHelper.autoDetect(modelPath), null);
-            data = new IgRepository(fhirContext, modelPath);
+            data = new IgStandardRepository(fhirContext, modelPath);
         } else {
             data = new NoOpRepository(fhirContext);
         }
 
         if (terminologyPath != null) {
-//            terminology = new IgRepository(
-//                    fhirContext, terminologyPath, IgConventionsHelper.autoDetect(terminologyPath), null);
-            terminology = new IgRepository(fhirContext, terminologyPath);
+            terminology = new IgStandardRepository(fhirContext, terminologyPath);
         } else {
             terminology = new NoOpRepository(fhirContext);
         }

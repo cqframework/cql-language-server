@@ -20,7 +20,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
-//import jakarta.annotation.Nullable;
+// import jakarta.annotation.Nullable;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -43,12 +43,12 @@ import org.opencds.cqf.fhir.utility.Ids;
 import org.opencds.cqf.fhir.utility.matcher.ResourceMatcher;
 import org.opencds.cqf.fhir.utility.repository.IRepositoryOperationProvider;
 import org.opencds.cqf.fhir.utility.repository.Repositories;
-//import org.opencds.cqf.fhir.utility.repository.ig.EncodingBehavior.PreserveEncoding;
-//import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.CategoryLayout;
-//import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.CompartmentLayout;
-//import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.FhirTypeLayout;
-//import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.FilenameMode;
-//import org.opencds.cqf.fhir.utility.repository.operations.IRepositoryOperationProvider;
+// import org.opencds.cqf.fhir.utility.repository.ig.EncodingBehavior.PreserveEncoding;
+// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.CategoryLayout;
+// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.CompartmentLayout;
+// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.FhirTypeLayout;
+// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.FilenameMode;
+// import org.opencds.cqf.fhir.utility.repository.operations.IRepositoryOperationProvider;
 
 /**
  * Provides access to FHIR resources stored in a directory structure following
@@ -113,7 +113,7 @@ public class IgStandardRepository implements IRepository {
     // Directory names
     static final String EXTERNAL_DIRECTORY = "external";
     static final Map<IgStandardResourceCategory, String> CATEGORY_DIRECTORIES = new ImmutableMap.Builder<
-            IgStandardResourceCategory, String>()
+                    IgStandardResourceCategory, String>()
             .put(IgStandardResourceCategory.CONTENT, "resources")
             .put(IgStandardResourceCategory.DATA, "tests")
             .put(IgStandardResourceCategory.TERMINOLOGY, "vocabulary")
@@ -244,7 +244,8 @@ public class IgStandardRepository implements IRepository {
         potentialDirectories.add(directory);
 
         // Currently, only terminology resources are allowed to be external
-        if (IgStandardResourceCategory.forType(resourceType.getSimpleName()) == IgStandardResourceCategory.TERMINOLOGY) {
+        if (IgStandardResourceCategory.forType(resourceType.getSimpleName())
+                == IgStandardResourceCategory.TERMINOLOGY) {
             var externalDirectory = directory.resolve(EXTERNAL_DIRECTORY);
             potentialDirectories.add(externalDirectory);
         }
@@ -302,7 +303,8 @@ public class IgStandardRepository implements IRepository {
         var directory = CATEGORY_DIRECTORIES.get(category);
         var path = root.resolve(directory);
         if (category == IgStandardResourceCategory.DATA
-                && this.conventions.compartmentLayout() == IgStandardConventions.CompartmentLayout.DIRECTORY_PER_COMPARTMENT) {
+                && this.conventions.compartmentLayout()
+                        == IgStandardConventions.CompartmentLayout.DIRECTORY_PER_COMPARTMENT) {
             path = path.resolve(pathForCompartment(igStandardRepositoryCompartment));
         }
 
@@ -349,7 +351,7 @@ public class IgStandardRepository implements IRepository {
      * @return An {@code Optional} containing the resource if found; otherwise,
      *         empty.
      */
-//    @Nullable
+    //    @Nullable
     protected IBaseResource readResource(Path path) {
         var file = path.toFile();
         if (!file.exists()) {
@@ -673,7 +675,8 @@ public class IgStandardRepository implements IRepository {
         // behavior is set to overwrite,
         // move the resource to the preferred path and delete the old one.
         if (!preferred.equals(actual)
-                && this.encodingBehavior.preserveEncoding() == IgStandardEncodingBehavior.PreserveEncoding.OVERWRITE_WITH_PREFERRED_ENCODING) {
+                && this.encodingBehavior.preserveEncoding()
+                        == IgStandardEncodingBehavior.PreserveEncoding.OVERWRITE_WITH_PREFERRED_ENCODING) {
             try {
                 Files.deleteIfExists(actual);
             } catch (IOException e) {
