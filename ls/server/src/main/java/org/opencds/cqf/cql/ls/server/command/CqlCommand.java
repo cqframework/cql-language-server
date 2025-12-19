@@ -1,13 +1,13 @@
 package org.opencds.cqf.cql.ls.server.command;
 
 import static kotlinx.io.files.PathsKt.Path;
-import static org.opencds.cqf.cql.ls.core.utility.Converters.kotlinPathToJavaPath;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.repository.IRepository;
 import java.net.URI;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -212,32 +212,34 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setNpmProcessor(new NpmProcessor(igContext));
 
         for (LibraryParameter library : libraries) {
-            var libraryPath = library.libraryUrl != null
+            // Paths are mixed types
+            // IgStandardRepository used java nio path objects
+            // DefaultLibraryServiceProvider used kotlin path objects
+            // Until the language server can be ported to kotlin, the differences will exist
+            var libraryKotlinPath = library.libraryUrl != null
                     ? Path(Uris.parseOrNull(library.libraryUrl).toURL().getPath())
                     : null;
 
-            // Path(Uris.parseOrNull(optionsPath).toURL().getPath())
             var modelPath = library.model != null
-                    ? Path(Uris.parseOrNull(library.model.modelUrl).toURL().getPath())
+                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl).toURL().getPath())
                     : null;
 
             var terminologyPath = library.terminologyUrl != null
-                    ? Path(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
+                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
                     : null;
 
-            var repository = createRepository(
-                    fhirContext, kotlinPathToJavaPath(terminologyPath), kotlinPathToJavaPath(modelPath));
+            var repository = createRepository(fhirContext, terminologyPath, modelPath);
 
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
-                var provider = new DefaultLibrarySourceProvider(libraryPath);
+                var provider = new DefaultLibrarySourceProvider(libraryKotlinPath);
                 engine.getEnvironment()
                         .getLibraryManager()
                         .getLibrarySourceLoader()
                         .registerProvider(provider);
 
-                var modelProvider = new DefaultModelInfoProvider(libraryPath);
+                var modelProvider = new DefaultModelInfoProvider(libraryKotlinPath);
                 engine.getEnvironment()
                         .getLibraryManager()
                         .getModelManager()

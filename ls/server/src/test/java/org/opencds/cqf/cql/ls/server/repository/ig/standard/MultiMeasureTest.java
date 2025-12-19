@@ -55,20 +55,20 @@ public class MultiMeasureTest {
                 new IgStandardRepository(FhirContext.forR4Cached(), pathModelPathMeasure200TestCase1111);
         terminologyRepo = new IgStandardRepository(FhirContext.forR4Cached(), pathTerminology);
 
-        log.debug("tempDir[{}] exists: {}", tempDir, tempDir.toFile().exists());
-        log.debug(
+        log.info("tempDir[{}] exists: {}", tempDir, tempDir.toFile().exists());
+        log.info(
                 "measure 100 patient 1111 dir[{}] exists: {}",
                 pathModelPathMeasure100TestCase1111,
                 pathModelPathMeasure100TestCase1111.toFile().exists());
-        log.debug(
+        log.info(
                 "measure 100 patient 2222 dir[{}] exists: {}",
                 pathModelPathMeasure100TestCase2222,
                 pathModelPathMeasure100TestCase2222.toFile().exists());
-        log.debug(
+        log.info(
                 "measure 200 patient 1111 dir[{}] exists: {}",
                 pathModelPathMeasure200TestCase1111,
                 pathModelPathMeasure200TestCase1111.toFile().exists());
-        log.debug(
+        log.info(
                 "terminology dir[{}] exists: {}",
                 pathTerminology,
                 pathTerminology.toFile().exists());
