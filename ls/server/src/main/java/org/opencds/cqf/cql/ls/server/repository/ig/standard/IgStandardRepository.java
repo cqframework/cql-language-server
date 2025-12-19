@@ -20,7 +20,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
-// import jakarta.annotation.Nullable;
+
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -43,12 +43,6 @@ import org.opencds.cqf.fhir.utility.Ids;
 import org.opencds.cqf.fhir.utility.matcher.ResourceMatcher;
 import org.opencds.cqf.fhir.utility.repository.IRepositoryOperationProvider;
 import org.opencds.cqf.fhir.utility.repository.Repositories;
-// import org.opencds.cqf.fhir.utility.repository.ig.EncodingBehavior.PreserveEncoding;
-// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.CategoryLayout;
-// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.CompartmentLayout;
-// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.FhirTypeLayout;
-// import org.opencds.cqf.fhir.utility.repository.ig.IgConventions.FilenameMode;
-// import org.opencds.cqf.fhir.utility.repository.operations.IRepositoryOperationProvider;
 
 /**
  * Provides access to FHIR resources stored in a directory structure following
