@@ -26,9 +26,7 @@ public class ConvertersTest {
 
     @Test
     void should_returnStringWithLineBreaks_when_inputStreamHasLineBreaksExists() {
-        var expected = "the first day in spring –\n" +
-                       "a wind from the ocean\n" +
-                       "but no ocean in sight";
+        var expected = "the first day in spring –\n" + "a wind from the ocean\n" + "but no ocean in sight";
         try {
             var actual =
                     Converters.inputStreamToString(new ByteArrayInputStream(expected.getBytes(StandardCharsets.UTF_8)));
