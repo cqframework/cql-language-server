@@ -25,6 +25,20 @@ public class ConvertersTest {
     }
 
     @Test
+    void should_returnStringWithLineBreaks_when_inputStreamHasLineBreaksExists() {
+        var expected = "the first day in spring –\n" +
+                       "a wind from the ocean\n" +
+                       "but no ocean in sight";
+        try {
+            var actual =
+                    Converters.inputStreamToString(new ByteArrayInputStream(expected.getBytes(StandardCharsets.UTF_8)));
+            assertEquals(actual, expected);
+        } catch (IOException e) {
+            fail("Unexpected exception thrown. {}", e);
+        }
+    }
+
+    @Test
     void should_throwIOException_when_inputStreamToStringHasAnIOError() throws IOException {
         InputStream inputStream = mock(InputStream.class);
         when(inputStream.read()).thenThrow(new IOException("Simulated failure"));
