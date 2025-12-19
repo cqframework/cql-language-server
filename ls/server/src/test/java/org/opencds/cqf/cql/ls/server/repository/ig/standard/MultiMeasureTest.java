@@ -15,8 +15,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.opencds.cqf.fhir.test.Resources;
 import org.opencds.cqf.fhir.utility.Ids;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class MultiMeasureTest {
+    private static final Logger log = LoggerFactory.getLogger(MultiMeasureTest.class);
 
     private static final String rootDir = "/sample-igs/ig/standard/cql-measures/multi-measure";
     private static final String modelPathMeasure100TestCase1111 = "input/tests/measure/measure100/1111";
@@ -37,13 +40,25 @@ public class MultiMeasureTest {
         // This copies the sample IG to a temporary directory so that
         // we can test against an actual filesystem
         Resources.copyFromJar(rootDir, tempDir);
+
+        var pathModelPathMeasure100TestCase1111 = tempDir.resolve(modelPathMeasure100TestCase1111);
+        var pathModelPathMeasure100TestCase2222 = tempDir.resolve(modelPathMeasure100TestCase2222);
+        var pathModelPathMeasure200TestCase1111 = tempDir.resolve(modelPathMeasure200TestCase1111);
+        var pathTerminology = tempDir.resolve(terminologyPath);
+
         model1111Measure100Repo =
-                new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(modelPathMeasure100TestCase1111));
+                new IgStandardRepository(FhirContext.forR4Cached(), pathModelPathMeasure100TestCase1111);
         model2222Measure100Repo =
-                new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(modelPathMeasure100TestCase2222));
+                new IgStandardRepository(FhirContext.forR4Cached(), pathModelPathMeasure100TestCase2222);
         model1111Measure200Repo =
-                new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(modelPathMeasure200TestCase1111));
-        terminologyRepo = new IgStandardRepository(FhirContext.forR4Cached(), tempDir.resolve(terminologyPath));
+                new IgStandardRepository(FhirContext.forR4Cached(), pathModelPathMeasure200TestCase1111);
+        terminologyRepo = new IgStandardRepository(FhirContext.forR4Cached(), pathTerminology);
+
+        log.debug("tempDir[{}] exists: {}", tempDir, tempDir.toFile().exists());
+        log.debug("measure 100 patient 1111 dir[{}] exists: {}", pathModelPathMeasure100TestCase1111, pathModelPathMeasure100TestCase1111.toFile().exists());
+        log.debug("measure 100 patient 2222 dir[{}] exists: {}", pathModelPathMeasure100TestCase2222, pathModelPathMeasure100TestCase2222.toFile().exists());
+        log.debug("measure 200 patient 1111 dir[{}] exists: {}", pathModelPathMeasure200TestCase1111, pathModelPathMeasure200TestCase1111.toFile().exists());
+        log.debug("terminology dir[{}] exists: {}", pathTerminology, pathTerminology.toFile().exists());
     }
 
     @Test
