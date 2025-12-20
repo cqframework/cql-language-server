@@ -14,7 +14,6 @@ import java.util.stream.Stream;
 import org.hl7.fhir.r4.model.Library;
 import org.hl7.fhir.r4.model.Patient;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.opencds.cqf.fhir.test.Resources;
@@ -100,7 +99,7 @@ public class MultiMeasureTest {
     }
 
     // Test works locally but doesn't work on GitHub
-    @Disabled("Disabled until issue with running test on github is resolved.")
+    // @Disabled("Disabled until issue with running test on github is resolved.")
     @Test
     void should_findResourceInCorrectRepo_when_resourcesIsolatedByRepo() {
         var id = Ids.newId(Patient.class, "1111");

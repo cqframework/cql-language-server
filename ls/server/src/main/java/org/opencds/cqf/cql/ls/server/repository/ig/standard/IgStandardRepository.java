@@ -395,12 +395,12 @@ public class IgStandardRepository implements IRepository {
     protected IBaseResource cachedReadResource(Path path) {
         var o = this.resourceCache.getIfPresent(path);
         if (o != null) {
-            log.info("IgStandardRepository.readResource - Returning cached resource: {}", o);
+            log.info("IgStandardRepository.cachedReadResource - Returning cached resource: {}", o);
             return o;
         } else {
             var resource = readResource(path);
             this.resourceCache.put(path, resource);
-            log.info("IgStandardRepository.readResource - Returning freshly loaded resource: {}", resource);
+            log.info("IgStandardRepository.cachedReadResource - Returning freshly loaded resource: {}", resource);
             return resource;
         }
     }
@@ -554,12 +554,12 @@ public class IgStandardRepository implements IRepository {
         requireNonNull(id, "id cannot be null");
         log.info("IgStandardRepository.read - Attempting to read resource [{}].", id);
 
-        log.info("headers: {}", headers);
+        log.info("IgStandardRepository.read - headers: {}", headers);
         var compartment = compartmentFrom(headers);
 
         var paths = this.potentialPathsForResource(resourceType, id, compartment);
         for (var path : paths) {
-            log.info("potentialPathsForResource path: {}", path);
+            log.info("IgStandardRepository.read - potentialPathsForResource path: {}", path);
             if (!path.toFile().exists()) {
                 continue;
             }
