@@ -99,7 +99,7 @@ public class MultiMeasureTest {
         assertThrows(ResourceNotFoundException.class, () -> terminologyRepo.read(Library.class, id));
     }
 
-    // Test works locally but doesn't work on github
+    // Test works locally but doesn't work on GitHub
     @Disabled("Disabled until issue with running test on github is resolved.")
     @Test
     void should_findResourceInCorrectRepo_when_resourcesIsolatedByRepo() {

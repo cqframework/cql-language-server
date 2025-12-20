@@ -42,6 +42,8 @@ import org.opencds.cqf.fhir.utility.Ids;
 import org.opencds.cqf.fhir.utility.matcher.ResourceMatcher;
 import org.opencds.cqf.fhir.utility.repository.IRepositoryOperationProvider;
 import org.opencds.cqf.fhir.utility.repository.Repositories;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Provides access to FHIR resources stored in a directory structure following
@@ -88,6 +90,8 @@ import org.opencds.cqf.fhir.utility.repository.Repositories;
  * </ul>
  */
 public class IgStandardRepository implements IRepository {
+    private static final Logger log = LoggerFactory.getLogger(IgStandardRepository.class);
+
     private final FhirContext fhirContext;
     private final Path root;
     private final IgStandardConventions conventions;
@@ -99,7 +103,7 @@ public class IgStandardRepository implements IRepository {
             CacheBuilder.newBuilder().concurrencyLevel(10).maximumSize(500).build();
 
     // Metadata fields attached to resources that are read from the repository
-    // This fields are used to determine if a resource is external, and to
+    // These fields are used to determine if a resource is external, and to
     // maintain the original encoding of the resource.
     static final String SOURCE_PATH_TAG = "sourcePath"; // Path
 
@@ -226,29 +230,35 @@ public class IgStandardRepository implements IRepository {
      * @param <I>          The type of the resource identifier.
      * @param resourceType The class representing the FHIR resource type.
      * @param id           The identifier of the resource.
-     * @param igRepositoryCompartment  The compartment context to use
+     * @param igRepositoryCompartment The compartment context to use
      * @return A list of potential paths for the resource.
      */
     protected <T extends IBaseResource, I extends IIdType> List<Path> potentialPathsForResource(
             Class<T> resourceType, I id, IgStandardRepositoryCompartment igRepositoryCompartment) {
 
-        var potentialDirectories = new ArrayList<Path>();
-        var directory = directoryForResource(resourceType, igRepositoryCompartment);
-        potentialDirectories.add(directory);
-
-        // Currently, only terminology resources are allowed to be external
-        if (IgStandardResourceCategory.forType(resourceType.getSimpleName())
-                == IgStandardResourceCategory.TERMINOLOGY) {
-            var externalDirectory = directory.resolve(EXTERNAL_DIRECTORY);
-            potentialDirectories.add(externalDirectory);
-        }
-
         var potentialPaths = new ArrayList<Path>();
 
-        for (var dir : potentialDirectories) {
+        // Check the preferred path first
+        potentialPaths.add(this.preferredPathForResource(resourceType, id, igRepositoryCompartment));
+
+        // Add paths for external resources if applicable
+        var category = IgStandardResourceCategory.forType(resourceType.getSimpleName());
+        if (category == IgStandardResourceCategory.TERMINOLOGY) {
+            var terminologyDirectory = this.root.resolve(CATEGORY_DIRECTORIES.get(category));
+            var externalDirectory = terminologyDirectory.resolve(EXTERNAL_DIRECTORY);
             for (var encoding : FILE_EXTENSIONS.keySet()) {
-                potentialPaths.add(
-                        dir.resolve(fileNameForResource(resourceType.getSimpleName(), id.getIdPart(), encoding)));
+                potentialPaths.add(externalDirectory.resolve(
+                        fileNameForResource(resourceType.getSimpleName(), id.getIdPart(), encoding)));
+            }
+        }
+
+        // Also check paths without compartment if a compartment was specified,
+        // as resources might exist outside the compartment directory.
+        if (!igRepositoryCompartment.isEmpty()) {
+            var directoryWithoutCompartment = directoryForResource(resourceType, new IgStandardRepositoryCompartment());
+            for (var encoding : FILE_EXTENSIONS.keySet()) {
+                potentialPaths.add(directoryWithoutCompartment.resolve(
+                        fileNameForResource(resourceType.getSimpleName(), id.getIdPart(), encoding)));
             }
         }
 
@@ -294,14 +304,18 @@ public class IgStandardRepository implements IRepository {
 
         var category = IgStandardResourceCategory.forType(resourceType.getSimpleName());
         var directory = CATEGORY_DIRECTORIES.get(category);
-        var path = root.resolve(directory);
-        if (category == IgStandardResourceCategory.DATA
-                && this.conventions.compartmentLayout()
-                        == IgStandardConventions.CompartmentLayout.DIRECTORY_PER_COMPARTMENT) {
-            path = path.resolve(pathForCompartment(igStandardRepositoryCompartment));
+        var categoryPath = root.resolve(directory);
+
+        if (this.conventions.compartmentLayout() == IgStandardConventions.CompartmentLayout.DIRECTORY_PER_COMPARTMENT
+                && !igStandardRepositoryCompartment.isEmpty()) {
+            // Compartment directories are only for DATA resources (e.g., Patient, Encounter)
+            // and are placed directly under the category directory.
+            if (category == IgStandardResourceCategory.DATA) {
+                return categoryPath.resolve(pathForCompartment(igStandardRepositoryCompartment));
+            }
         }
 
-        return path;
+        return categoryPath;
     }
 
     /**
@@ -346,13 +360,16 @@ public class IgStandardRepository implements IRepository {
      */
     //    @Nullable
     protected IBaseResource readResource(Path path) {
+        log.info("IgStandardRepository.readResource - Attempting to read resource from path: {}", path);
         var file = path.toFile();
         if (!file.exists()) {
+            log.info("IgStandardRepository.readResource - Didn't find file");
             return null;
         }
 
         var extension = fileExtension(path);
         if (extension == null) {
+            log.info("IgStandardRepository.readResource - Extension check failed");
             return null;
         }
 
@@ -361,10 +378,10 @@ public class IgStandardRepository implements IRepository {
         try {
             String s = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
             var resource = parserForEncoding(fhirContext, encoding).parseResource(s);
-
             resource.setUserData(SOURCE_PATH_TAG, path);
             IgStandardCqlContent.loadCqlContent(resource, path.getParent());
 
+            log.info("IgStandardRepository.readResource - Returning resource: {}", resource);
             return resource;
         } catch (FileNotFoundException e) {
             return null;
@@ -378,10 +395,12 @@ public class IgStandardRepository implements IRepository {
     protected IBaseResource cachedReadResource(Path path) {
         var o = this.resourceCache.getIfPresent(path);
         if (o != null) {
+            log.info("IgStandardRepository.readResource - Returning cached resource: {}", o);
             return o;
         } else {
             var resource = readResource(path);
             this.resourceCache.put(path, resource);
+            log.info("IgStandardRepository.readResource - Returning freshly loaded resource: {}", resource);
             return resource;
         }
     }
@@ -505,11 +524,9 @@ public class IgStandardRepository implements IRepository {
 
     /**
      * Reads a resource from the repository.
-     *
      * Locates files like:
      * - ID_ONLY: "123.json" (in the appropriate directory based on layout)
      * - TYPE_AND_ID: "Patient-123.json"
-     *
      * Utilizes cache to improve performance.
      *
      * <p>
@@ -535,21 +552,26 @@ public class IgStandardRepository implements IRepository {
             Class<T> resourceType, I id, Map<String, String> headers) {
         requireNonNull(resourceType, "resourceType cannot be null");
         requireNonNull(id, "id cannot be null");
+        log.info("IgStandardRepository.read - Attempting to read resource [{}].", id);
 
+        log.info("headers: {}", headers);
         var compartment = compartmentFrom(headers);
 
         var paths = this.potentialPathsForResource(resourceType, id, compartment);
         for (var path : paths) {
+            log.info("potentialPathsForResource path: {}", path);
             if (!path.toFile().exists()) {
                 continue;
             }
 
             var resource = cachedReadResource(path);
             if (resource != null) {
+                log.info("IgStandardRepository.read - Found resource [{}].", id);
                 return validateResource(resourceType, resource, id);
             }
         }
 
+        log.info("IgStandardRepository.read - Unable to find resource [{}]. Throwing Exception", id);
         throw new ResourceNotFoundException(id);
     }
 
@@ -880,13 +902,12 @@ public class IgStandardRepository implements IRepository {
                 : new IgStandardRepositoryCompartment(compartmentHeader);
     }
 
-    // Patient context is a special-case. We don't tack the compartment context on
-    // the end of the path. We just use the id as the directory.
     protected String pathForCompartment(IgStandardRepositoryCompartment igStandardRepositoryCompartment) {
         if (igStandardRepositoryCompartment.isEmpty()) {
             return "";
         }
-
-        return igStandardRepositoryCompartment.getType() + "/" + igStandardRepositoryCompartment.getId();
+        // The compartment path is typically ResourceType/Id (e.g., Patient/123)
+        // This is used as a directory name.
+        return igStandardRepositoryCompartment.getType() + "-" + igStandardRepositoryCompartment.getId();
     }
 }
