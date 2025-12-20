@@ -1,6 +1,11 @@
 package org.opencds.cqf.cql.ls.server.repository.ig.standard;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
 import org.hl7.fhir.dstu2.model.ValueSet;
 import org.hl7.fhir.dstu3.model.Library;
 import org.junit.jupiter.api.BeforeAll;
@@ -8,13 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.opencds.cqf.fhir.test.Resources;
 
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.nio.file.Path;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class CqlIgStandardContentTest {
+class CqlContentTest {
 
     @TempDir
     static Path tempDir;
@@ -23,7 +22,7 @@ class CqlIgStandardContentTest {
     static void setup() throws ClassNotFoundException, URISyntaxException, IOException {
         // This copies the sample IG to a temporary directory so that
         // we can test against an actual filesystem
-        Resources.copyFromJar("/cqlContentTest", tempDir);
+        Resources.copyFromJar("/sampleIgs/ig/standard/cqlContent", tempDir);
     }
 
     @Test
@@ -59,37 +58,27 @@ class CqlIgStandardContentTest {
 
     @Test
     void nonLibraryResourceDoesNotThrow() {
-        assertDoesNotThrow(() -> {
-            IgStandardCqlContent.loadCqlContent(new ValueSet(), tempDir);
-        });
+        assertDoesNotThrow(() -> IgStandardCqlContent.loadCqlContent(new ValueSet(), tempDir));
     }
 
     @Test
     void invalidFhirVersionThrows() {
         var lib = new org.hl7.fhir.r4b.model.Library();
-        assertThrows(IllegalArgumentException.class, () -> {
-            IgStandardCqlContent.loadCqlContent(lib, tempDir);
-        });
+        assertThrows(IllegalArgumentException.class, () -> IgStandardCqlContent.loadCqlContent(lib, tempDir));
     }
 
     @Test
     void invalidPathThrows() {
         var lib = new org.hl7.fhir.r4.model.Library();
         lib.addContent().setContentType("text/cql").setUrl("not-a-real-path/Test.cql");
-        assertThrows(ResourceNotFoundException.class, () -> {
-            IgStandardCqlContent.loadCqlContent(lib, tempDir);
-        });
+        assertThrows(ResourceNotFoundException.class, () -> IgStandardCqlContent.loadCqlContent(lib, tempDir));
     }
 
     @Test
     void nullThrows() {
-        assertThrows(NullPointerException.class, () -> {
-            IgStandardCqlContent.loadCqlContent(null, tempDir);
-        });
+        assertThrows(NullPointerException.class, () -> IgStandardCqlContent.loadCqlContent(null, tempDir));
 
         var lib = new Library();
-        assertThrows(NullPointerException.class, () -> {
-            IgStandardCqlContent.loadCqlContent(lib, null);
-        });
+        assertThrows(NullPointerException.class, () -> IgStandardCqlContent.loadCqlContent(lib, null));
     }
 }

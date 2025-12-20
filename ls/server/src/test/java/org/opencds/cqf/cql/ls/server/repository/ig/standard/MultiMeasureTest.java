@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 public class MultiMeasureTest {
     private static final Logger log = LoggerFactory.getLogger(MultiMeasureTest.class);
 
-    private static final String rootDir = "/sample-igs/ig/standard/cql-measures/multi-measure";
+    private static final String rootDir = "/sampleIgs/ig/standard/cqlMeasures/multiMeasure";
     private static final String modelPathMeasure100TestCase1111 = "input/tests/measure/measure100/1111";
     private static final String modelPathMeasure100TestCase2222 = "input/tests/measure/measure100/2222";
     private static final String modelPathMeasure200TestCase1111 = "input/tests/measure/measure200/1111";
