@@ -7,7 +7,10 @@ import ca.uhn.fhir.repository.IRepository;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.hl7.fhir.r4.model.Library;
 import org.hl7.fhir.r4.model.Patient;
 import org.junit.jupiter.api.BeforeAll;
@@ -35,6 +38,19 @@ public class MultiMeasureTest {
     static IRepository model1111Measure200Repo;
     static IRepository terminologyRepo;
 
+    static void listFiles(Path path) {
+        var pathExists = path.toFile().exists();
+        log.info("path[{}] exists: {}", path, pathExists);
+        if (pathExists)
+            try (Stream<Path> stream = Files.walk(path)) {
+                String fileNames = stream.map(Path::toString).collect(Collectors.joining("\n  "));
+
+                log.info("resources: \n  {}", fileNames);
+            } catch (IOException e) {
+                log.error("Exception while capturing filenames. {}", e.getMessage());
+            }
+    }
+
     @BeforeAll
     static void setup() throws URISyntaxException, IOException, ClassNotFoundException {
         // This copies the sample IG to a temporary directory so that
@@ -54,23 +70,11 @@ public class MultiMeasureTest {
                 new IgStandardRepository(FhirContext.forR4Cached(), pathModelPathMeasure200TestCase1111);
         terminologyRepo = new IgStandardRepository(FhirContext.forR4Cached(), pathTerminology);
 
-        log.info("tempDir[{}] exists: {}", tempDir, tempDir.toFile().exists());
-        log.info(
-                "measure 100 patient 1111 dir[{}] exists: {}",
-                pathModelPathMeasure100TestCase1111,
-                pathModelPathMeasure100TestCase1111.toFile().exists());
-        log.info(
-                "measure 100 patient 2222 dir[{}] exists: {}",
-                pathModelPathMeasure100TestCase2222,
-                pathModelPathMeasure100TestCase2222.toFile().exists());
-        log.info(
-                "measure 200 patient 1111 dir[{}] exists: {}",
-                pathModelPathMeasure200TestCase1111,
-                pathModelPathMeasure200TestCase1111.toFile().exists());
-        log.info(
-                "terminology dir[{}] exists: {}",
-                pathTerminology,
-                pathTerminology.toFile().exists());
+        listFiles(tempDir);
+        listFiles(pathModelPathMeasure100TestCase1111);
+        listFiles(pathModelPathMeasure100TestCase2222);
+        listFiles(pathModelPathMeasure200TestCase1111);
+        listFiles(pathTerminology);
     }
 
     @Test
