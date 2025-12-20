@@ -15,8 +15,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This class represents the different file structures for an IG repository. The main differences
- * between the various configurations are whether or not the files are organized by resource type
- * and/or category, and whether or not the files are prefixed with the resource type.
+ * between the various configurations are whether the files are organized by resource type
+ * and/or category, and whether the files are prefixed with the resource type.
  */
 public record IgStandardConventions(
         FhirTypeLayout typeLayout,
@@ -26,34 +26,21 @@ public record IgStandardConventions(
 
     private static final Logger logger = LoggerFactory.getLogger(IgStandardConventions.class);
 
-    /**
-     * Whether or not the files are organized by resource type.
-     */
     public enum FhirTypeLayout {
         DIRECTORY_PER_TYPE,
         FLAT
     }
 
-    /**
-     * Whether or not the resources are organized by category (tests, resources, vocabulary)
-     */
     public enum CategoryLayout {
         DIRECTORY_PER_CATEGORY,
         FLAT
     }
 
-    /**
-     * Whether or not the files are organized by compartment. This is primarily used for tests to
-     * provide isolation between test cases.
-     */
     public enum CompartmentLayout {
         DIRECTORY_PER_COMPARTMENT,
         FLAT
     }
 
-    /**
-     * Whether or not the files are prefixed with the resource type.
-     */
     public enum FilenameMode {
         TYPE_AND_ID,
         ID_ONLY

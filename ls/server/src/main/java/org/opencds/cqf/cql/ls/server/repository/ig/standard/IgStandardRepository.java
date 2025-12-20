@@ -110,7 +110,7 @@ public class IgStandardRepository implements IRepository {
     // Directory names
     static final String EXTERNAL_DIRECTORY = "external";
     static final Map<IgStandardResourceCategory, String> CATEGORY_DIRECTORIES = new ImmutableMap.Builder<
-                    IgStandardResourceCategory, String>()
+            IgStandardResourceCategory, String>()
             .put(IgStandardResourceCategory.CONTENT, "resources")
             .put(IgStandardResourceCategory.DATA, "tests")
             .put(IgStandardResourceCategory.TERMINOLOGY, "vocabulary")
@@ -236,29 +236,22 @@ public class IgStandardRepository implements IRepository {
     protected <T extends IBaseResource, I extends IIdType> List<Path> potentialPathsForResource(
             Class<T> resourceType, I id, IgStandardRepositoryCompartment igRepositoryCompartment) {
 
-        var potentialPaths = new ArrayList<Path>();
+        var potentialDirectories = new ArrayList<Path>();
+        var directory = directoryForResource(resourceType, igRepositoryCompartment);
+        potentialDirectories.add(directory);
 
-        // Check the preferred path first
-        potentialPaths.add(this.preferredPathForResource(resourceType, id, igRepositoryCompartment));
-
-        // Add paths for external resources if applicable
-        var category = IgStandardResourceCategory.forType(resourceType.getSimpleName());
-        if (category == IgStandardResourceCategory.TERMINOLOGY) {
-            var terminologyDirectory = this.root.resolve(CATEGORY_DIRECTORIES.get(category));
-            var externalDirectory = terminologyDirectory.resolve(EXTERNAL_DIRECTORY);
-            for (var encoding : FILE_EXTENSIONS.keySet()) {
-                potentialPaths.add(externalDirectory.resolve(
-                        fileNameForResource(resourceType.getSimpleName(), id.getIdPart(), encoding)));
-            }
+        // Currently, only terminology resources are allowed to be external
+        if (IgStandardResourceCategory.forType(resourceType.getSimpleName()) == IgStandardResourceCategory.TERMINOLOGY) {
+            var externalDirectory = directory.resolve(EXTERNAL_DIRECTORY);
+            potentialDirectories.add(externalDirectory);
         }
 
-        // Also check paths without compartment if a compartment was specified,
-        // as resources might exist outside the compartment directory.
-        if (!igRepositoryCompartment.isEmpty()) {
-            var directoryWithoutCompartment = directoryForResource(resourceType, new IgStandardRepositoryCompartment());
+        var potentialPaths = new ArrayList<Path>();
+
+        for (var dir : potentialDirectories) {
             for (var encoding : FILE_EXTENSIONS.keySet()) {
-                potentialPaths.add(directoryWithoutCompartment.resolve(
-                        fileNameForResource(resourceType.getSimpleName(), id.getIdPart(), encoding)));
+                potentialPaths.add(
+                        dir.resolve(fileNameForResource(resourceType.getSimpleName(), id.getIdPart(), encoding)));
             }
         }
 
@@ -320,7 +313,6 @@ public class IgStandardRepository implements IRepository {
 
     /**
      * Determines the directory path for a resource type.
-     *
      * - If `FhirTypeLayout.FLAT`, returns the base directory (could be root or
      * category directory).
      * - If `FhirTypeLayout.DIRECTORY_PER_TYPE`, returns the type-specific
@@ -469,7 +461,6 @@ public class IgStandardRepository implements IRepository {
 
     /**
      * Reads all resources of a given type from the directory.
-     *
      * Directory structure depends on conventions:
      * - Flat layout: resources are located in the root directory (e.g.,
      * "/path/to/ig/root/")
@@ -691,7 +682,7 @@ public class IgStandardRepository implements IRepository {
         // move the resource to the preferred path and delete the old one.
         if (!preferred.equals(actual)
                 && this.encodingBehavior.preserveEncoding()
-                        == IgStandardEncodingBehavior.PreserveEncoding.OVERWRITE_WITH_PREFERRED_ENCODING) {
+                == IgStandardEncodingBehavior.PreserveEncoding.OVERWRITE_WITH_PREFERRED_ENCODING) {
             try {
                 Files.deleteIfExists(actual);
             } catch (IOException e) {
@@ -908,6 +899,6 @@ public class IgStandardRepository implements IRepository {
         }
         // The compartment path is typically ResourceType/Id (e.g., Patient/123)
         // This is used as a directory name.
-        return igStandardRepositoryCompartment.getType() + "-" + igStandardRepositoryCompartment.getId();
+        return igStandardRepositoryCompartment.getType() + "/" + igStandardRepositoryCompartment.getId();
     }
 }
