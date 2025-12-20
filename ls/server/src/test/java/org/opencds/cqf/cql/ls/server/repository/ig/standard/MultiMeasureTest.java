@@ -33,6 +33,18 @@ public class MultiMeasureTest {
     @TempDir
     static Path tempDir;
 
+    @TempDir
+    static Path pathModelPathMeasure100TestCase1111;
+
+    @TempDir
+    static Path pathModelPathMeasure100TestCase2222;
+
+    @TempDir
+    static Path pathModelPathMeasure200TestCase1111;
+
+    @TempDir
+    static Path pathTerminology;
+
     static IRepository model1111Measure100Repo;
     static IRepository model2222Measure100Repo;
     static IRepository model1111Measure200Repo;
@@ -57,10 +69,10 @@ public class MultiMeasureTest {
         // we can test against an actual filesystem
         Resources.copyFromJar(rootDir, tempDir);
 
-        var pathModelPathMeasure100TestCase1111 = tempDir.resolve(modelPathMeasure100TestCase1111);
-        var pathModelPathMeasure100TestCase2222 = tempDir.resolve(modelPathMeasure100TestCase2222);
-        var pathModelPathMeasure200TestCase1111 = tempDir.resolve(modelPathMeasure200TestCase1111);
-        var pathTerminology = tempDir.resolve(terminologyPath);
+        pathModelPathMeasure100TestCase1111 = tempDir.resolve(modelPathMeasure100TestCase1111);
+        pathModelPathMeasure100TestCase2222 = tempDir.resolve(modelPathMeasure100TestCase2222);
+        pathModelPathMeasure200TestCase1111 = tempDir.resolve(modelPathMeasure200TestCase1111);
+        pathTerminology = tempDir.resolve(terminologyPath);
 
         model1111Measure100Repo =
                 new IgStandardRepository(FhirContext.forR4Cached(), pathModelPathMeasure100TestCase1111);
