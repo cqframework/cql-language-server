@@ -110,7 +110,7 @@ public class IgStandardRepository implements IRepository {
     // Directory names
     static final String EXTERNAL_DIRECTORY = "external";
     static final Map<IgStandardResourceCategory, String> CATEGORY_DIRECTORIES = new ImmutableMap.Builder<
-            IgStandardResourceCategory, String>()
+                    IgStandardResourceCategory, String>()
             .put(IgStandardResourceCategory.CONTENT, "resources")
             .put(IgStandardResourceCategory.DATA, "tests")
             .put(IgStandardResourceCategory.TERMINOLOGY, "vocabulary")
@@ -241,7 +241,8 @@ public class IgStandardRepository implements IRepository {
         potentialDirectories.add(directory);
 
         // Currently, only terminology resources are allowed to be external
-        if (IgStandardResourceCategory.forType(resourceType.getSimpleName()) == IgStandardResourceCategory.TERMINOLOGY) {
+        if (IgStandardResourceCategory.forType(resourceType.getSimpleName())
+                == IgStandardResourceCategory.TERMINOLOGY) {
             var externalDirectory = directory.resolve(EXTERNAL_DIRECTORY);
             potentialDirectories.add(externalDirectory);
         }
@@ -551,7 +552,8 @@ public class IgStandardRepository implements IRepository {
         var paths = this.potentialPathsForResource(resourceType, id, compartment);
         for (var path : paths) {
             log.info("IgStandardRepository.read - potentialPathsForResource path: {}", path);
-            if (!path.toFile().exists()) {
+            if (!Files.exists(path)) { // if (!path.toFile().exists()) {
+                log.info("IgStandardRepository.read - File doesn't exist at [{}]. Continuing loop.", path);
                 continue;
             }
 
@@ -682,7 +684,7 @@ public class IgStandardRepository implements IRepository {
         // move the resource to the preferred path and delete the old one.
         if (!preferred.equals(actual)
                 && this.encodingBehavior.preserveEncoding()
-                == IgStandardEncodingBehavior.PreserveEncoding.OVERWRITE_WITH_PREFERRED_ENCODING) {
+                        == IgStandardEncodingBehavior.PreserveEncoding.OVERWRITE_WITH_PREFERRED_ENCODING) {
             try {
                 Files.deleteIfExists(actual);
             } catch (IOException e) {
