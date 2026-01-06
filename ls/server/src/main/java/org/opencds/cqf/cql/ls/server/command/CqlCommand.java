@@ -151,16 +151,12 @@ public class CqlCommand implements Callable<Integer> {
     }
 
     private String toVersionNumber(FhirVersionEnum fhirVersion) {
-        switch (fhirVersion) {
-            case R4:
-                return "4.0.1";
-            case R5:
-                return "5.0.0-ballot";
-            case DSTU3:
-                return "3.0.2";
-            default:
-                throw new IllegalArgumentException(String.format("Unsupported FHIR version %s", fhirVersion));
-        }
+        return switch (fhirVersion) {
+            case R4 -> "4.0.1";
+            case R5 -> "5.0.0-ballot";
+            case DSTU3 -> "3.0.2";
+            default -> throw new IllegalArgumentException(String.format("Unsupported FHIR version %s", fhirVersion));
+        };
     }
 
     @CommandLine.ParentCommand

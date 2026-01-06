@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
 // And further that <version> will always be of the form <major>[.<minor>[.<patch>]]
 // Usage outside these boundaries will result in errors or incorrect behavior.
 public class FileContentService implements ContentService {
-    private static final Logger log = LoggerFactory.getLogger(FileContentService.class);
+    private static final Logger log = LoggerFactory.getLogger( FileContentService.class);
 
     protected final List<WorkspaceFolder> workspaceFolders;
 
