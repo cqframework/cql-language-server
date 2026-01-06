@@ -1,16 +1,15 @@
 package org.opencds.cqf.cql.ls.server.provider;
 
-import org.hl7.elm.r1.VersionedIdentifier;
-import org.junit.jupiter.api.Test;
-import org.opencds.cqf.cql.ls.core.ContentService;
-import org.opencds.cqf.cql.ls.core.utility.Uris;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.hl7.elm.r1.VersionedIdentifier;
+import org.junit.jupiter.api.Test;
+import org.opencds.cqf.cql.ls.core.ContentService;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 
 public class ContentServiceProviderTest {
 
@@ -20,17 +19,13 @@ public class ContentServiceProviderTest {
         versionedIdentifier.withVersion("1.0.0");
 
         ContentServiceSourceProvider contentServiceSourceProvider = new ContentServiceSourceProvider(
-                Uris.parseOrNull("/provider/content/sample-library-1.0.0.json"),
-                new ContentService() {
+                Uris.parseOrNull("/provider/content/sample-library-1.0.0.json"), new ContentService() {
                     @Override
                     public Set<URI> locate(URI root, VersionedIdentifier identifier) {
                         throw new UncheckedIOException(new IOException());
                     }
                 });
 
-        assertThrows(
-                RuntimeException.class,
-                () -> contentServiceSourceProvider.getLibrarySource(versionedIdentifier));
+        assertThrows(RuntimeException.class, () -> contentServiceSourceProvider.getLibrarySource(versionedIdentifier));
     }
 }
-

@@ -1,4 +1,5 @@
 package org.opencds.cqf.cql.ls.server.repository.ig.standard;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
@@ -24,12 +25,15 @@ class ConventionsTest {
     @Test
     void autoDetectDefault() {
         assertEquals(IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(null));
-        assertEquals(IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(tempDir.resolve("does_not_exist")));
+        assertEquals(
+                IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(tempDir.resolve("does_not_exist")));
     }
 
     @Test
     void autoDetectStandard() {
-        assertEquals(IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(tempDir.resolve("directoryPerType/standard")));
+        assertEquals(
+                IgStandardConventions.STANDARD,
+                IgStandardConventions.autoDetect(tempDir.resolve("directoryPerType/standard")));
     }
 
     @Test
@@ -57,7 +61,9 @@ class ConventionsTest {
 
     @Test
     void autoDetectWithMisleadingFileName() {
-        assertEquals(IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(tempDir.resolve("misleadingFileName")));
+        assertEquals(
+                IgStandardConventions.STANDARD,
+                IgStandardConventions.autoDetect(tempDir.resolve("misleadingFileName")));
     }
 
     @Test
@@ -67,7 +73,8 @@ class ConventionsTest {
 
     @Test
     void autoDetectWithNonFhirFilename() {
-        assertEquals(IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(tempDir.resolve("nonFhirFilename")));
+        assertEquals(
+                IgStandardConventions.STANDARD, IgStandardConventions.autoDetect(tempDir.resolve("nonFhirFilename")));
     }
 
     @Test
