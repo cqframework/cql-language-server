@@ -13,12 +13,18 @@ import org.junit.jupiter.api.Test;
 public class ConvertersTest {
 
     @Test
+    void should_returnInstance_when_creatingConverter() {
+        var converter = new Converters();
+        assertNotNull(converter);
+    }
+
+    @Test
     void should_returnString_when_inputStreamExists() {
         var expected = "The quick brown fox jumps over the lazy dog";
         try {
             var actual =
                     Converters.inputStreamToString(new ByteArrayInputStream(expected.getBytes(StandardCharsets.UTF_8)));
-            assertEquals(actual, expected);
+            assertEquals(expected, actual);
         } catch (IOException e) {
             fail("Unexpected exception thrown. {}", e);
         }
@@ -26,11 +32,15 @@ public class ConvertersTest {
 
     @Test
     void should_returnStringWithLineBreaks_when_inputStreamHasLineBreaksExists() {
-        var expected = "the first day in spring –\n" + "a wind from the ocean\n" + "but no ocean in sight";
+        var expected =
+                """
+                the first day in spring –
+                a wind from the ocean
+                but no ocean in sight""";
         try {
             var actual =
                     Converters.inputStreamToString(new ByteArrayInputStream(expected.getBytes(StandardCharsets.UTF_8)));
-            assertEquals(actual, expected);
+            assertEquals(expected, actual);
         } catch (IOException e) {
             fail("Unexpected exception thrown. {}", e);
         }
