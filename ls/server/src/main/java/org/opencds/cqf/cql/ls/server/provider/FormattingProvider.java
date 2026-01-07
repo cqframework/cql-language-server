@@ -14,7 +14,7 @@ import org.opencds.cqf.cql.ls.core.ContentService;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
 
 public class FormattingProvider {
-    private ContentService contentService;
+    private final ContentService contentService;
 
     public FormattingProvider(ContentService contentService) {
         this.contentService = contentService;
@@ -23,9 +23,9 @@ public class FormattingProvider {
     public List<TextEdit> format(String uri) {
         URI u = Objects.requireNonNull(Uris.parseOrNull(uri));
 
-        FormatResult fr = null;
+        FormatResult fr;
         try {
-            fr = CqlFormatterVisitor.getFormattedOutput(this.contentService.read(u));
+            fr = CqlFormatterVisitor.Companion.getFormattedOutput(this.contentService.read(u));
         } catch (IOException e) {
             throw new IllegalArgumentException("Unable to format CQL due to an error.", e);
         }

@@ -1,13 +1,13 @@
 package org.opencds.cqf.cql.ls.server.manager;
 
+import static kotlinx.io.files.PathsKt.Path;
+
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import org.cqframework.cql.cql2elm.CqlCompilerOptions;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
-import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel;
 import org.eclipse.lsp4j.FileEvent;
 import org.greenrobot.eventbus.Subscribe;
@@ -47,8 +47,7 @@ public class CompilerOptionsManager {
         InputStream input = contentService.read(Uris.addPath(rootUri, "/cql-options.json"));
 
         if (input != null) {
-            options = CqlTranslatorOptionsMapper.fromReader(new InputStreamReader(input))
-                    .getCqlCompilerOptions();
+            options = CqlTranslatorOptions.fromFile(Path("/cql-options.json")).getCqlCompilerOptions();
         } else {
             log.info("cql-options.json not found, using default options");
             options = CqlTranslatorOptions.defaultOptions().getCqlCompilerOptions();

@@ -1,10 +1,12 @@
 package org.opencds.cqf.cql.ls.server.visitor;
 
-import org.cqframework.cql.elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.Trackable;
 import org.cqframework.cql.elm.visiting.BaseElmLibraryVisitor;
 import org.hl7.elm.r1.Element;
 import org.hl7.elm.r1.ExpressionDef;
 import org.hl7.elm.r1.Retrieve;
+import org.jetbrains.annotations.NotNull;
 
 public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, TrackBack> {
 
@@ -35,7 +37,7 @@ public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, T
     }
 
     protected boolean elementCoversTrackBack(Element elm, TrackBack context) {
-        for (TrackBack tb : elm.getTrackbacks()) {
+        for (TrackBack tb : Trackable.INSTANCE.getTrackbacks(elm)) {
             if (startsOnOrBefore(tb, context) && endsOnOrAfter(tb, context)) {
                 return true;
             }
@@ -68,5 +70,10 @@ public class ExpressionTrackBackVisitor extends BaseElmLibraryVisitor<Element, T
 
         // Same line
         return left.getEndChar() >= right.getEndChar();
+    }
+
+    @Override
+    protected Element defaultResult(@NotNull Element element, TrackBack trackBack) {
+        return null;
     }
 }

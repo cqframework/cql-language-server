@@ -3,7 +3,8 @@ package org.opencds.cqf.cql.ls.server.provider;
 import java.net.URI;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlCompiler;
-import org.cqframework.cql.elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.TrackBack;
+import org.cqframework.cql.cql2elm.tracking.Trackable;
 import org.eclipse.lsp4j.*;
 import org.hl7.cql.model.DataType;
 import org.hl7.elm.r1.ExpressionDef;
@@ -12,7 +13,7 @@ import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager;
 
 public class HoverProvider {
-    private CqlCompilationManager cqlCompilationManager;
+    private final CqlCompilationManager cqlCompilationManager;
 
     public HoverProvider(CqlCompilationManager cqlCompilationManager) {
         this.cqlCompilationManager = cqlCompilationManager;
@@ -43,8 +44,7 @@ public class HoverProvider {
         // For that given position, we want to select the most specific node we support generating
         // hover information for and return that.
         //
-        // (maybe.. the alternative is to select the specific node under the cursor, but that may be
-        // less user friendly)
+        // (maybe the alternative is to select the specific node under the cursor, but that may be less user-friendly)
         //
         // The current code always picks the first ExpressionDef in the graph.
         Pair<Range, ExpressionDef> exp = getExpressionDefForPosition(
@@ -64,18 +64,15 @@ public class HoverProvider {
     }
 
     private Pair<Range, ExpressionDef> getExpressionDefForPosition(Position position, Statements statements) {
-        if (statements == null
-                || statements.getDef() == null
-                || statements.getDef().isEmpty()) {
+        if (statements == null || statements.getDef().isEmpty()) {
             return null;
         }
-
         for (ExpressionDef def : statements.getDef()) {
-            if (def.getTrackbacks() == null || def.getTrackbacks().isEmpty()) {
+            if (Trackable.INSTANCE.getTrackbacks(def).isEmpty()) {
                 continue;
             }
 
-            for (TrackBack tb : def.getTrackbacks()) {
+            for (TrackBack tb : Trackable.INSTANCE.getTrackbacks(def)) {
                 if (positionInTrackBack(position, tb)) {
                     Range range = new Range(
                             new Position(tb.getStartLine() - 1, tb.getStartChar() - 1),
@@ -105,7 +102,7 @@ public class HoverProvider {
             return null;
         }
 
-        DataType resultType = def.getExpression().getResultType();
+        DataType resultType = Trackable.INSTANCE.getResultType(def);
         if (resultType == null) {
             return null;
         }

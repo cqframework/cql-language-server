@@ -1,5 +1,7 @@
 package org.opencds.cqf.cql.ls.server.command;
 
+import static kotlinx.io.files.PathsKt.Path;
+
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.repository.IRepository;
@@ -11,7 +13,6 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import org.apache.commons.lang3.tuple.Pair;
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions;
-import org.cqframework.cql.cql2elm.CqlTranslatorOptionsMapper;
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider;
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider;
 import org.cqframework.fhir.npm.NpmProcessor;
@@ -20,10 +21,11 @@ import org.hl7.elm.r1.VersionedIdentifier;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseDatatype;
 import org.hl7.fhir.instance.model.api.IBaseResource;
-import org.hl7.fhir.r5.context.IWorkerContext.ILoggingService;
+import org.hl7.fhir.r5.context.ILoggingService;
 import org.opencds.cqf.cql.engine.execution.EvaluationResult;
 import org.opencds.cqf.cql.engine.execution.ExpressionResult;
 import org.opencds.cqf.cql.ls.core.utility.Uris;
+import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository;
 import org.opencds.cqf.fhir.cql.CqlOptions;
 import org.opencds.cqf.fhir.cql.Engines;
 import org.opencds.cqf.fhir.cql.EvaluationSettings;
@@ -37,7 +39,6 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_MEMBERSHIP_MODE;
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE;
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository;
-import org.opencds.cqf.fhir.utility.repository.ig.IgRepository;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
@@ -150,16 +151,12 @@ public class CqlCommand implements Callable<Integer> {
     }
 
     private String toVersionNumber(FhirVersionEnum fhirVersion) {
-        switch (fhirVersion) {
-            case R4:
-                return "4.0.1";
-            case R5:
-                return "5.0.0-ballot";
-            case DSTU3:
-                return "3.0.2";
-            default:
-                throw new IllegalArgumentException(String.format("Unsupported FHIR version %s", fhirVersion));
-        }
+        return switch (fhirVersion) {
+            case R4 -> "4.0.1";
+            case R5 -> "5.0.0-ballot";
+            case DSTU3 -> "3.0.2";
+            default -> throw new IllegalArgumentException(String.format("Unsupported FHIR version %s", fhirVersion));
+        };
     }
 
     @CommandLine.ParentCommand
@@ -188,8 +185,8 @@ public class CqlCommand implements Callable<Integer> {
         CqlOptions cqlOptions = CqlOptions.defaultOptions();
 
         if (optionsPath != null) {
-            var op = Uris.parseOrNull(optionsPath).toURL().getPath();
-            CqlTranslatorOptions options = CqlTranslatorOptionsMapper.fromFile(op);
+            var op = Path(Uris.parseOrNull(optionsPath).toURL().getPath());
+            CqlTranslatorOptions options = CqlTranslatorOptions.fromFile(Path(op));
             cqlOptions.setCqlCompilerOptions(options.getCqlCompilerOptions());
         }
 
@@ -211,24 +208,34 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setNpmProcessor(new NpmProcessor(igContext));
 
         for (LibraryParameter library : libraries) {
-            var libraryPath = Paths.get(Uris.parseOrNull(library.libraryUrl));
+            // Paths are mixed types
+            // IgStandardRepository used java nio path objects
+            // DefaultLibraryServiceProvider used kotlin path objects
+            // Until the language server can be ported to kotlin, the differences will exist
+            var libraryKotlinPath = library.libraryUrl != null
+                    ? Path(Uris.parseOrNull(library.libraryUrl).toURL().getPath())
+                    : null;
 
-            var modelPath = library.model != null ? Paths.get(Uris.parseOrNull(library.model.modelUrl)) : null;
+            var modelPath = library.model != null
+                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl).toURL().getPath())
+                    : null;
 
-            var terminologyPath =
-                    library.terminologyUrl != null ? Paths.get(Uris.parseOrNull(library.terminologyUrl)) : null;
+            var terminologyPath = library.terminologyUrl != null
+                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
+                    : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
+
             var engine = Engines.forRepository(repository, evaluationSettings);
 
             if (library.libraryUrl != null) {
-                var provider = new DefaultLibrarySourceProvider(libraryPath);
+                var provider = new DefaultLibrarySourceProvider(libraryKotlinPath);
                 engine.getEnvironment()
                         .getLibraryManager()
                         .getLibrarySourceLoader()
                         .registerProvider(provider);
 
-                var modelProvider = new DefaultModelInfoProvider(libraryPath);
+                var modelProvider = new DefaultModelInfoProvider(libraryKotlinPath);
                 engine.getEnvironment()
                         .getLibraryManager()
                         .getModelManager()
@@ -261,13 +268,13 @@ public class CqlCommand implements Callable<Integer> {
         }
 
         if (modelPath != null) {
-            data = new IgRepository(fhirContext, modelPath);
+            data = new IgStandardRepository(fhirContext, modelPath);
         } else {
             data = new NoOpRepository(fhirContext);
         }
 
         if (terminologyPath != null) {
-            terminology = new IgRepository(fhirContext, terminologyPath);
+            terminology = new IgStandardRepository(fhirContext, terminologyPath);
         } else {
             terminology = new NoOpRepository(fhirContext);
         }
@@ -277,7 +284,8 @@ public class CqlCommand implements Callable<Integer> {
 
     @SuppressWarnings("java:S106") // We are intending to output to the console here as a CLI tool
     private void writeResult(EvaluationResult result) {
-        for (Map.Entry<String, ExpressionResult> libraryEntry : result.expressionResults.entrySet()) {
+        for (Map.Entry<String, ExpressionResult> libraryEntry :
+                result.getExpressionResults().entrySet()) {
             System.out.println(libraryEntry.getKey() + "="
                     + this.tempConvert(libraryEntry.getValue().value()));
         }

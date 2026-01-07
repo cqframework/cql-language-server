@@ -3,7 +3,6 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls-core</artifactId>
     <packaging>jar</packaging>
     <name>CQL Language Server Core</name>
@@ -21,6 +20,16 @@
         <dependency>
             <groupId>org.opencds.cqf.fhir</groupId>
             <artifactId>cqf-fhir-cr</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-jdk8</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-common</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 </project>
