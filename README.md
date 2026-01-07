@@ -54,7 +54,7 @@ To release a new version of the language server:
 4. Create a Github Release (specify a tag of `vX.X.X` (e.g. `v3.8.0`) pointing at master to be created on release)
    1. Choose the "Auto-generate release notes" option
    2. Provide any additional detail/cleanup on the release notes
-6. Update master version to the next snapshot version `X.X.X-SNAPSHOT` (e.g. `3.9.0-SNAPSHOT`)
+6. Update master version to the next snapshot version `X.X.X-SNAPSHOT` (e.g. `4.0.0-SNAPSHOT`)
 7. Close all issues included in the release
 
 ## License
