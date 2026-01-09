@@ -24,7 +24,7 @@ public class ContentServiceSourceProvider implements LibrarySourceProvider {
         try {
             InputStream is = this.contentService.read(this.root, libraryIdentifier);
             if (is != null) {
-                return inputStreamToSource(is));
+                return inputStreamToSource(is);
             }
             return null;
         } catch (IOException e) {
