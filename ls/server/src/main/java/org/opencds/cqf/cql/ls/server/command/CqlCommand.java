@@ -170,16 +170,22 @@ public class CqlCommand implements Callable<Integer> {
         FhirContext fhirContext = FhirContext.forCached(fhirVersionEnum);
 
         IGContext igContext = null;
+        NpmProcessor npmProcessor = null;
         if (rootDir != null && igPath != null) {
             igContext = new IGContext(new Logger());
             igContext.initializeFromIg(rootDir, igPath, toVersionNumber(fhirVersionEnum));
-        } else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
-            var npmProcessor = parentCommand
+        }
+        else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
+            npmProcessor = parentCommand
                     .getIgContextManager()
                     .getContext(Uris.addPath(Uris.addPath(URI.create(rootDir), "input"), "cql"));
             if (npmProcessor != null) {
                 igContext = npmProcessor.getIgContext();
             }
+        }
+
+        if (npmProcessor == null) {
+            npmProcessor = new NpmProcessor(igContext);
         }
 
         CqlOptions cqlOptions = CqlOptions.defaultOptions();
@@ -205,23 +211,27 @@ public class CqlCommand implements Callable<Integer> {
         evaluationSettings.setCqlOptions(cqlOptions);
         evaluationSettings.setTerminologySettings(terminologySettings);
         evaluationSettings.setRetrieveSettings(retrieveSettings);
-        evaluationSettings.setNpmProcessor(new NpmProcessor(igContext));
+        evaluationSettings.setNpmProcessor(npmProcessor);
 
         for (LibraryParameter library : libraries) {
             // Paths are mixed types
             // IgStandardRepository used java nio path objects
             // DefaultLibraryServiceProvider used kotlin path objects
             // Until the language server can be ported to kotlin, the differences will exist
-            var libraryKotlinPath = library.libraryUrl != null
-                    ? Path(Uris.parseOrNull(library.libraryUrl).toURL().getPath())
+            var libraryUri = library.libraryUrl != null
+                    ? Uris.parseOrNull(library.libraryUrl)
+                    : null;
+
+            var libraryKotlinPath = libraryUri != null
+                    ? Path(libraryUri.toURL().getPath())
                     : null;
 
             var modelPath = library.model != null
-                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl).toURL().getPath())
+                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl))
                     : null;
 
             var terminologyPath = library.terminologyUrl != null
-                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl).toURL().getPath())
+                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl))
                     : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
