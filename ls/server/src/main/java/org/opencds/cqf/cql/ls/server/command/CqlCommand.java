@@ -174,8 +174,7 @@ public class CqlCommand implements Callable<Integer> {
         if (rootDir != null && igPath != null) {
             igContext = new IGContext(new Logger());
             igContext.initializeFromIg(rootDir, igPath, toVersionNumber(fhirVersionEnum));
-        }
-        else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
+        } else if (parentCommand != null && parentCommand.getIgContextManager() != null && rootDir != null) {
             npmProcessor = parentCommand
                     .getIgContextManager()
                     .getContext(Uris.addPath(Uris.addPath(URI.create(rootDir), "input"), "cql"));
@@ -218,21 +217,14 @@ public class CqlCommand implements Callable<Integer> {
             // IgStandardRepository used java nio path objects
             // DefaultLibraryServiceProvider used kotlin path objects
             // Until the language server can be ported to kotlin, the differences will exist
-            var libraryUri = library.libraryUrl != null
-                    ? Uris.parseOrNull(library.libraryUrl)
-                    : null;
+            var libraryUri = library.libraryUrl != null ? Uris.parseOrNull(library.libraryUrl) : null;
 
-            var libraryKotlinPath = libraryUri != null
-                    ? Path(libraryUri.toURL().getPath())
-                    : null;
+            var libraryKotlinPath = libraryUri != null ? Path(libraryUri.toURL().getPath()) : null;
 
-            var modelPath = library.model != null
-                    ? Paths.get(Uris.parseOrNull(library.model.modelUrl))
-                    : null;
+            var modelPath = library.model != null ? Paths.get(Uris.parseOrNull(library.model.modelUrl)) : null;
 
-            var terminologyPath = library.terminologyUrl != null
-                    ? Paths.get(Uris.parseOrNull(library.terminologyUrl))
-                    : null;
+            var terminologyPath =
+                    library.terminologyUrl != null ? Paths.get(Uris.parseOrNull(library.terminologyUrl)) : null;
 
             var repository = createRepository(fhirContext, terminologyPath, modelPath);
 
