@@ -44,12 +44,14 @@ public class CompilerOptionsManager {
 
         CqlCompilerOptions options = null;
 
-        InputStream input = contentService.read(Uris.addPath(rootUri, "/cql-options.json"));
+        var optionsUri = Uris.addPath(rootUri, "/cql-options.json");
+        InputStream input = contentService.read(optionsUri);
 
         if (input != null) {
+            // TODO: Why is this using fromFile and not fromSource?
             options = CqlTranslatorOptions.fromFile(Path("/cql-options.json")).getCqlCompilerOptions();
         } else {
-            log.info("cql-options.json not found, using default options");
+            log.info(String.format("%s not found, using default options", optionsUri.toString()));
             options = CqlTranslatorOptions.defaultOptions().getCqlCompilerOptions();
         }
 
