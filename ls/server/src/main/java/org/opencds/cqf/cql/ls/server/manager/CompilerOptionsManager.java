@@ -3,7 +3,6 @@ package org.opencds.cqf.cql.ls.server.manager;
 import static kotlinx.io.files.PathsKt.Path;
 
 import java.io.InputStream;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
@@ -49,9 +48,12 @@ public class CompilerOptionsManager {
 
         if (input != null) {
             try {
-                options = CqlTranslatorOptions.fromFile(Path(optionsUri.toURL().getPath())).getCqlCompilerOptions();
+                options = CqlTranslatorOptions.fromFile(Path(optionsUri.toURL().getPath()))
+                        .getCqlCompilerOptions();
             } catch (Exception e) {
-                log.info(String.format("Exception %s attempting to load options from %s, using default options", e.getMessage(), optionsUri.toString()));
+                log.info(String.format(
+                        "Exception %s attempting to load options from %s, using default options",
+                        e.getMessage(), optionsUri.toString()));
             }
         } else {
             log.info(String.format("%s not found, using default options", optionsUri.toString()));
