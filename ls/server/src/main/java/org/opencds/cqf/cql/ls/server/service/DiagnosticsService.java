@@ -134,9 +134,9 @@ public class DiagnosticsService {
             var uris = this.contentService.locate(root, libraryIdentifier);
             if (uris != null && !uris.isEmpty()) {
                 libraryUriList.add(Pair.of(libraryIdentifier, uris.iterator().next()));
-            }
-            else {
-                // The message is associated with a library loaded from outside the content service (e.g. an npm library)
+            } else {
+                // The message is associated with a library loaded from outside the content service (e.g. an npm
+                // library)
                 // So associate the message with the current uri
                 libraryUriList.add(Pair.of(libraryIdentifier, uri));
             }

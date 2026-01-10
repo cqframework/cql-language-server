@@ -49,7 +49,8 @@ public class CompilerOptionsManager {
 
         if (input != null) {
             // TODO: Why is this using fromFile and not fromSource?
-            options = CqlTranslatorOptions.fromFile(Path("/cql/cql-options.json")).getCqlCompilerOptions();
+            options =
+                    CqlTranslatorOptions.fromFile(Path("/cql/cql-options.json")).getCqlCompilerOptions();
         } else {
             log.info(String.format("%s not found, using default options", optionsUri.toString()));
             options = CqlTranslatorOptions.defaultOptions().getCqlCompilerOptions();
