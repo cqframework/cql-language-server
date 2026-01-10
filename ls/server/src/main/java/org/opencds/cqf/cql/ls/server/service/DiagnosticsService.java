@@ -129,10 +129,18 @@ public class DiagnosticsService {
                 .collect(Collectors.toList());
 
         URI root = Uris.getHead(uri);
-        List<Pair<VersionedIdentifier, URI>> libraryUriList = uniqueLibraries.stream()
-                .map(x -> Pair.of(
-                        x, this.contentService.locate(root, x).iterator().next()))
-                .collect(Collectors.toList());
+        var libraryUriList = new ArrayList<Pair<VersionedIdentifier, URI>>();
+        for (var libraryIdentifier : uniqueLibraries) {
+            var uris = this.contentService.locate(root, libraryIdentifier);
+            if (uris != null && !uris.isEmpty()) {
+                libraryUriList.add(Pair.of(libraryIdentifier, uris.iterator().next()));
+            } else {
+                // The message is associated with a library loaded from outside the content service (e.g. an npm
+                // library)
+                // So associate the message with the current uri
+                libraryUriList.add(Pair.of(libraryIdentifier, uri));
+            }
+        }
 
         Map<VersionedIdentifier, URI> libraryUris = new HashMap<>();
         for (Pair<VersionedIdentifier, URI> p : libraryUriList) {
