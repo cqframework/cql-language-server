@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,7 @@ import org.opencds.cqf.cql.ls.server.service.TestContentService;
 class ViewElmCommandContributionTest {
 
     private static ViewElmCommandContribution viewElmCommandContribution;
+    private Object expectedJson;
 
     @BeforeAll
     static void beforeAll() {
@@ -42,15 +45,71 @@ class ViewElmCommandContributionTest {
         params.setCommand("org.opencds.cqf.cql.ls.viewElm");
         params.setArguments(Collections.singletonList(
                 JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\"")));
-        viewElmCommandContribution.executeCommand(params).thenAccept(result -> {
-            try {
-                String expectedXml = new String(Files.readAllBytes(Paths.get("src/test/resources/One.xml")))
-                        .trim()
-                        .replaceAll("\\s+", "");
-                assertEquals(expectedXml, result.toString().trim().replaceAll("\\s+", ""));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+        CompletableFuture<Void> future = viewElmCommandContribution
+                .executeCommand(params)
+                .thenAccept(result -> {
+                    try {
+                        String expectedXml = new String(Files.readAllBytes(
+                                        Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.xml")))
+                                .trim()
+                                .replaceAll("\\s+", "");
+                        assertEquals(expectedXml, result.toString().trim().replaceAll("\\s+", ""));
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+
+        // This ensures the test waits and fails if an exception occurs
+        future.join();
+    }
+
+    @Test
+    void executeCommandWithXmlElmType() {
+        ExecuteCommandParams params = new ExecuteCommandParams();
+        params.setCommand("org.opencds.cqf.cql.ls.viewElm");
+        params.setArguments(List.of(
+                JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+                JsonParser.parseString("\"xml\"")));
+        CompletableFuture<Void> future = viewElmCommandContribution
+                .executeCommand(params)
+                .thenAccept(result -> {
+                    try {
+                        String expectedXml = new String(Files.readAllBytes(
+                                        Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.xml")))
+                                .trim()
+                                .replaceAll("\\s+", "");
+                        assertEquals(expectedXml, result.toString().trim().replaceAll("\\s+", ""));
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+
+        // This ensures the test waits and fails if an exception occurs
+        future.join();
+    }
+
+    @Test
+    void executeCommandWithJsonElmType() {
+        ExecuteCommandParams params = new ExecuteCommandParams();
+        params.setCommand("org.opencds.cqf.cql.ls.viewElm");
+        params.setArguments(List.of(
+                JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+                JsonParser.parseString("\"json\"")));
+        CompletableFuture<Void> future = viewElmCommandContribution
+                .executeCommand(params)
+                .thenAccept(result -> {
+                    try {
+                        String expectedJson = new String(Files.readAllBytes(
+                                        Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.json")))
+                                .trim()
+                                .replaceAll("\\s+", "");
+                        assertEquals(expectedJson, result.toString().trim().replaceAll("\\s+", ""));
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+
+        // This ensures the test waits and fails if an exception occurs
+        future.join();
     }
 }

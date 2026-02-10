@@ -1,0 +1,87 @@
+{
+  "library": {
+    "localId": "0",
+    "annotation": [
+      {
+        "type": "CqlToElmInfo",
+        "translatorVersion": "4.1.0",
+        "translatorOptions": "EnableAnnotations,EnableLocators,DisableListDemotion,DisableListPromotion,EnableResultTypes",
+        "signatureLevel": "All"
+      },
+      {
+        "type": "Annotation",
+        "t": [],
+        "s": {
+          "r": "208",
+          "s": [
+            {
+              "value": [
+                "",
+                "library One"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "identifier": {
+      "id": "One"
+    },
+    "schemaIdentifier": {
+      "id": "urn:hl7-org:elm",
+      "version": "r1"
+    },
+    "usings": {
+      "def": [
+        {
+          "localId": "1",
+          "localIdentifier": "System",
+          "uri": "urn:hl7-org:elm-types:r1",
+          "annotation": []
+        }
+      ]
+    },
+    "statements": {
+      "def": [
+        {
+          "localId": "208",
+          "locator": "3:1-4:5",
+          "resultTypeName": "{urn:hl7-org:elm-types:r1}Integer",
+          "name": "One",
+          "context": "Unfiltered",
+          "accessLevel": "Public",
+          "annotation": [
+            {
+              "type": "Annotation",
+              "t": [],
+              "s": {
+                "r": "208",
+                "s": [
+                  {
+                    "r": "209",
+                    "value": [
+                      "",
+                      "define ",
+                      "\"One\"",
+                      ":\n    ",
+                      "1"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "expression": {
+            "type": "Literal",
+            "localId": "209",
+            "locator": "4:5",
+            "resultTypeName": "{urn:hl7-org:elm-types:r1}Integer",
+            "valueType": "{urn:hl7-org:elm-types:r1}Integer",
+            "value": "1",
+            "annotation": []
+          }
+        }
+      ]
+    }
+  }
+}
