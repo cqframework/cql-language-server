@@ -1,25 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<library xmlns="urn:hl7-org:elm:r1" xmlns:t="urn:hl7-org:elm-types:r1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:fhir="http://hl7.org/fhir" xmlns:qdm43="urn:healthit-gov:qdm:v4_3" xmlns:qdm53="urn:healthit-gov:qdm:v5_3" xmlns:a="urn:hl7-org:cql-annotations:r1">
-    <annotation translatorVersion="3.3.2" translatorOptions="EnableAnnotations,EnableLocators,DisableListDemotion,DisableListPromotion" signatureLevel="None" xsi:type="a:CqlToElmInfo"/>
+<library xmlns="urn:hl7-org:elm:r1"
+         xmlns:a="urn:hl7-org:cql-annotations:r1"
+         xmlns:t="urn:hl7-org:elm-types:r1"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" localId="0">
+    <annotation signatureLevel="All" translatorOptions="EnableAnnotations,EnableLocators,DisableListDemotion,DisableListPromotion,EnableResultTypes" translatorVersion="4.1.0" xsi:type="a:CqlToElmInfo"/>
     <annotation xsi:type="a:Annotation">
-        <a:s r="2">
+        <a:s r="208">
             <a:s>library One</a:s>
         </a:s>
     </annotation>
     <identifier id="One"/>
     <schemaIdentifier id="urn:hl7-org:elm" version="r1"/>
     <usings>
-        <def localIdentifier="System" uri="urn:hl7-org:elm-types:r1"/>
+        <def localId="1" localIdentifier="System" uri="urn:hl7-org:elm-types:r1"/>
     </usings>
     <statements>
-        <def localId="2" locator="3:1-4:5" name="One" context="Unfiltered" accessLevel="Public">
+        <def accessLevel="Public" context="Unfiltered" localId="208" locator="3:1-4:5" name="One" resultTypeName="t:Integer">
             <annotation xsi:type="a:Annotation">
-                <a:s r="2">
-                    <a:s r="1">define &quot;One&quot;:
+                <a:s r="208">
+                    <a:s r="209">define "One":
                         1</a:s>
                 </a:s>
             </annotation>
-            <expression localId="1" locator="4:5" valueType="t:Integer" value="1" xsi:type="Literal"/>
+            <expression localId="209" locator="4:5" resultTypeName="t:Integer" value="1" valueType="t:Integer" xsi:type="Literal"/>
         </def>
     </statements>
 </library>
