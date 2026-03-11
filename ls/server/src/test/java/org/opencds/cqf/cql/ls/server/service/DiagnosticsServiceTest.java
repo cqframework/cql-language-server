@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.server.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
@@ -70,5 +71,39 @@ class DiagnosticsServiceTest {
 
         Diagnostic d = diagnostics.get(uri).iterator().next();
         assertEquals(DiagnosticSeverity.Error, d.getSeverity());
+    }
+
+    @Test
+    void oneCqlValid_noErrors() {
+        // One.cql is a simple valid library with no includes; lint should produce no diagnostics.
+        URI uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql");
+        Map<URI, Set<Diagnostic>> diagnostics = diagnosticsService.lint(uri);
+
+        assertTrue(diagnostics.containsKey(uri));
+        assertTrue(diagnostics.get(uri).isEmpty());
+    }
+
+    @Test
+    void missingInclude_diagnosticHasNonNullMessage() {
+        URI uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/MissingInclude.cql");
+        Map<URI, Set<Diagnostic>> diagnostics = diagnosticsService.lint(uri);
+
+        Set<Diagnostic> dSet = diagnostics.get(uri);
+        assertFalse(dSet.isEmpty());
+
+        Diagnostic d = dSet.iterator().next();
+        assertNotNull(d.getMessage());
+        assertFalse(d.getMessage().isEmpty());
+    }
+
+    @Test
+    void missingInclude_diagnosticHasNonNullRange() {
+        URI uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/MissingInclude.cql");
+        Map<URI, Set<Diagnostic>> diagnostics = diagnosticsService.lint(uri);
+
+        Diagnostic d = diagnostics.get(uri).iterator().next();
+        assertNotNull(d.getRange());
+        assertNotNull(d.getRange().getStart());
+        assertNotNull(d.getRange().getEnd());
     }
 }
