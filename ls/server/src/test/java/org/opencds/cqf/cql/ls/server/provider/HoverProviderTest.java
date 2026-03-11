@@ -62,4 +62,33 @@ class HoverProviderTest {
         assertEquals("markdown", markup.getKind());
         assertEquals("```cql\nlist<System.Integer>\n```", markup.getValue());
     }
+
+    @Test
+    void hoverOnLibraryRef() throws Exception {
+        // Line 5 (0-indexed): "    1 + One."One"" — position (5, 8) is 'O' in 'One'
+        Hover hover = hoverProvider.hover(new HoverParams(
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(5, 8)));
+
+        assertNotNull(hover);
+        assertNotNull(hover.getContents().getRight());
+
+        MarkupContent markup = hover.getContents().getRight();
+        assertEquals("markdown", markup.getKind());
+        assertEquals("```cql\nSystem.Integer\n```", markup.getValue());
+    }
+
+    @Test
+    void hoverOnDefineName() throws Exception {
+        // Line 4 (0-indexed): "define "Two":" — position (4, 8) is 'T' inside the define name
+        Hover hover = hoverProvider.hover(new HoverParams(
+                new TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), new Position(4, 8)));
+
+        // ExpressionDef TrackBack covers the define header — expect Integer type
+        assertNotNull(hover);
+        assertNotNull(hover.getContents().getRight());
+
+        MarkupContent markup = hover.getContents().getRight();
+        assertEquals("markdown", markup.getKind());
+        assertEquals("```cql\nSystem.Integer\n```", markup.getValue());
+    }
 }
