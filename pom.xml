@@ -26,7 +26,7 @@
         <slf4j.version>1.7.36</slf4j.version>
         <spring.boot.version>2.7.18</spring.boot.version>
         <picocli.version>4.6.1</picocli.version>
-        <jackson.version>2.16.1</jackson.version>
+        <jackson.version>2.18.6</jackson.version>
         <jackson.databind.version>2.16.0</jackson.databind.version>
         <error-prone.version>2.24.1</error-prone.version>
         <checkstyle.version>10.12.7</checkstyle.version>
