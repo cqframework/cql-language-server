@@ -58,4 +58,24 @@ class ExpressionTrackBackVisitorTest {
         assertNotNull(e);
         assertThat(e, instanceOf(ExpressionDef.class));
     }
+
+    @Test
+    void positionInExpressionRef_returnsExpressionDef() {
+        // Line 12 (1-indexed): "    "ObservationRetrieve"" — the ExpressionRef inside ObservationReference
+        ExpressionTrackBackVisitor visitor = new ExpressionTrackBackVisitor();
+        TrackBack tb = new TrackBack(library.getIdentifier(), 12, 5, 12, 25);
+        Element e = visitor.visitLibrary(library, tb);
+        assertNotNull(e);
+        assertThat(e, instanceOf(ExpressionDef.class));
+    }
+
+    @Test
+    void positionAtExpressionBoundary_returnsExpressionDef() {
+        // Line 15 (1-indexed): "    Patient.birthDate" — at the start char of PropertyAccess body
+        ExpressionTrackBackVisitor visitor = new ExpressionTrackBackVisitor();
+        TrackBack tb = new TrackBack(library.getIdentifier(), 15, 5, 15, 5);
+        Element e = visitor.visitLibrary(library, tb);
+        assertNotNull(e);
+        assertThat(e, instanceOf(ExpressionDef.class));
+    }
 }
