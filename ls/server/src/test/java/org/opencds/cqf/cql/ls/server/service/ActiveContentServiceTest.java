@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.hl7.elm.r1.VersionedIdentifier;
 import org.junit.jupiter.api.Test;
+import org.opencds.cqf.cql.ls.core.utility.Uris;
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent;
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
@@ -26,8 +27,8 @@ import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent;
 class ActiveContentServiceTest {
 
     private static final String DOC_URI = "file:///workspace/One.cql";
-    private static final URI DOC_URI_PARSED = URI.create(DOC_URI);
-    private static final URI ROOT = URI.create("file:///workspace/");
+    private static final URI DOC_URI_PARSED = Uris.parseOrNull(DOC_URI);
+    private static final URI ROOT = Uris.parseOrNull("file:///workspace/");
 
     private static final String LIBRARY_CONTENT = "library One version '1.0.0'\n\ndefine \"Test\":\n  1\n";
 
@@ -170,7 +171,7 @@ class ActiveContentServiceTest {
         VersionedIdentifier id = new VersionedIdentifier().withId("One").withVersion("1.0.0");
         Set<URI> found = svc.searchActiveContent(ROOT, id);
 
-        assertFalse(found.contains(URI.create(otherUri)));
+        assertFalse(found.contains(Uris.parseOrNull(otherUri)));
     }
 
     @Test
