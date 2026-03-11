@@ -35,7 +35,8 @@ class FormattingProviderTest {
 
     @Test
     void format_syntaxError_throwsIllegalArgument() {
-        assertThrows(IllegalArgumentException.class, () ->
-            formattingProvider.format("/org/opencds/cqf/cql/ls/server/SyntaxError.cql"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> formattingProvider.format("/org/opencds/cqf/cql/ls/server/SyntaxError.cql"));
     }
 }

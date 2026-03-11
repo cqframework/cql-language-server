@@ -32,9 +32,7 @@ class DiagnosticsServiceTest {
         CqlCompilationManager cqlCompilationManager =
                 new CqlCompilationManager(cs, new CompilerOptionsManager(cs), new IgContextManager(cs));
         diagnosticsService = new DiagnosticsService(
-                CompletableFuture.completedFuture(Mockito.mock(LanguageClient.class)),
-                cqlCompilationManager,
-                cs);
+                CompletableFuture.completedFuture(Mockito.mock(LanguageClient.class)), cqlCompilationManager, cs);
     }
 
     @Test
