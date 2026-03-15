@@ -1,0 +1,126 @@
+package org.opencds.cqf.cql.ls.server.command
+
+import com.google.gson.JsonParser
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.concurrent.CompletableFuture
+import org.eclipse.lsp4j.ExecuteCommandParams
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.service.TestContentService
+
+class ViewElmCommandContributionTest {
+
+    companion object {
+        private lateinit var viewElmCommandContribution: ViewElmCommandContribution
+
+        @BeforeAll
+        @JvmStatic
+        fun beforeAll() {
+            val cs = TestContentService()
+            val cqlCompilationManager =
+                CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            viewElmCommandContribution = ViewElmCommandContribution(cqlCompilationManager)
+        }
+    }
+
+    @Test
+    fun getCommands() {
+        assertEquals(1, viewElmCommandContribution.getCommands().size)
+        assertEquals(
+            "org.opencds.cqf.cql.ls.viewElm",
+            viewElmCommandContribution.getCommands().toTypedArray()[0]
+        )
+    }
+
+    @Test
+    fun executeCommand() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(
+            JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\"")
+        )
+        val future: CompletableFuture<Void> = viewElmCommandContribution
+            .executeCommand(params)
+            .thenAccept { result ->
+                try {
+                    val expectedXml = String(
+                        Files.readAllBytes(
+                            Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.xml")
+                        )
+                    )
+                        .trim()
+                        .replace("\\s+".toRegex(), "")
+                    assertEquals(expectedXml, result.toString().trim().replace("\\s+".toRegex(), ""))
+                } catch (e: IOException) {
+                    throw RuntimeException(e)
+                }
+            }
+
+        // This ensures the test waits and fails if an exception occurs
+        future.join()
+    }
+
+    @Test
+    fun executeCommandWithXmlElmType() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(
+            JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+            JsonParser.parseString("\"xml\"")
+        )
+        val future: CompletableFuture<Void> = viewElmCommandContribution
+            .executeCommand(params)
+            .thenAccept { result ->
+                try {
+                    val expectedXml = String(
+                        Files.readAllBytes(
+                            Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.xml")
+                        )
+                    )
+                        .trim()
+                        .replace("\\s+".toRegex(), "")
+                    assertEquals(expectedXml, result.toString().trim().replace("\\s+".toRegex(), ""))
+                } catch (e: IOException) {
+                    throw RuntimeException(e)
+                }
+            }
+
+        // This ensures the test waits and fails if an exception occurs
+        future.join()
+    }
+
+    @Test
+    fun executeCommandWithJsonElmType() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(
+            JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+            JsonParser.parseString("\"json\"")
+        )
+        val future: CompletableFuture<Void> = viewElmCommandContribution
+            .executeCommand(params)
+            .thenAccept { result ->
+                try {
+                    val expectedJson = String(
+                        Files.readAllBytes(
+                            Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.json")
+                        )
+                    )
+                        .trim()
+                        .replace("\\s+".toRegex(), "")
+                    assertEquals(expectedJson, result.toString().trim().replace("\\s+".toRegex(), ""))
+                } catch (e: IOException) {
+                    throw RuntimeException(e)
+                }
+            }
+
+        // This ensures the test waits and fails if an exception occurs
+        future.join()
+    }
+}
