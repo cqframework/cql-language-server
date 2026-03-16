@@ -15,7 +15,6 @@ import java.io.InputStream
 import java.net.URI
 
 class CqlCompilationManagerTest {
-
     companion object {
         private val cs = TestContentService()
         private lateinit var manager: CqlCompilationManager
@@ -38,10 +37,15 @@ class CqlCompilationManagerTest {
 
     @Test
     fun compile_uri_returnsNull_whenContentServiceReturnsNull() {
-        val nullCs = object : ContentService {
-            override fun locate(root: URI, libraryIdentifier: VersionedIdentifier): Set<URI> = emptySet()
-            override fun read(uri: URI): InputStream? = null
-        }
+        val nullCs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    libraryIdentifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? = null
+            }
         val localManager = CqlCompilationManager(nullCs, CompilerOptionsManager(nullCs), IgContextManager(nullCs))
         val result = localManager.compile(URI("file:///nonexistent.cql"))
         assertNull(result)
@@ -60,18 +64,20 @@ class CqlCompilationManagerTest {
     @Test
     fun compile_validCql_hasNoErrors() {
         val compiler = manager.compile(ONE_URI)!!
-        val errors = compiler.exceptions.filter {
-            it.severity == CqlCompilerException.ErrorSeverity.Error
-        }
+        val errors =
+            compiler.exceptions.filter {
+                it.severity == CqlCompilerException.ErrorSeverity.Error
+            }
         assertTrue(errors.isEmpty(), "Expected no errors for One.cql")
     }
 
     @Test
     fun compile_validCqlWithInclude_hasNoErrors() {
         val compiler = manager.compile(TWO_URI)!!
-        val errors = compiler.exceptions.filter {
-            it.severity == CqlCompilerException.ErrorSeverity.Error
-        }
+        val errors =
+            compiler.exceptions.filter {
+                it.severity == CqlCompilerException.ErrorSeverity.Error
+            }
         assertTrue(errors.isEmpty(), "Expected no errors for Two.cql (which includes One.cql)")
     }
 
@@ -88,9 +94,10 @@ class CqlCompilationManagerTest {
     @Test
     fun compile_syntaxError_hasErrors() {
         val compiler = manager.compile(SYNTAX_ERROR_URI)!!
-        val errors = compiler.exceptions.filter {
-            it.severity == CqlCompilerException.ErrorSeverity.Error
-        }
+        val errors =
+            compiler.exceptions.filter {
+                it.severity == CqlCompilerException.ErrorSeverity.Error
+            }
         assertFalse(errors.isEmpty(), "Expected errors for CQL with syntax errors")
     }
 
@@ -99,7 +106,7 @@ class CqlCompilationManagerTest {
         val compiler = manager.compile(MISSING_INCLUDE_URI)!!
         assertFalse(
             compiler.exceptions.isEmpty(),
-            "Expected exceptions for CQL with a missing include"
+            "Expected exceptions for CQL with a missing include",
         )
     }
 
@@ -118,9 +125,10 @@ class CqlCompilationManagerTest {
     fun compile_stream_validCql_hasNoErrors() {
         val stream = cs.read(ONE_URI)!!
         val compiler = manager.compile(ONE_URI, stream)
-        val errors = compiler.exceptions.filter {
-            it.severity == CqlCompilerException.ErrorSeverity.Error
-        }
+        val errors =
+            compiler.exceptions.filter {
+                it.severity == CqlCompilerException.ErrorSeverity.Error
+            }
         assertTrue(errors.isEmpty(), "Expected no errors when compiling One.cql from stream")
     }
 }

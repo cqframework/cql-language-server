@@ -17,7 +17,6 @@ import java.io.InputStream
 import java.net.URI
 
 class IgContextManagerTest {
-
     private lateinit var manager: IgContextManager
 
     @BeforeEach
@@ -49,13 +48,18 @@ class IgContextManagerTest {
     @Test
     fun getContext_cachedResult_doesNotReReadContentService() {
         var readCount = 0
-        val countingCs = object : ContentService {
-            override fun locate(root: URI, libraryIdentifier: VersionedIdentifier): Set<URI> = emptySet()
-            override fun read(uri: URI): InputStream? {
-                readCount++
-                return null
+        val countingCs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    libraryIdentifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? {
+                    readCount++
+                    return null
+                }
             }
-        }
         val localManager = IgContextManager(countingCs)
 
         localManager.getContext(TEST_URI) // populates cache
@@ -72,13 +76,18 @@ class IgContextManagerTest {
     @Test
     fun onMessageEvent_igIniChanged_clearsCache() {
         var readCount = 0
-        val countingCs = object : ContentService {
-            override fun locate(root: URI, libraryIdentifier: VersionedIdentifier): Set<URI> = emptySet()
-            override fun read(uri: URI): InputStream? {
-                readCount++
-                return null
+        val countingCs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    libraryIdentifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? {
+                    readCount++
+                    return null
+                }
             }
-        }
         val localManager = IgContextManager(countingCs)
 
         localManager.getContext(TEST_URI) // populates cache
@@ -87,8 +96,8 @@ class IgContextManagerTest {
         val igIniUri = Uris.getHead(TEST_URI).toString() + "/ig.ini"
         localManager.onMessageEvent(
             DidChangeWatchedFilesEvent(
-                DidChangeWatchedFilesParams(listOf(FileEvent(igIniUri, FileChangeType.Changed)))
-            )
+                DidChangeWatchedFilesParams(listOf(FileEvent(igIniUri, FileChangeType.Changed))),
+            ),
         )
 
         localManager.getContext(TEST_URI) // cache cleared → re-reads
@@ -98,13 +107,18 @@ class IgContextManagerTest {
     @Test
     fun onMessageEvent_unrelatedFile_doesNotClearCache() {
         var readCount = 0
-        val countingCs = object : ContentService {
-            override fun locate(root: URI, libraryIdentifier: VersionedIdentifier): Set<URI> = emptySet()
-            override fun read(uri: URI): InputStream? {
-                readCount++
-                return null
+        val countingCs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    libraryIdentifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? {
+                    readCount++
+                    return null
+                }
             }
-        }
         val localManager = IgContextManager(countingCs)
 
         localManager.getContext(TEST_URI) // populates cache
@@ -112,8 +126,8 @@ class IgContextManagerTest {
 
         localManager.onMessageEvent(
             DidChangeWatchedFilesEvent(
-                DidChangeWatchedFilesParams(listOf(FileEvent("file:///workspace/SomeOther.json", FileChangeType.Changed)))
-            )
+                DidChangeWatchedFilesParams(listOf(FileEvent("file:///workspace/SomeOther.json", FileChangeType.Changed))),
+            ),
         )
 
         localManager.getContext(TEST_URI) // should still be cached
