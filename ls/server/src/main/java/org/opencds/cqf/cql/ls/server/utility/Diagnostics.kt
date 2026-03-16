@@ -1,0 +1,52 @@
+package org.opencds.cqf.cql.ls.server.utility
+
+import org.cqframework.cql.cql2elm.CqlCompilerException
+import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+
+object Diagnostics {
+    @JvmStatic
+    fun convert(error: CqlCompilerException): Diagnostic? {
+        if (error.locator == null) return null
+        val range = position(error)
+        val diagnostic = Diagnostic()
+        diagnostic.severity = severity(error.severity)
+        diagnostic.range = range
+        diagnostic.message = error.message
+        return diagnostic
+    }
+
+    @JvmStatic
+    fun convert(errors: Iterable<CqlCompilerException>): Set<Diagnostic> {
+        val result = mutableSetOf<Diagnostic>()
+        for (error in errors) {
+            val diagnostic = convert(error)
+            if (diagnostic != null) result.add(diagnostic)
+        }
+        return result
+    }
+
+    private fun severity(severity: CqlCompilerException.ErrorSeverity): DiagnosticSeverity {
+        return when (severity) {
+            CqlCompilerException.ErrorSeverity.Error -> DiagnosticSeverity.Error
+            CqlCompilerException.ErrorSeverity.Warning -> DiagnosticSeverity.Warning
+            else -> DiagnosticSeverity.Information
+        }
+    }
+
+    private fun position(error: CqlCompilerException): Range {
+        val locator = error.locator!!
+        return Range(
+            Position(
+                maxOf(locator.startLine - 1, 0),
+                maxOf(locator.startChar - 1, 0)
+            ),
+            Position(
+                maxOf(locator.endLine - 1, 0),
+                maxOf(locator.endChar, 0)
+            )
+        )
+    }
+}
