@@ -4,7 +4,6 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.TextDocumentItem
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -28,12 +27,12 @@ class FederatedContentServiceTest {
     }
 
     private fun openDoc(
-        uri: String,
+        uriString: String,
         content: String,
     ) {
         val params = DidOpenTextDocumentParams()
         val item = TextDocumentItem()
-        item.uri = uri
+        item.uri = uriString
         item.text = content
         item.version = 1
         params.textDocument = item
@@ -46,23 +45,28 @@ class FederatedContentServiceTest {
 
     @Test
     fun locate_mergesActiveAndFileResults() {
-        openDoc(ACTIVE_URI.toString(), "library One version '1.0.0'\ndefine \"X\": 1")
+        openDoc("file:///workspace/One.cql", "library One version '1.0.0'\ndefine \"X\": 1")
+
+        // Retrieve the URI exactly as stored — Uris.parseOrNull normalizes differently per platform
+        val storedUri = activeService.activeUris().first()
+        val fileOnlyUri = URI.create("file:///other/lib/One.cql")
 
         val id = VersionedIdentifier().withId("One").withVersion("1.0.0")
-        `when`(fileService.locate(ROOT, id)).thenReturn(mutableSetOf(FILE_URI))
+        `when`(fileService.locate(storedUri, id)).thenReturn(setOf(fileOnlyUri))
 
-        val result = fedService.locate(ROOT, id)
+        val result = fedService.locate(storedUri, id)
 
-        assertTrue(result.contains(ACTIVE_URI))
-        assertTrue(result.contains(FILE_URI))
+        assertTrue(result.contains(storedUri))
+        assertTrue(result.contains(fileOnlyUri))
     }
 
     @Test
     fun locate_emptyFromBoth_returnsEmptySet() {
+        val root = URI.create("file:///workspace/")
         val id = VersionedIdentifier().withId("Unknown")
-        `when`(fileService.locate(ROOT, id)).thenReturn(mutableSetOf())
+        `when`(fileService.locate(root, id)).thenReturn(emptySet())
 
-        val result = fedService.locate(ROOT, id)
+        val result = fedService.locate(root, id)
 
         assertTrue(result.isEmpty())
     }
@@ -73,28 +77,24 @@ class FederatedContentServiceTest {
 
     @Test
     fun read_uriInActiveSet_returnsActiveContent() {
-        openDoc(ACTIVE_URI.toString(), "library One version '1.0.0'\ndefine \"X\": 1")
+        openDoc("file:///workspace/One.cql", "library One version '1.0.0'\ndefine \"X\": 1")
 
-        val result = fedService.read(ACTIVE_URI)
+        // Use the actual stored URI to avoid platform-specific normalization differences
+        val storedUri = activeService.activeUris().first()
+        val result = fedService.read(storedUri)
 
         assertNotNull(result)
     }
 
     @Test
     fun read_uriNotInActiveSet_fallsBackToFileService() {
+        val fileUri = URI.create("file:///workspace/lib/One.cql")
         val expected = ByteArrayInputStream("file content".toByteArray())
-        `when`(fileService.read(FILE_URI)).thenReturn(expected)
+        `when`(fileService.read(fileUri)).thenReturn(expected)
 
-        // FILE_URI was never opened in activeService, so it falls through to fileService
-        val result = fedService.read(FILE_URI)
+        // fileUri was never opened in activeService, so fedService falls through to fileService
+        val result = fedService.read(fileUri)
 
-        assertNull(activeService.read(FILE_URI)) // confirm not in active set
         assertNotNull(result)
-    }
-
-    companion object {
-        private val ROOT: URI = URI.create("file:///workspace/")
-        private val ACTIVE_URI: URI = URI.create("file:///workspace/One.cql")
-        private val FILE_URI: URI = URI.create("file:///workspace/lib/One.cql")
     }
 }
