@@ -56,8 +56,8 @@ class CqlTextDocumentService(
             .exceptionally { notifyClient(it) } as CompletableFuture<Hover>
     }
 
-    override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<out TextEdit>> {
-        return CompletableFuture.supplyAsync<List<out TextEdit>> {
+    override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {
+        return CompletableFuture.supplyAsync<List<TextEdit>> {
             formattingProvider.format(params.textDocument.uri)
         }.exceptionally { notifyClient(it) }
     }

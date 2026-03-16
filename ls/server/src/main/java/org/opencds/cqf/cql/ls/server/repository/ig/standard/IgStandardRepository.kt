@@ -430,7 +430,7 @@ open class IgStandardRepository : IRepository {
         val compartment = compartmentFrom(headers)
         val resourceIdMap = readDirectoryForResourceType(resourceType, compartment)
 
-        if (searchParameters == null || searchParameters.isEmpty) {
+        if (searchParameters.isEmpty) {
             resourceIdMap.values.forEach { builder.addCollectionEntry(it) }
             return builder.bundle as B
         }

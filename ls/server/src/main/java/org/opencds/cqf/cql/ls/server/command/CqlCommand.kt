@@ -128,6 +128,7 @@ class CqlCommand : Callable<Int> {
             log.debug("{}: {}", logCategory, s)
         }
 
+        @Suppress("OVERRIDE_DEPRECATION")
         override fun isDebugLogging(): Boolean = log.isDebugEnabled
     }
 
@@ -152,7 +153,7 @@ class CqlCommand : Callable<Int> {
         if (rootDir != null && igPath != null) {
             igContext = IGContext(Logger())
             igContext.initializeFromIg(rootDir, igPath, toVersionNumber(fhirVersionEnum))
-        } else if (parentCommand != null && parentCommand!!.getIgContextManager() != null && rootDir != null) {
+        } else if (parentCommand != null && rootDir != null) {
             npmProcessor = parentCommand!!
                 .getIgContextManager()
                 .getContext(Uris.addPath(Uris.addPath(java.net.URI.create(rootDir), "input")!!, "cql")!!)

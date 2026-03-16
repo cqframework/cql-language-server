@@ -115,32 +115,30 @@ class DiagnosticsService(
         libraryUris[VersionedIdentifier().withId("unknown")] = uri
 
         for (exception in exceptions) {
-            if (exception != null) {
-                val exLocator = exception.locator
-                val exLibrary = exLocator?.library
-                var eUri = if (exLibrary != null && exLibrary.id != null) {
-                    libraryUris[exLibrary]
-                } else null
+            val exLocator = exception.locator
+            val exLibrary = exLocator?.library
+            var eUri = if (exLibrary != null && exLibrary.id != null) {
+                libraryUris[exLibrary]
+            } else null
 
-                if (eUri == null) {
-                    eUri = uri // put all unknown or indeterminate errors to the current uri so at least they get reported
-                }
+            if (eUri == null) {
+                eUri = uri // put all unknown or indeterminate errors to the current uri so at least they get reported
+            }
 
-                val d = Diagnostics.convert(exception)
+            val d = Diagnostics.convert(exception)
 
-                if (d != null) {
-                    log.debug(
-                        "diagnostic: {} {}:{}-{}:{}: {}",
-                        eUri,
-                        d.range.start.line,
-                        d.range.start.character,
-                        d.range.end.line,
-                        d.range.end.character,
-                        d.message
-                    )
+            if (d != null) {
+                log.debug(
+                    "diagnostic: {} {}:{}-{}:{}: {}",
+                    eUri,
+                    d.range.start.line,
+                    d.range.start.character,
+                    d.range.end.line,
+                    d.range.end.character,
+                    d.message
+                )
 
-                    diagnostics.getOrPut(eUri) { mutableSetOf() }.add(d)
-                }
+                diagnostics.getOrPut(eUri) { mutableSetOf() }.add(d)
             }
         }
 
