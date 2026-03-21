@@ -19,7 +19,6 @@ import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 import java.io.InputStream
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 

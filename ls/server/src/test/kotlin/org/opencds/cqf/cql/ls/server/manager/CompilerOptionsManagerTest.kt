@@ -134,7 +134,9 @@ class CompilerOptionsManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun getOptions_withRealFileOnDisk_loadsOptionsFromFile(@TempDir tempDir: Path) {
+    fun getOptions_withRealFileOnDisk_loadsOptionsFromFile(
+        @TempDir tempDir: Path,
+    ) {
         // Arrange: write a minimal (empty) cql-options.json.
         // Structure: tempDir/cql/cql-options.json
         // getOptions(tempDir/One.cql) → getHead → tempDir/ → readOptions → looks for tempDir/cql/cql-options.json
@@ -148,12 +150,20 @@ class CompilerOptionsManagerTest {
         // ContentService that reads from the real filesystem using the file:// URI.
         // This exercises the Paths.get(URI).toString() fix (regression: toURL().path gave
         // "/C:/foo" on Windows with a leading slash, making the path unresolvable).
-        val fsContentService = object : ContentService {
-            override fun locate(root: URI, libraryIdentifier: VersionedIdentifier): Set<URI> = emptySet()
-            override fun read(uri: URI): InputStream? =
-                try { Paths.get(uri).toFile().takeIf { it.exists() }?.inputStream() }
-                catch (e: Exception) { null }
-        }
+        val fsContentService =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    libraryIdentifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? =
+                    try {
+                        Paths.get(uri).toFile().takeIf { it.exists() }?.inputStream()
+                    } catch (e: Exception) {
+                        null
+                    }
+            }
 
         // Act: getOptions(cqlFile) → getHead(cqlFile) = tempDir/ → readOptions(tempDir/) →
         //      Paths.get(optionsUri).toString() → filesystem path → CqlTranslatorOptions.fromFile
