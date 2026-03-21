@@ -36,6 +36,7 @@ class CompilerOptionsManager(private val contentService: ContentService) {
 
         val optionsUri = Uris.addPath(rootUri, "/cql/cql-options.json")
         val input = contentService.read(optionsUri!!)
+        input?.close()
 
         options = if (input != null) {
             try {
