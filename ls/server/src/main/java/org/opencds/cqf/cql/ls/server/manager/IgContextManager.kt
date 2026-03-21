@@ -14,6 +14,7 @@ import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Paths
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 
@@ -81,7 +82,7 @@ class IgContextManager(private val contentService: ContentService) {
                 if (input != null) {
                     log.info("Initializing ig from ini...")
                     val igContext = IGContext(LoggerAdapter(log))
-                    igContext.initializeFromIni(igIniPath.schemeSpecificPart)
+                    igContext.initializeFromIni(Paths.get(igIniPath).toString())
                     log.info("IGContext Initialized.")
                     return igContext
                 }

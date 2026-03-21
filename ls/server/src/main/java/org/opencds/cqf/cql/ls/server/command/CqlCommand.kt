@@ -156,7 +156,7 @@ class CqlCommand : Callable<Int> {
         } else if (parentCommand != null && rootDir != null) {
             npmProcessor = parentCommand!!
                 .getIgContextManager()
-                .getContext(Uris.addPath(Uris.addPath(java.net.URI.create(rootDir), "input")!!, "cql")!!)
+                .getContext(Uris.addPath(Uris.addPath(Uris.parseOrNull(rootDir!!)!!, "input")!!, "cql")!!)
             if (npmProcessor != null) {
                 igContext = npmProcessor.igContext
             }
@@ -170,7 +170,7 @@ class CqlCommand : Callable<Int> {
 
         val optionsPathVal = optionsPath
         if (optionsPathVal != null) {
-            val op = Path(Uris.parseOrNull(optionsPathVal)!!.toURL().path)
+            val op = Path(Paths.get(Uris.parseOrNull(optionsPathVal)!!).toString())
             val options = CqlTranslatorOptions.fromFile(Path(op))
             cqlOptions.setCqlCompilerOptions(options.cqlCompilerOptions)
         }
@@ -203,7 +203,7 @@ class CqlCommand : Callable<Int> {
             val libraryUrlVal = library.libraryUrl
             val libraryUri = if (libraryUrlVal != null) Uris.parseOrNull(libraryUrlVal) else null
 
-            val libraryKotlinPath = if (libraryUri != null) Path(libraryUri.toURL().path) else null
+            val libraryKotlinPath = if (libraryUri != null) Path(Paths.get(libraryUri).toString()) else null
 
             val modelPath = library.model?.modelUrl?.let { Paths.get(Uris.parseOrNull(it)!!) }
 

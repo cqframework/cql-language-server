@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.manager
 
 import kotlinx.io.files.Path
+import java.nio.file.Paths as NioPaths
 import org.cqframework.cql.cql2elm.CqlCompilerOptions
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions
 import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel
@@ -38,7 +39,7 @@ class CompilerOptionsManager(private val contentService: ContentService) {
 
         options = if (input != null) {
             try {
-                CqlTranslatorOptions.fromFile(Path(optionsUri.toURL().path))
+                CqlTranslatorOptions.fromFile(Path(NioPaths.get(optionsUri).toString()))
                     .cqlCompilerOptions
             } catch (e: Exception) {
                 log.info("Exception ${e.message} attempting to load options from $optionsUri, using default options")

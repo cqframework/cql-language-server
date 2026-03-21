@@ -5,17 +5,24 @@ import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.FileChangeType
 import org.eclipse.lsp4j.FileEvent
+import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import java.io.InputStream
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
 
 class CompilerOptionsManagerTest {
     private lateinit var manager: CompilerOptionsManager
@@ -111,6 +118,59 @@ class CompilerOptionsManagerTest {
 
         val second = manager.getOptions(TEST_URI)
         assertSame(first, second)
+    }
+
+    // -----------------------------------------------------------------------
+    // readOptions — loads cql-options.json from filesystem via Paths.get(URI)
+    //
+    // Regression: the old code used uri.toURL().path which returns "/C:/foo" on
+    // Windows (leading slash), making the path invalid.  The fix uses
+    // Paths.get(URI).toString() which produces the correct OS-native path.
+    //
+    // Platform   | file URI                               | Paths.get().toString()
+    // -----------|----------------------------------------|----------------------
+    // macOS/Linux| file:///tmp/test/cql/cql-options.json  | /tmp/test/cql/cql-options.json
+    // Windows    | file:///C:/tmp/test/cql/cql-options.json| C:\tmp\test\cql\cql-options.json
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getOptions_withRealFileOnDisk_loadsOptionsFromFile(@TempDir tempDir: Path) {
+        // Arrange: write a minimal (empty) cql-options.json.
+        // Structure: tempDir/cql/cql-options.json
+        // getOptions(tempDir/One.cql) → getHead → tempDir/ → readOptions → looks for tempDir/cql/cql-options.json
+        val cqlDir = tempDir.resolve("cql")
+        Files.createDirectories(cqlDir)
+        // Empty JSON object — no DisableListDemotion / DisableListPromotion options.
+        // These ARE included by CqlCompilerOptions.defaultOptions(), which readOptions uses
+        // when file loading fails. Their absence in the result is the distinguishing signal.
+        cqlDir.resolve("cql-options.json").toFile().writeText("{}")
+
+        // ContentService that reads from the real filesystem using the file:// URI.
+        // This exercises the Paths.get(URI).toString() fix (regression: toURL().path gave
+        // "/C:/foo" on Windows with a leading slash, making the path unresolvable).
+        val fsContentService = object : ContentService {
+            override fun locate(root: URI, libraryIdentifier: VersionedIdentifier): Set<URI> = emptySet()
+            override fun read(uri: URI): InputStream? =
+                try { Paths.get(uri).toFile().takeIf { it.exists() }?.inputStream() }
+                catch (e: Exception) { null }
+        }
+
+        // Act: getOptions(cqlFile) → getHead(cqlFile) = tempDir/ → readOptions(tempDir/) →
+        //      Paths.get(optionsUri).toString() → filesystem path → CqlTranslatorOptions.fromFile
+        val localManager = CompilerOptionsManager(fsContentService)
+        val options = localManager.getOptions(tempDir.resolve("One.cql").toUri())
+
+        // Assert: DisableListDemotion is in CqlCompilerOptions.defaultOptions() but not in "{}".
+        // Its absence proves the file was successfully loaded via the fixed Paths.get(URI) path.
+        // If the old toURL().path bug were present, fromFile() would fail, the exception would
+        // be swallowed, and readOptions() would fall back to defaultOptions() — which DOES include
+        // DisableListDemotion.
+        assertNotNull(options)
+        assertFalse(
+            options.options.contains(CqlCompilerOptions.Options.DisableListDemotion),
+            "DisableListDemotion is only present when defaultOptions() fallback is used " +
+                "(i.e. file loading failed due to wrong path); its absence proves the file was read",
+        )
     }
 
     companion object {

@@ -1,9 +1,11 @@
 package org.opencds.cqf.cql.ls.core.utility
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledOnOs
 import org.junit.jupiter.api.condition.OS
+import java.nio.file.Paths
 
 class UrisTest {
 
@@ -118,6 +120,44 @@ class UrisTest {
         val initial = Uris.parseOrNull("file:////d%3A/src/")!!
         val client = Uris.toClientUri(initial)
         assertEquals("file:////d%3A/src/", client)
+    }
+
+    // -----------------------------------------------------------------------
+    // Paths.get(URI).toString() — the safe way to convert a file URI to a
+    // filesystem path string.  Used in CompilerOptionsManager, IgContextManager,
+    // and CqlCommand to avoid the bugs below:
+    //
+    //   uri.toURL().path        → "/C:/foo" on Windows (leading slash, wrong)
+    //   uri.schemeSpecificPart  → "//C:/foo" on Windows (authority prefix, wrong)
+    //
+    // Platform   | input URI                        | expected toString()
+    // -----------|----------------------------------|----------------------
+    // macOS/Linux| file:///home/user/options.json   | /home/user/options.json
+    // Windows    | file:///C:/Users/user/options.json| C:\Users\user\options.json
+    // -----------------------------------------------------------------------
+
+    @Test
+    @EnabledOnOs(OS.MAC, OS.LINUX)
+    fun fileUriToFsPath_unix() {
+        val uri = Uris.parseOrNull("file:///home/user/cql/options.json")!!
+        val fsPath = Paths.get(uri).toString()
+        assertEquals("/home/user/cql/options.json", fsPath)
+        // Verify the two broken alternatives produce incorrect results on Unix:
+        // toURL().path would also work on Unix (no leading-slash bug there), but
+        // schemeSpecificPart includes the authority ("//") prefix.
+        assertFalse(uri.schemeSpecificPart == fsPath, "schemeSpecificPart should differ from the plain path")
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    fun fileUriToFsPath_windows() {
+        val uri = Uris.parseOrNull("file:///C:/Users/user/cql/options.json")!!
+        val fsPath = Paths.get(uri).toString()
+        // Expect a Windows-style path; drive letter present, no leading slash
+        assertEquals("C:\\Users\\user\\cql\\options.json", fsPath)
+        // Verify the two broken alternatives:
+        assertFalse(uri.toURL().path == fsPath, "toURL().path has a leading slash and is not a valid FS path on Windows")
+        assertFalse(uri.schemeSpecificPart == fsPath, "schemeSpecificPart is not a valid FS path on Windows")
     }
 
     @Test
