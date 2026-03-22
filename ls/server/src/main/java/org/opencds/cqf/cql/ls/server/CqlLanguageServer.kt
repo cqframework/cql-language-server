@@ -4,6 +4,7 @@ import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.ServerCapabilities
+import org.eclipse.lsp4j.SetTraceParams
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.LanguageServer
@@ -44,6 +45,11 @@ class CqlLanguageServer(
 
     override fun initialized(params: InitializedParams) {
         // Nothing to do, currently.
+    }
+
+    override fun setTrace(params: SetTraceParams) {
+        // No-op: VS Code sends $/setTrace on startup; suppress the UnsupportedOperationException
+        // from the LSP4J default implementation.
     }
 
     override fun shutdown(): CompletableFuture<Any> {
