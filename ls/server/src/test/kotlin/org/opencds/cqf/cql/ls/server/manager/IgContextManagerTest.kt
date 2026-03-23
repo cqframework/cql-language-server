@@ -313,9 +313,15 @@ class IgContextManagerTest {
                 ) = emptySet<URI>()
 
                 override fun read(uri: URI): InputStream? {
-                    if (uri.toString().startsWith("file:///workspace/root1")) {
+                    // Use contains() rather than startsWith("file:///workspace/root1") because
+                    // Uris.parseOrNull() normalises file: URIs on Windows via File.toURI(),
+                    // which can produce "file:////workspace/..." (4 slashes) instead of the
+                    // expected 3-slash form.  The path segment "/workspace/root1" is present
+                    // in both forms and uniquely identifies the root.
+                    val s = uri.toString()
+                    if (s.contains("/workspace/root1")) {
                         root1Reads.add(uri)
-                    } else if (uri.toString().startsWith("file:///workspace/root2")) {
+                    } else if (s.contains("/workspace/root2")) {
                         root2Reads.add(uri)
                     }
                     return null

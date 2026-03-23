@@ -121,9 +121,11 @@ class CqlCommandTest {
     fun `blank line appears after expression results`() {
         val cmd = buildCommand("One")
         cmd.call()
-        // writeResult() calls println() after iterating results, producing a trailing blank line
+        // writeResult() calls println() after iterating results, producing a trailing blank line.
+        // Use System.lineSeparator() so the check works on Windows (\r\n) and Unix (\n).
         val out = output()
-        assertTrue(out.contains("\n\n") || out.endsWith("\n\n"))
+        val sep = System.lineSeparator()
+        assertTrue(out.contains("$sep$sep") || out.endsWith("$sep$sep"))
     }
 
     @Test
