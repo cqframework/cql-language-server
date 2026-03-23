@@ -50,10 +50,11 @@ class CqlTextDocumentService(
         // c.setSignatureHelpProvider(new SignatureHelpOptions(ImmutableList.of("(", ",")));
     }
 
-    @Suppress("UNCHECKED_CAST")
     override fun hover(position: HoverParams): CompletableFuture<Hover> {
-        return CompletableFuture.supplyAsync { hoverProvider.hover(position) }
-            .exceptionally { notifyClient(it) } as CompletableFuture<Hover>
+        val result = CompletableFuture.supplyAsync { hoverProvider.hover(position) }
+            .exceptionally { notifyClient(it) }
+        @Suppress("UNCHECKED_CAST")
+        return result as CompletableFuture<Hover>
     }
 
     override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {

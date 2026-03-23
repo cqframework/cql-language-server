@@ -32,7 +32,7 @@ class DebugCqlCommandContribution(private val igContextManager: IgContextManager
     private fun executeCql(params: ExecuteCommandParams): CompletableFuture<Any> {
         try {
             val arguments = params.arguments
-                .map { it as JsonElement }
+                .mapNotNull { it as? JsonElement }
                 .map { it.asString }
 
             // Temporarily redirect std out, because uh... I didn't do that very smart.

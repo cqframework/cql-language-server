@@ -339,7 +339,7 @@ open class IgStandardRepository : IRepository {
     }
 
     private fun <T : IBaseResource> validateResource(resourceType: Class<T>, resource: IBaseResource, id: IIdType): T {
-        val path = resource.getUserData(SOURCE_PATH_TAG) as Path?
+        val path = resource.getUserData(SOURCE_PATH_TAG) as? Path
 
         if (resourceType.simpleName != resource.fhirType()) {
             throw ResourceNotFoundException(
@@ -374,7 +374,7 @@ open class IgStandardRepository : IRepository {
 
         val compartment = compartmentFrom(headers)
         val preferred = preferredPathForResource(resource.javaClass, resource.idElement, compartment)
-        var actual = resource.getUserData(SOURCE_PATH_TAG) as Path? ?: preferred
+        var actual = (resource.getUserData(SOURCE_PATH_TAG) as? Path) ?: preferred
 
         if (isExternalPath(actual)) {
             throw ForbiddenOperationException(
@@ -496,9 +496,9 @@ open class IgStandardRepository : IRepository {
     protected open fun <R : IBaseResource> invokeOperation(
         id: IIdType?, resourceType: String, operationName: String, parameters: IBaseParameters
     ): R {
-        checkNotNull(operationProvider) { "No operation provider found. Unable to invoke operations." }
+        val provider = checkNotNull(operationProvider) { "No operation provider found. Unable to invoke operations." }
         @Suppress("UNCHECKED_CAST")
-        return operationProvider!!.invokeOperation<org.hl7.fhir.instance.model.api.IPrimitiveType<String>, R>(
+        return provider.invokeOperation<org.hl7.fhir.instance.model.api.IPrimitiveType<String>, R>(
             this, id, resourceType, operationName, parameters
         )
     }

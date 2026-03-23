@@ -243,9 +243,9 @@ class CqlCommand : Callable<Int> {
             val identifier = VersionedIdentifier().withId(library.libraryName)
 
             val contextParameter: org.apache.commons.lang3.tuple.Pair<String?, Any?>? =
-                if (library.context != null) {
-                    org.apache.commons.lang3.tuple.Pair.of(library.context!!.contextName, library.context!!.contextValue as Any?)
-                } else null
+                library.context?.let { ctx ->
+                    org.apache.commons.lang3.tuple.Pair.of(ctx.contextName, ctx.contextValue)
+                }
 
             val expressions = library.expression?.toSet()
             val result = if (expressions != null) {

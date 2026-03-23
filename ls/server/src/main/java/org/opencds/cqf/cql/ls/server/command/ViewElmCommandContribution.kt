@@ -36,11 +36,12 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
             return CompletableFuture.completedFuture(null)
         }
 
-        val uriString = (args[0] as JsonElement).asString
+        val uriString = (args[0] as? JsonElement)?.asString
+            ?: return CompletableFuture.completedFuture(null)
 
         // Handle missing or null elmType by defaulting to "xml"
         val elmType = if (args.size > 1 && args[1] != null) {
-            (args[1] as JsonElement).asString
+            (args[1] as? JsonElement)?.asString ?: "xml"
         } else {
             "xml"
         }

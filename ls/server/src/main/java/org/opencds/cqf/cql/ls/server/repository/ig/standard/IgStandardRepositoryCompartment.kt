@@ -27,8 +27,7 @@ class IgStandardRepositoryCompartment {
     fun isEmpty(): Boolean = type == null || id == null
 
     override fun equals(other: Any?): Boolean {
-        if (other == null || javaClass != other.javaClass) return false
-        other as IgStandardRepositoryCompartment
+        if (other !is IgStandardRepositoryCompartment) return false
         return type == other.type && id == other.id
     }
 
