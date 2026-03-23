@@ -89,46 +89,29 @@ class ActiveContentService : ContentService {
         val reader = BufferedReader(StringReader(sourceText))
         val writer = StringWriter()
 
-        var line = 0
-        while (line < range.start.line) {
-            writer.write(reader.readLine() + '\n')
-            line++
-        }
-
-        for (character in 0 until range.start.character) {
-            writer.write(reader.read())
-        }
+        repeat(range.start.line) { writer.write(reader.readLine() + '\n') }
+        repeat(range.start.character) { writer.write(reader.read()) }
 
         val encodedText = String(change.text.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
         writer.write(encodedText)
 
         reader.skip(change.rangeLength.toLong())
 
-        while (true) {
-            val next = reader.read()
-            if (next == -1) return writer.toString()
-            else writer.write(next)
-        }
+        generateSequence { reader.read().takeIf { it != -1 } }
+            .forEach { writer.write(it) }
+        return writer.toString()
     }
 
     internal fun searchActiveContent(root: URI, identifier: VersionedIdentifier): Set<URI> {
         val id = identifier.id
         val version = identifier.version
-        var matchText = "(?s).*library\\s+$id"
-        matchText += if (version != null) {
-            "\\s+version\\s+'$version'\\s+(?s).*"
-        } else {
-            "'\\s+(?s).*"
-        }
-
-        val uris = mutableSetOf<URI>()
-        for ((uri, content) in activeContent.entries) {
-            if (root.relativize(uri) == uri) continue
-            if (content.content.matches(matchText.toRegex())) {
-                uris.add(uri)
-            }
-        }
-        return uris
+        val matchText = "(?s).*library\\s+$id" +
+            if (version != null) "\\s+version\\s+'$version'\\s+(?s).*" else "'\\s+(?s).*"
+        val pattern = matchText.toRegex()
+        return activeContent
+            .filterKeys { root.relativize(it) != it }
+            .filterValues { it.content.matches(pattern) }
+            .keys.toSet()
     }
 
     fun activeUris(): Set<URI> = activeContent.keys

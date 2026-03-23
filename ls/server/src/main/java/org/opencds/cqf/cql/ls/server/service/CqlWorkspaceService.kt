@@ -148,16 +148,11 @@ class CqlWorkspaceService(
     }
 
     fun getSupportedCommands(): List<String> {
-        val commands = mutableSetOf<String>()
-        for (commandContribution in commandContributions.join()) {
-            for (command in commandContribution.getCommands()) {
-                if (commands.contains(command)) {
-                    throw IllegalArgumentException("The command $command was contributed multiple times")
-                }
-                commands.add(command)
-            }
-        }
-        return ImmutableList.copyOf(commands)
+        val allCommands = commandContributions.join().flatMap { it.getCommands() }
+        allCommands.groupingBy { it }.eachCount()
+            .entries.firstOrNull { it.value > 1 }
+            ?.let { (cmd, _) -> throw IllegalArgumentException("The command $cmd was contributed multiple times") }
+        return ImmutableList.copyOf(allCommands)
     }
 
     fun stop() {

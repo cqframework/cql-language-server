@@ -122,22 +122,18 @@ open class IgStandardRepository : IRepository {
     protected open fun <T : IBaseResource, I : IIdType> potentialPathsForResource(
         resourceType: Class<T>, id: I, igRepositoryCompartment: IgStandardRepositoryCompartment
     ): List<Path> {
-        val potentialDirectories = mutableListOf<Path>()
         val directory = directoryForResource(resourceType, igRepositoryCompartment)
-        potentialDirectories.add(directory)
-
-        if (IgStandardResourceCategory.forType(resourceType.simpleName) == IgStandardResourceCategory.TERMINOLOGY) {
-            potentialDirectories.add(directory.resolve(EXTERNAL_DIRECTORY))
-        }
-
-        val potentialPaths = mutableListOf<Path>()
-        for (dir in potentialDirectories) {
-            for (encoding in FILE_EXTENSIONS.keys) {
-                potentialPaths.add(dir.resolve(fileNameForResource(resourceType.simpleName, id.idPart, encoding)))
+        val potentialDirectories = buildList {
+            add(directory)
+            if (IgStandardResourceCategory.forType(resourceType.simpleName) == IgStandardResourceCategory.TERMINOLOGY) {
+                add(directory.resolve(EXTERNAL_DIRECTORY))
             }
         }
-
-        return potentialPaths
+        return potentialDirectories.flatMap { dir ->
+            FILE_EXTENSIONS.keys.map { encoding ->
+                dir.resolve(fileNameForResource(resourceType.simpleName, id.idPart, encoding))
+            }
+        }
     }
 
     protected open fun fileNameForResource(resourceType: String, resourceId: String, encoding: EncodingEnum): String {
@@ -459,17 +455,12 @@ open class IgStandardRepository : IRepository {
     private fun <T : IBaseResource> getIdCandidates(
         idQueries: Collection<List<IQueryParameterType>>, resourceIdMap: Map<IIdType, T>, resourceType: Class<T>
     ): List<T> {
-        val idResources = mutableListOf<T>()
-        for (idQuery in idQueries) {
-            for (query in idQuery) {
-                if (query is TokenParam) {
-                    val id = Ids.newId<IIdType>(fhirContext, resourceType.simpleName, query.value)
-                    val resource = resourceIdMap[id]
-                    if (resource != null) idResources.add(resource)
-                }
+        return idQueries.flatten()
+            .filterIsInstance<TokenParam>()
+            .mapNotNull { query ->
+                val id = Ids.newId<IIdType>(fhirContext, resourceType.simpleName, query.value)
+                resourceIdMap[id]
             }
-        }
-        return idResources
     }
 
     private fun allParametersMatch(

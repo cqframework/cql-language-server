@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.ls.server.service
 
 import com.google.common.base.Joiner
-import com.google.common.base.Preconditions.checkNotNull
 import org.cqframework.cql.cql2elm.CqlCompilerException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
@@ -65,9 +64,6 @@ class DiagnosticsService(
         currentDiagnostics: MutableMap<URI, MutableSet<Diagnostic>>,
         newDiagnostics: Map<URI, Set<Diagnostic>>
     ) {
-        checkNotNull(currentDiagnostics)
-        checkNotNull(newDiagnostics)
-
         for ((uri, diagnostics) in newDiagnostics) {
             currentDiagnostics.getOrPut(uri) { mutableSetOf() }.addAll(diagnostics)
         }
