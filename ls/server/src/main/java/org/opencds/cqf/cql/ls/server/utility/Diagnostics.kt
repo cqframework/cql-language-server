@@ -20,14 +20,8 @@ object Diagnostics {
     }
 
     @JvmStatic
-    fun convert(errors: Iterable<CqlCompilerException>): Set<Diagnostic> {
-        val result = mutableSetOf<Diagnostic>()
-        for (error in errors) {
-            val diagnostic = convert(error)
-            if (diagnostic != null) result.add(diagnostic)
-        }
-        return result
-    }
+    fun convert(errors: Iterable<CqlCompilerException>): Set<Diagnostic> =
+        errors.mapNotNull { convert(it) }.toSet()
 
     private fun severity(severity: CqlCompilerException.ErrorSeverity): DiagnosticSeverity {
         return when (severity) {

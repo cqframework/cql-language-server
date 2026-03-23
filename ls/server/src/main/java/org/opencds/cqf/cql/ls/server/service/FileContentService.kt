@@ -1,6 +1,5 @@
 package org.opencds.cqf.cql.ls.server.service
 
-import com.google.common.base.Preconditions.checkNotNull
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.filefilter.IOFileFilter
 import org.apache.commons.io.filefilter.TrueFileFilter
@@ -97,8 +96,8 @@ class FileContentService(protected val workspaceFolders: List<WorkspaceFolder>) 
     }
 
     override fun locate(root: URI, identifier: VersionedIdentifier): Set<URI> {
-        checkNotNull(root)
-        checkNotNull(identifier)
+        requireNotNull(root)
+        requireNotNull(identifier)
 
         val uris = mutableSetOf<URI>()
         for (w in workspaceFolders) {

@@ -12,7 +12,7 @@ open class ExpressionTrackBackVisitor : BaseElmLibraryVisitor<Element?, TrackBac
     // Return the child result if it's not null (i.e., it's more specific than the current result).
     // Otherwise, return the current result.
     override fun aggregateResult(aggregate: Element?, nextResult: Element?): Element? {
-        return if (nextResult != null) nextResult else aggregate
+        return nextResult ?: aggregate
     }
 
     override fun visitExpressionDef(elm: ExpressionDef, context: TrackBack?): Element? {

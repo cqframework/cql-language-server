@@ -39,32 +39,21 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
         val uriString = (args[0] as? JsonElement)?.asString
             ?: return CompletableFuture.completedFuture(null)
 
-        // Handle missing or null elmType by defaulting to "xml"
-        val elmType = if (args.size > 1 && args[1] != null) {
-            (args[1] as? JsonElement)?.asString ?: "xml"
-        } else {
-            "xml"
-        }
+        val elmType = (args.getOrNull(1) as? JsonElement)?.asString ?: "xml"
 
         return try {
             val uri = Uris.parseOrNull(uriString)
                 ?: return CompletableFuture.completedFuture(null)
             val compiler = cqlCompilationManager.compile(uri)
-
-            if (compiler != null) {
-                val library = compiler.library
-                    ?: return CompletableFuture.completedFuture(null)
-                // Use equalsIgnoreCase for better robustness
-                if (elmType.equals("xml", ignoreCase = true)) {
-                    CompletableFuture.completedFuture(convertToXml(library))
-                } else {
-                    CompletableFuture.completedFuture(convertToJson(library))
-                }
+                ?: return CompletableFuture.completedFuture(null)
+            val library = compiler.library
+                ?: return CompletableFuture.completedFuture(null)
+            if (elmType.equals("xml", ignoreCase = true)) {
+                CompletableFuture.completedFuture(convertToXml(library))
             } else {
-                CompletableFuture.completedFuture(null)
+                CompletableFuture.completedFuture(convertToJson(library))
             }
         } catch (e: Exception) {
-            // Log the error here if possible to avoid "silent" failures
             CompletableFuture.completedFuture(null)
         }
     }

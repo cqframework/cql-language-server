@@ -136,15 +136,13 @@ class CqlWorkspaceService(
 
     protected fun executeCommandFromContributions(params: ExecuteCommandParams): CompletableFuture<Any> {
         val command = params.command
-
-        for (commandContribution in commandContributions.join()) {
-            if (commandContribution.getCommands().contains(command)) {
-                return commandContribution.executeCommand(params)
+        return commandContributions.join()
+            .firstOrNull { it.getCommands().contains(command) }
+            ?.executeCommand(params)
+            ?: run {
+                client.join().showMessage(MessageParams(MessageType.Error, "Unknown Command $command"))
+                CompletableFuture.completedFuture(null)
             }
-        }
-
-        client.join().showMessage(MessageParams(MessageType.Error, "Unknown Command $command"))
-        return CompletableFuture.completedFuture(null)
     }
 
     fun getSupportedCommands(): List<String> {

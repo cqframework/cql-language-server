@@ -36,7 +36,7 @@ class CompilerOptionsManager(private val contentService: ContentService) {
         val input = optionsUri?.let { contentService.read(it) }
         input?.close()
 
-        val options = if (input != null && optionsUri != null) {
+        val options = if (input != null) {
             try {
                 CqlTranslatorOptions.fromFile(Path(NioPaths.get(optionsUri).toString()))
                     .cqlCompilerOptions

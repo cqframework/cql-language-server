@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.command
 import com.google.gson.JsonParser
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
@@ -130,5 +131,43 @@ class ViewElmCommandContributionTest {
 
         // This ensures the test waits and fails if an exception occurs
         future.join()
+    }
+
+    // -----------------------------------------------------------------------
+    // Early-return / null guard paths
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun executeCommand_nullArgs_returnsNull() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = null
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    @Test
+    fun executeCommand_emptyArgs_returnsNull() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = emptyList()
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    @Test
+    fun executeCommand_invalidUri_returnsNull() {
+        // URI(String) throws on unencoded spaces, so parseOrNull returns null
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(JsonParser.parseString("\"not a valid uri\""))
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    @Test
+    fun executeCommand_compilerReturnsNull_returnsNull() {
+        // TestContentService returns null for any URI not on the classpath, so compile() returns null
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(JsonParser.parseString("\"file:///nonexistent/Missing.cql\""))
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
     }
 }

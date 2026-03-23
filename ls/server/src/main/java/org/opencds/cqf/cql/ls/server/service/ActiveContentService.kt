@@ -1,7 +1,5 @@
 package org.opencds.cqf.cql.ls.server.service
 
-import com.google.common.base.Preconditions.checkNotNull
-import com.google.common.base.Preconditions.checkState
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -29,21 +27,21 @@ class ActiveContentService : ContentService {
     private val activeContent = ConcurrentHashMap<URI, VersionedContent>()
 
     override fun locate(root: URI, identifier: VersionedIdentifier): Set<URI> {
-        checkNotNull(root)
-        checkNotNull(identifier)
+        requireNotNull(root)
+        requireNotNull(identifier)
         return searchActiveContent(root, identifier)
     }
 
     override fun read(root: URI, identifier: VersionedIdentifier): InputStream? {
-        checkNotNull(root)
-        checkNotNull(identifier)
+        requireNotNull(root)
+        requireNotNull(identifier)
         val uris = locate(root, identifier)
-        checkState(uris.size == 1, "Found more than one file for identifier: %s", identifier)
+        check(uris.size == 1) { "Found more than one file for identifier: $identifier" }
         return read(uris.first())
     }
 
     override fun read(uri: URI): InputStream? {
-        checkNotNull(uri)
+        requireNotNull(uri)
         val content = activeContent[uri]?.content ?: return null
         return ByteArrayInputStream(content.toByteArray())
     }
