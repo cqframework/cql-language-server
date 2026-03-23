@@ -154,7 +154,9 @@ open class IgStandardRepository : IRepository {
         }
 
         val category = IgStandardResourceCategory.forType(resourceType.simpleName)
-        val directory = CATEGORY_DIRECTORIES[category]!!
+        val directory = requireNotNull(CATEGORY_DIRECTORIES[category]) {
+            "No directory configured for category: $category"
+        }
         val categoryPath = root.resolve(directory)
 
         if (conventions.compartmentLayout == IgStandardConventions.CompartmentLayout.DIRECTORY_PER_COMPARTMENT &&
@@ -227,9 +229,10 @@ open class IgStandardRepository : IRepository {
 
     protected open fun <T : IBaseResource> writeResource(resource: T, path: Path) {
         try {
+            val encoding = encodingForPath(path) ?: return
             path.parent?.toFile()?.mkdirs()
             FileOutputStream(path.toFile()).use { stream ->
-                val result = parserForEncoding(fhirContext, encodingForPath(path)!!)
+                val result = parserForEncoding(fhirContext, encoding)
                     .setPrettyPrint(true)
                     .encodeResourceToString(resource)
                 stream.write(result.toByteArray())
@@ -280,8 +283,9 @@ open class IgStandardRepository : IRepository {
                     .parallel()
                     .map { cachedReadResource(it) }
                     .filter { it != null }
+                    .map { checkNotNull(it) }
                     .forEach { r ->
-                        if (r!!.fhirType() != resourceClass.simpleName) return@forEach
+                        if (r.fhirType() != resourceClass.simpleName) return@forEach
                         val validated = validateResource(resourceClass, r, r.idElement)
                         resources[r.idElement.toUnqualifiedVersionless()] = validated
                     }

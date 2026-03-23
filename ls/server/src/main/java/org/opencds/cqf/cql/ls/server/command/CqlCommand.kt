@@ -40,6 +40,11 @@ import java.util.concurrent.Callable
 @Command(name = "cql", mixinStandardHelpOptions = true)
 class CqlCommand : Callable<Int> {
 
+    companion object {
+        private val log = LoggerFactory.getLogger(CqlCommand::class.java)
+    }
+
+
     @Option(names = ["-fv", "--fhir-version"], required = true)
     var fhirVersion: String = ""
 
@@ -154,9 +159,14 @@ class CqlCommand : Callable<Int> {
             igContext = IGContext(Logger())
             igContext.initializeFromIg(rootDir, igPath, toVersionNumber(fhirVersionEnum))
         } else if (parentCommand != null && rootDir != null) {
-            npmProcessor = parentCommand!!
-                .getIgContextManager()
-                .getContext(Uris.addPath(Uris.addPath(Uris.parseOrNull(rootDir!!)!!, "input")!!, "cql")!!)
+            val pc = parentCommand
+            val rd = rootDir
+            if (pc != null && rd != null) {
+                val rootUri = Uris.parseOrNull(rd)
+                val inputUri = rootUri?.let { Uris.addPath(it, "input") }
+                val cqlUri = inputUri?.let { Uris.addPath(it, "cql") }
+                npmProcessor = cqlUri?.let { pc.getIgContextManager().getContext(it) }
+            }
             if (npmProcessor != null) {
                 igContext = npmProcessor.igContext
             }
@@ -170,7 +180,9 @@ class CqlCommand : Callable<Int> {
 
         val optionsPathVal = optionsPath
         if (optionsPathVal != null) {
-            val op = Path(Paths.get(Uris.parseOrNull(optionsPathVal)!!).toString())
+            val optUri = Uris.parseOrNull(optionsPathVal)
+                ?: run { log.warn("Could not parse options path: $optionsPathVal"); return 1 }
+            val op = Path(Paths.get(optUri).toString())
             val options = CqlTranslatorOptions.fromFile(Path(op))
             cqlOptions.setCqlCompilerOptions(options.cqlCompilerOptions)
         }
@@ -205,28 +217,27 @@ class CqlCommand : Callable<Int> {
 
             val libraryKotlinPath = if (libraryUri != null) Path(Paths.get(libraryUri).toString()) else null
 
-            val modelPath = library.model?.modelUrl?.let { Paths.get(Uris.parseOrNull(it)!!) }
+            val modelPath = library.model?.modelUrl?.let { Uris.parseOrNull(it)?.let { u -> Paths.get(u) } }
 
             val terminologyUrl = library.terminologyUrl
-            val terminologyPath = if (terminologyUrl != null) Paths.get(Uris.parseOrNull(terminologyUrl)!!) else null
+            val terminologyPath = terminologyUrl?.let { Uris.parseOrNull(it)?.let { u -> Paths.get(u) } }
 
             val repository = createRepository(fhirContext, terminologyPath, modelPath)
 
             val engine = Engines.forRepository(repository, evaluationSettings)
 
-            if (library.libraryUrl != null) {
-                val provider = DefaultLibrarySourceProvider(libraryKotlinPath!!)
+            val kPath = libraryKotlinPath
+            if (library.libraryUrl != null && kPath != null) {
+                val provider = DefaultLibrarySourceProvider(kPath)
                 engine.environment
-                    .libraryManager!!
-                    .librarySourceLoader
-                    .registerProvider(provider)
+                    .libraryManager?.librarySourceLoader
+                    ?.registerProvider(provider)
 
-                val modelProvider = DefaultModelInfoProvider(libraryKotlinPath!!)
+                val modelProvider = DefaultModelInfoProvider(kPath)
                 engine.environment
-                    .libraryManager!!
-                    .modelManager
-                    .modelInfoLoader
-                    .registerModelInfoProvider(modelProvider)
+                    .libraryManager?.modelManager
+                    ?.modelInfoLoader
+                    ?.registerModelInfoProvider(modelProvider)
             }
 
             val identifier = VersionedIdentifier().withId(library.libraryName)

@@ -170,7 +170,7 @@ class DiagnosticsService(
     }
 
     internal fun debounce(delay: Long, task: Runnable) {
-        if (future != null && !future!!.isDone) future!!.cancel(false)
+        future?.takeIf { !it.isDone }?.cancel(false)
         future = executor.schedule(task, delay, TimeUnit.MILLISECONDS)
     }
 }

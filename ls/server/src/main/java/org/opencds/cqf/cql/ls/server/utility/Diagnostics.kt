@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.utility
 
 import org.cqframework.cql.cql2elm.CqlCompilerException
+import org.cqframework.cql.cql2elm.tracking.TrackBack
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -9,8 +10,8 @@ import org.eclipse.lsp4j.Range
 object Diagnostics {
     @JvmStatic
     fun convert(error: CqlCompilerException): Diagnostic? {
-        if (error.locator == null) return null
-        val range = position(error)
+        val locator = error.locator ?: return null
+        val range = position(locator)
         val diagnostic = Diagnostic()
         diagnostic.severity = severity(error.severity)
         diagnostic.range = range
@@ -36,8 +37,7 @@ object Diagnostics {
         }
     }
 
-    private fun position(error: CqlCompilerException): Range {
-        val locator = error.locator!!
+    private fun position(locator: TrackBack): Range {
         return Range(
             Position(
                 maxOf(locator.startLine - 1, 0),

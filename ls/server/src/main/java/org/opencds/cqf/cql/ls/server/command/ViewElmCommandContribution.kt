@@ -47,14 +47,17 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
 
         return try {
             val uri = Uris.parseOrNull(uriString)
-            val compiler = cqlCompilationManager.compile(uri!!)
+                ?: return CompletableFuture.completedFuture(null)
+            val compiler = cqlCompilationManager.compile(uri)
 
             if (compiler != null) {
+                val library = compiler.library
+                    ?: return CompletableFuture.completedFuture(null)
                 // Use equalsIgnoreCase for better robustness
                 if (elmType.equals("xml", ignoreCase = true)) {
-                    CompletableFuture.completedFuture(convertToXml(compiler.library!!))
+                    CompletableFuture.completedFuture(convertToXml(library))
                 } else {
-                    CompletableFuture.completedFuture(convertToJson(compiler.library!!))
+                    CompletableFuture.completedFuture(convertToJson(library))
                 }
             } else {
                 CompletableFuture.completedFuture(null)

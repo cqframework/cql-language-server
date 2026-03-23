@@ -32,30 +32,25 @@ class CompilerOptionsManager(private val contentService: ContentService) {
     }
 
     protected fun readOptions(rootUri: URI): CqlCompilerOptions {
-        var options: CqlCompilerOptions?
-
         val optionsUri = Uris.addPath(rootUri, "/cql/cql-options.json")
-        val input = contentService.read(optionsUri!!)
+        val input = optionsUri?.let { contentService.read(it) }
         input?.close()
 
-        options = if (input != null) {
+        val options = if (input != null && optionsUri != null) {
             try {
                 CqlTranslatorOptions.fromFile(Path(NioPaths.get(optionsUri).toString()))
                     .cqlCompilerOptions
+                    ?: CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
             } catch (e: Exception) {
                 log.info("Exception ${e.message} attempting to load options from $optionsUri, using default options")
-                null
+                CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
             }
         } else {
             log.info("$optionsUri not found, using default options")
-            null
+            CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
         }
 
-        if (options == null) {
-            options = CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
-        }
-
-        return options!!.withOptions(
+        return requireNotNull(options) { "CqlCompilerOptions must not be null" }.withOptions(
             CqlCompilerOptions.Options.EnableLocators,
             CqlCompilerOptions.Options.EnableResultTypes,
             CqlCompilerOptions.Options.EnableAnnotations
@@ -66,7 +61,7 @@ class CompilerOptionsManager(private val contentService: ContentService) {
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
         for (e in event.params().changes) {
             if (e.uri.endsWith("cql-options.json")) {
-                clearOptions(Uris.parseOrNull(e.uri)!!)
+                Uris.parseOrNull(e.uri)?.let { clearOptions(it) }
             }
         }
     }

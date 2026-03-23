@@ -46,9 +46,8 @@ class IgContextManager(private val contentService: ContentService) {
         val npmProcessor = getContext(uri) ?: return
         val namespaceManager = libraryManager.namespaceManager
         npmProcessor.igNamespace?.let { namespaceManager.ensureNamespaceRegistered(it) }
-        val reader: ILibraryReader = org.cqframework.fhir.npm.LibraryLoader(
-            npmProcessor.igContext!!.fhirVersion
-        )
+        val fhirVersion = npmProcessor.igContext?.fhirVersion ?: return
+        val reader: ILibraryReader = org.cqframework.fhir.npm.LibraryLoader(fhirVersion)
         val adapter = LoggerAdapter(log)
         val npmList = npmProcessor.getPackageManager().npmList
         libraryManager.librarySourceLoader.registerProvider(
@@ -76,7 +75,7 @@ class IgContextManager(private val contentService: ContentService) {
             val parent = Uris.getHead(current)
             if (parent != current) {
                 current = parent
-                val igIniPath = Uris.addPath(parent, "/ig.ini")!!
+                val igIniPath = Uris.addPath(parent, "/ig.ini") ?: continue
                 log.info("Attempting to read ini from path {}", igIniPath)
                 val input = contentService.read(igIniPath)
                 if (input != null) {
@@ -95,7 +94,7 @@ class IgContextManager(private val contentService: ContentService) {
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
         for (e in event.params().changes) {
             if (e.uri.endsWith("ig.ini")) {
-                clearContext(Uris.parseOrNull(e.uri)!!)
+                Uris.parseOrNull(e.uri)?.let { clearContext(it) }
             }
         }
     }
