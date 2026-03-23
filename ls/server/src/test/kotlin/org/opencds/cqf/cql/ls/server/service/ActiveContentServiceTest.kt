@@ -13,8 +13,11 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertDoesNotThrow
+import org.junit.jupiter.api.assertThrows
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent
@@ -167,6 +170,174 @@ class ActiveContentServiceTest {
 
         assertNotNull(found)
         assertFalse(found.contains(DOC_URI_PARSED))
+    }
+
+    // -----------------------------------------------------------------------
+    // read(URI)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun read_uri_returnsNullForUnknownUri() {
+        val svc = ActiveContentService()
+        assertNull(svc.read(DOC_URI_PARSED))
+    }
+
+    @Test
+    fun read_uri_returnsActiveContentAsStream() {
+        val svc = openDoc(LIBRARY_CONTENT, 1)
+        val content = svc.read(DOC_URI_PARSED)!!.readAllBytes().toString(Charsets.UTF_8)
+        assertEquals(LIBRARY_CONTENT, content)
+    }
+
+    // -----------------------------------------------------------------------
+    // read(root, identifier)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun read_rootId_throwsWhenNoDocumentMatchesIdentifier() {
+        val svc = ActiveContentService() // nothing open
+        val id = VersionedIdentifier().withId("One").withVersion("1.0.0")
+        assertThrows<IllegalStateException> { svc.read(ROOT, id) }
+    }
+
+    @Test
+    fun read_rootId_returnsStreamForSingleMatchingDocument() {
+        val svc = openDoc(LIBRARY_CONTENT, 1)
+        val id = VersionedIdentifier().withId("One").withVersion("1.0.0")
+        val content = svc.read(ROOT, id)!!.readAllBytes().toString(Charsets.UTF_8)
+        assertEquals(LIBRARY_CONTENT, content)
+    }
+
+    @Test
+    fun read_rootId_throwsWhenMultipleDocumentsMatch() {
+        val svc = openDoc(LIBRARY_CONTENT, 1)
+        // Open a second URI with the same library content so locate() returns two results
+        val params2 = DidOpenTextDocumentParams()
+        val item2 = TextDocumentItem()
+        item2.uri = "file:///workspace/OneCopy.cql"
+        item2.text = LIBRARY_CONTENT
+        item2.version = 1
+        params2.textDocument = item2
+        svc.didOpen(DidOpenTextDocumentEvent(params2))
+
+        val id = VersionedIdentifier().withId("One").withVersion("1.0.0")
+        assertThrows<IllegalStateException> { svc.read(ROOT, id) }
+    }
+
+    // -----------------------------------------------------------------------
+    // didChange — additional branches
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun didChange_rangeBased_appliesPatch() {
+        val svc = openDoc("hello world", 1)
+
+        val ce = TextDocumentContentChangeEvent()
+        ce.range = Range(Position(0, 6), Position(0, 11))
+        ce.text = "CQL"
+        ce.rangeLength = 5
+
+        val change = DidChangeTextDocumentParams()
+        change.textDocument = VersionedTextDocumentIdentifier(DOC_URI, 2)
+        change.contentChanges = listOf(ce)
+        svc.didChange(DidChangeTextDocumentEvent(change))
+
+        val content = svc.read(DOC_URI_PARSED)!!.readAllBytes().toString(Charsets.UTF_8)
+        assertEquals("hello CQL", content)
+    }
+
+    @Test
+    fun didChange_sameVersion_contentUnchanged() {
+        val svc = openDoc("original", 5)
+
+        // version == existing.version — not strictly greater, so change is ignored
+        val change = DidChangeTextDocumentParams()
+        change.textDocument = VersionedTextDocumentIdentifier(DOC_URI, 5)
+        change.contentChanges = listOf(TextDocumentContentChangeEvent("should be ignored"))
+        svc.didChange(DidChangeTextDocumentEvent(change))
+
+        val content = svc.read(DOC_URI_PARSED)!!.readAllBytes().toString(Charsets.UTF_8)
+        assertEquals("original", content)
+    }
+
+    @Test
+    fun didChange_noopForUntrackedUri() {
+        val svc = ActiveContentService() // nothing open
+        val change = DidChangeTextDocumentParams()
+        change.textDocument = VersionedTextDocumentIdentifier(DOC_URI, 1)
+        change.contentChanges = listOf(TextDocumentContentChangeEvent("irrelevant"))
+        assertDoesNotThrow { svc.didChange(DidChangeTextDocumentEvent(change)) }
+        assertFalse(svc.activeUris().contains(DOC_URI_PARSED))
+    }
+
+    // -----------------------------------------------------------------------
+    // Invalid URI handling — all three events must not throw
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun didOpen_malformedUri_doesNotCrash() {
+        val svc = ActiveContentService()
+        val params = DidOpenTextDocumentParams()
+        val item = TextDocumentItem()
+        item.uri = "not a valid uri with spaces"
+        item.text = LIBRARY_CONTENT
+        item.version = 1
+        params.textDocument = item
+        assertDoesNotThrow { svc.didOpen(DidOpenTextDocumentEvent(params)) }
+        assertTrue(svc.activeUris().isEmpty())
+    }
+
+    @Test
+    fun didClose_malformedUri_doesNotCrash() {
+        val svc = openDoc(LIBRARY_CONTENT, 1)
+        val close = DidCloseTextDocumentParams()
+        close.textDocument = TextDocumentIdentifier("not a valid uri with spaces")
+        assertDoesNotThrow { svc.didClose(DidCloseTextDocumentEvent(close)) }
+        // original document still tracked
+        assertTrue(svc.activeUris().contains(DOC_URI_PARSED))
+    }
+
+    @Test
+    fun didChange_malformedUri_doesNotCrash() {
+        val svc = ActiveContentService()
+        val change = DidChangeTextDocumentParams()
+        change.textDocument = VersionedTextDocumentIdentifier("not a valid uri with spaces", 1)
+        change.contentChanges = listOf(TextDocumentContentChangeEvent("text"))
+        assertDoesNotThrow { svc.didChange(DidChangeTextDocumentEvent(change)) }
+    }
+
+    // -----------------------------------------------------------------------
+    // searchActiveContent — null version
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun searchActiveContent_nullVersion_doesNotMatchVersionedLibrary() {
+        // When identifier.version == null the regex is: (?s).*library\s+{id}'\s+(?s).*
+        // This requires a literal ' immediately after the library name, so it does NOT
+        // match a standard "library One version '1.0.0'" declaration.
+        val svc = openDoc(LIBRARY_CONTENT, 1)
+        val id = VersionedIdentifier().withId("One") // no version
+        val found = svc.searchActiveContent(ROOT, id)
+        assertTrue(found.isEmpty(), "null-version search should not match a versioned library declaration")
+    }
+
+    // -----------------------------------------------------------------------
+    // patch — additional cases
+    // -----------------------------------------------------------------------
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun patch_deletion_removesSelectedRange() {
+        val svc = ActiveContentService()
+
+        val change = TextDocumentContentChangeEvent()
+        change.range = Range(Position(0, 5), Position(0, 11)) // selects " world"
+        change.text = ""
+        change.rangeLength = 6
+
+        val result = svc.patch("hello world", change)
+
+        assertEquals("hello", result)
     }
 
     companion object {

@@ -236,7 +236,12 @@ class CqlCommand : Callable<Int> {
                     org.apache.commons.lang3.tuple.Pair.of(library.context!!.contextName, library.context!!.contextValue as Any?)
                 } else null
 
-            val result = engine.evaluate(identifier, contextParameter)
+            val expressions = library.expression?.toSet()
+            val result = if (expressions != null) {
+                engine.evaluate(identifier, expressions, contextParameter)
+            } else {
+                engine.evaluate(identifier, contextParameter)
+            }
 
             writeResult(result)
         }
