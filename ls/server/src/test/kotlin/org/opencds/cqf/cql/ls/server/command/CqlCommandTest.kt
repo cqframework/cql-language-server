@@ -179,6 +179,43 @@ class CqlCommandTest {
     }
 
     // -------------------------------------------------------------------------
+    // Tests 16–17: additional execution paths
+    // -------------------------------------------------------------------------
+
+    @Test
+    @Order(16)
+    fun `expression filter with multiple expressions includes all specified`() {
+        // Both "Two" and "Two List" are declared in Two.cql; requesting both explicitly
+        // should keep both — the filter is an inclusion list, not an exclusion list.
+        val cmd = buildCommand("Two", expressions = arrayOf("Two", "Two List"))
+        cmd.call()
+        val out = output()
+        assertTrue(out.contains("Two=2"), "Expected 'Two=2' in filtered output")
+        assertTrue(out.contains("Two List=[1, 2, 3]"), "Expected 'Two List' in filtered output")
+    }
+
+    @Test
+    @Order(17)
+    fun `multiple libraries - each is evaluated in the same call`() {
+        // cmd.libraries holds two LibraryParameters; the for-loop should evaluate both
+        // and print results for each, separated by a blank line.
+        val cmd = CqlCommand()
+        cmd.fhirVersion = "R4"
+        val dir = cqlFixtureDirectoryUrl()
+        val lib1 = CqlCommand.LibraryParameter()
+        lib1.libraryUrl = dir
+        lib1.libraryName = "One"
+        val lib2 = CqlCommand.LibraryParameter()
+        lib2.libraryUrl = dir
+        lib2.libraryName = "Two"
+        cmd.libraries = mutableListOf(lib1, lib2)
+        assertEquals(0, cmd.call())
+        val out = output()
+        assertTrue(out.contains("One=1"), "Expected 'One=1' from first library")
+        assertTrue(out.contains("Two=2"), "Expected 'Two=2' from second library")
+    }
+
+    // -------------------------------------------------------------------------
     // Tests 13–15: cross-platform path handling via Uris.parseOrNull()
     // No CQL engine involvement — pure unit tests of URI parsing behaviour.
     //
