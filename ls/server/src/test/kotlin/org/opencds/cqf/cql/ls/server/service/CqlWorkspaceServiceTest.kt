@@ -60,8 +60,9 @@ class CqlWorkspaceServiceTest {
     fun `initialize enables workspace folder change notifications`() {
         val caps = ServerCapabilities()
         buildService().initialize(InitializeParams(), caps)
-        // WorkspaceFoldersOptions.changeNotifications is Either<Boolean, String>; left = boolean flag
-        assertTrue(caps.workspace.workspaceFolders.changeNotifications.left)
+        // WorkspaceFoldersOptions.changeNotifications is Either<String, Boolean>; boolean is on the right.
+        // Use assertEquals to avoid the assertTrue(Boolean?) nullable ambiguity in Kotlin.
+        assertEquals(true, caps.workspace.workspaceFolders.changeNotifications.right)
     }
 
     @Test
