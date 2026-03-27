@@ -1,6 +1,6 @@
 out
 node_modules
-target
+target/
 
 dependency-reduced-pom.xml
 classpath.txt
