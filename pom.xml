@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>4.4.0</version>
+    <version>4.4.1</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -399,6 +399,16 @@
                     <groupId>org.jetbrains.dokka</groupId>
                     <artifactId>dokka-maven-plugin</artifactId>
                     <version>1.9.20</version>
+                    <executions>
+                        <execution>
+                            <!-- Generates and attaches a Javadoc JAR for Maven Central -->
+                            <id>attach-javadocs</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>javadocJar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -506,8 +516,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
+                <groupId>org.jetbrains.dokka</groupId>
+                <artifactId>dokka-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.sonatype.central</groupId>
@@ -532,9 +542,9 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
                     </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-javadoc-plugin</artifactId>
+                    <plugin> 
+                        <groupId>org.jetbrains.dokka</groupId> 
+                        <artifactId>dokka-maven-plugin</artifactId> 
                     </plugin>
                     <plugin>
                         <groupId>org.jacoco</groupId>
@@ -562,9 +572,9 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
                     </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-javadoc-plugin</artifactId>
+                    <plugin> 
+                        <groupId>org.jetbrains.dokka</groupId> 
+                        <artifactId>dokka-maven-plugin</artifactId> 
                     </plugin>
                     <plugin>
                         <groupId>org.jacoco</groupId>
