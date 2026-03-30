@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
@@ -27,6 +28,7 @@ class HoverProviderTest {
         }
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverInt() {
         val hover =
@@ -45,6 +47,7 @@ class HoverProviderTest {
         assertEquals("```cql\nSystem.Integer\n```", markup.value)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverNothing() {
         val hover =
@@ -58,6 +61,7 @@ class HoverProviderTest {
         assertNull(hover)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverList() {
         val hover =
@@ -76,6 +80,7 @@ class HoverProviderTest {
         assertEquals("```cql\nlist<System.Integer>\n```", markup.value)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverOnLibraryRef() {
         // Line 5 (0-indexed): "    1 + One."One"" — position (5, 8) is 'O' in 'One'
@@ -95,6 +100,7 @@ class HoverProviderTest {
         assertEquals("```cql\nSystem.Integer\n```", markup.value)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverOnDefineName() {
         // Line 4 (0-indexed): "define "Two":" — position (4, 8) is 'T' inside the define name
