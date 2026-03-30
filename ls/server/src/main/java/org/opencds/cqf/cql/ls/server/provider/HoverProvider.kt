@@ -16,6 +16,12 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 class HoverProvider(private val cqlCompilationManager: CqlCompilationManager) {
 
     fun hover(position: HoverParams): Hover? {
+        // Returning null here effectively disables hover functionality from the server side.
+        // 2026-03-30 RGT: Disable hover functionality for now.
+        //                 The LibraryManager caching issues is causing the CQL Compiler to continutally fire.
+        //                 This is affect performance, revist hover functionality later.
+        return null
+
         val uri = Uris.parseOrNull(position.textDocument.uri) ?: return null
 
         // This translates on the fly. We may want to consider maintaining

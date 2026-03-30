@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.mockito.Mockito
@@ -71,6 +72,7 @@ class LanguageServerTest {
         assertNotNull(server)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverInt() {
         val hover = server.getTextDocumentService()
@@ -85,6 +87,7 @@ class LanguageServerTest {
         assertEquals("```cql\nSystem.Integer\n```", markup.value)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverNothing() {
         val hover = server.getTextDocumentService()
@@ -94,6 +97,7 @@ class LanguageServerTest {
         assertNull(hover)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverList() {
         val hover = server.getTextDocumentService()
@@ -124,6 +128,7 @@ class LanguageServerTest {
         assertNotNull(result.capabilities)
     }
 
+    @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun initialize_setsHoverProviderCapability() {
         val result = server.initialize(InitializeParams()).get()
