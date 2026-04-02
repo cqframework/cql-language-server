@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>4.4.1</version>
+    <version>4.5.0-SNAPSHOT</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -33,12 +33,7 @@
     </properties>
 
     <modules>
-        <module>core</module>
         <module>ls/server</module>
-        <module>ls/service</module>
-        <module>debug/server</module>
-        <module>debug/service</module>
-        <module>plugin/debug</module>
     </modules>
     <licenses>
         <license>
@@ -199,10 +194,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <dependency>
-            <groupId>com.google.auto.service</groupId>
-            <artifactId>auto-service-annotations</artifactId>
-        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -471,7 +462,7 @@
                         <goals><goal>compile</goal></goals>
                         <configuration>
                             <sourceDirs>
-                                <sourceDir>${project.basedir}/src/main/java</sourceDir>
+                                <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>
                     </execution>
@@ -480,7 +471,6 @@
                         <goals><goal>test-compile</goal></goals>
                         <configuration>
                             <sourceDirs>
-                                <sourceDir>${project.basedir}/src/test/java</sourceDir>
                                 <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>

@@ -12,7 +12,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>4.4.1</version>
+        <version>4.5.0-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -21,12 +21,6 @@
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-caching-caffeine</artifactId>
             <version>8.6.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.opencds.cqf.cql.ls</groupId>
-            <artifactId>cql-ls-core</artifactId>
-            <version>${project.version}</version>
         </dependency>
 
         <dependency>
@@ -79,10 +73,14 @@
             <artifactId>jackson-annotations</artifactId>
         </dependency>
 
-        <!-- Java implementation of VS Code language server protocol -->
+        <!-- Java implementation of VS Code language server + debug adapter protocol -->
         <dependency>
             <groupId>org.eclipse.lsp4j</groupId>
             <artifactId>org.eclipse.lsp4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.lsp4j</groupId>
+            <artifactId>org.eclipse.lsp4j.debug</artifactId>
         </dependency>
 
         <dependency>
@@ -102,15 +100,60 @@
             <version>2.1.1</version>
         </dependency>
 
+        <!-- Logging (entry point) -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jul-to-slf4j</artifactId>
+        </dependency>
+
         <!-- Testing Only -->
         <dependency>
             <groupId>org.opencds.cqf.fhir</groupId>
             <artifactId>cqf-fhir-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
 
     </dependencies>
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>org.opencds.cqf.cql.ls.service.MainKt</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -122,14 +165,9 @@
                             <goals><goal>kapt</goal></goals>
                             <configuration>
                                 <sourceDirs>
-                                    <sourceDir>${project.basedir}/src/main/java</sourceDir>
+                                    <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
                                 </sourceDirs>
                                 <annotationProcessorPaths>
-                                    <annotationProcessorPath>
-                                        <groupId>com.google.auto.service</groupId>
-                                        <artifactId>auto-service</artifactId>
-                                        <version>${auto-service.version}</version>
-                                    </annotationProcessorPath>
                                     <annotationProcessorPath>
                                         <groupId>info.picocli</groupId>
                                         <artifactId>picocli-codegen</artifactId>
@@ -155,11 +193,6 @@
                             <arg>-implicit:none</arg>
                         </compilerArgs>
                         <annotationProcessorPaths>
-                            <path>
-                                <groupId>com.google.auto.service</groupId>
-                                <artifactId>auto-service</artifactId>
-                                <version>${auto-service.version}</version>
-                            </path>
                             <path>
                                 <groupId>info.picocli</groupId>
                                 <artifactId>picocli-codegen</artifactId>
