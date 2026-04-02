@@ -32,9 +32,10 @@ class ConvertersTest {
 
     @Test
     fun should_throwIOException_when_inputStreamToStringHasAnIOError() {
-        val inputStream = object : InputStream() {
-            override fun read(): Int = throw IOException("Simulated failure")
-        }
+        val inputStream =
+            object : InputStream() {
+                override fun read(): Int = throw IOException("Simulated failure")
+            }
         assertThrows(IOException::class.java) { Converters.inputStreamToString(inputStream) }
     }
 
@@ -55,9 +56,10 @@ class ConvertersTest {
 
     @Test
     fun should_throwIOException_when_inputStreamToSourceCalledWithNull() {
-        val inputStream = object : InputStream() {
-            override fun read(): Int = throw IOException("Simulated failure")
-        }
+        val inputStream =
+            object : InputStream() {
+                override fun read(): Int = throw IOException("Simulated failure")
+            }
         assertThrows(IOException::class.java) { Converters.inputStreamToSource(inputStream) }
     }
 }
