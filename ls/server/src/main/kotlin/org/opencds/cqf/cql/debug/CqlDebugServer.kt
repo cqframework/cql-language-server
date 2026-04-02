@@ -25,7 +25,7 @@ open class CqlDebugServer : IDebugProtocolServer, IDebugProtocolClientAware {
         // TODO: Work through all the capabilities we should support.
         val capabilities = Capabilities()
         capabilities.supportsConfigurationDoneRequest = true
-        /// And... nothing else at this point.
+        // / And... nothing else at this point.
 
         setState(ServerState.INITIALIZED)
         return CompletableFuture.completedFuture(capabilities)
@@ -82,7 +82,7 @@ open class CqlDebugServer : IDebugProtocolServer, IDebugProtocolClientAware {
     protected fun checkState(requiredState: ServerState) {
         if (this.serverState != requiredState) {
             throw IllegalStateException(
-                "Operation required state ${requiredState}, server actual state: ${this.serverState}"
+                "Operation required state $requiredState, server actual state: ${this.serverState}",
             )
         }
     }

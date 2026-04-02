@@ -20,7 +20,7 @@ import java.net.URI
 class CqlCompilationManager(
     private val contentService: ContentService,
     private val compilerOptionsManager: CompilerOptionsManager,
-    private val igContextManager: IgContextManager
+    private val igContextManager: IgContextManager,
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(CqlCompilationManager::class.java)
@@ -28,9 +28,10 @@ class CqlCompilationManager(
 
         init {
             try {
-                ucumService = UcumEssenceService(
-                    UcumEssenceService::class.java.getResourceAsStream("/ucum-essence.xml")
-                )
+                ucumService =
+                    UcumEssenceService(
+                        UcumEssenceService::class.java.getResourceAsStream("/ucum-essence.xml"),
+                    )
             } catch (e: Exception) {
                 log.warn("error initializing UcumService", e)
             }
@@ -46,7 +47,10 @@ class CqlCompilationManager(
         return compile(uri, input)
     }
 
-    fun compile(uri: URI, stream: InputStream): CqlCompiler {
+    fun compile(
+        uri: URI,
+        stream: InputStream,
+    ): CqlCompiler {
         val modelManager = createModelManager()
         val libraryManager = createLibraryManager(Uris.getHead(uri), modelManager)
         val compiler = CqlCompiler(null, null, libraryManager)
@@ -56,13 +60,16 @@ class CqlCompilationManager(
 
     private fun createModelManager() = ModelManager(globalCache)
 
-    private fun createLibraryManager(root: URI, modelManager: ModelManager): LibraryManager {
+    private fun createLibraryManager(
+        root: URI,
+        modelManager: ModelManager,
+    ): LibraryManager {
         modelManager.modelInfoLoader.registerModelInfoProvider(
-            ContentServiceModelInfoProvider(root, contentService)
+            ContentServiceModelInfoProvider(root, contentService),
         )
         val libraryManager = LibraryManager(modelManager, compilerOptionsManager.getOptions(root))
         libraryManager.librarySourceLoader.registerProvider(
-            ContentServiceSourceProvider(root, contentService)
+            ContentServiceSourceProvider(root, contentService),
         )
         libraryManager.librarySourceLoader.registerProvider(FhirLibrarySourceProvider())
         getIgContextManager().setupLibraryManager(root, libraryManager)

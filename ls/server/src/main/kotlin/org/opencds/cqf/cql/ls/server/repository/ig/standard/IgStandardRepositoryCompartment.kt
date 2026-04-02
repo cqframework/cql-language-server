@@ -4,7 +4,6 @@ package org.opencds.cqf.cql.ls.server.repository.ig.standard
  * Class that represents the compartment context for a given request within IgRepository only.
  */
 class IgStandardRepositoryCompartment {
-
     val type: String?
     val id: String?
 
@@ -33,14 +32,17 @@ class IgStandardRepositoryCompartment {
 
     override fun hashCode(): Int = java.util.Objects.hash(type, id)
 
-    override fun toString(): String =
-        "${IgStandardRepositoryCompartment::class.simpleName}[type='$type', id='$id']"
+    override fun toString(): String = "${IgStandardRepositoryCompartment::class.simpleName}[type='$type', id='$id']"
 
     companion object {
         private fun typeOfContext(context: String): String = context.split("/")[0]
+
         private fun idOfContext(context: String): String = context.split("/")[1]
 
-        private fun requireNonNullOrEmpty(name: String, value: String?): String {
+        private fun requireNonNullOrEmpty(
+            name: String,
+            value: String?,
+        ): String {
             if (value.isNullOrEmpty()) {
                 throw IllegalArgumentException("$name cannot be null or empty")
             }

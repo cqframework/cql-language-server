@@ -11,7 +11,6 @@ import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
 import java.util.concurrent.CompletableFuture
 
 class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilationManager) : CommandContribution {
-
     companion object {
         private const val VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm"
     }
@@ -36,18 +35,22 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
             return CompletableFuture.completedFuture(null)
         }
 
-        val uriString = (args[0] as? JsonElement)?.asString
-            ?: return CompletableFuture.completedFuture(null)
+        val uriString =
+            (args[0] as? JsonElement)?.asString
+                ?: return CompletableFuture.completedFuture(null)
 
         val elmType = (args.getOrNull(1) as? JsonElement)?.asString ?: "xml"
 
         return try {
-            val uri = Uris.parseOrNull(uriString)
-                ?: return CompletableFuture.completedFuture(null)
-            val compiler = cqlCompilationManager.compile(uri)
-                ?: return CompletableFuture.completedFuture(null)
-            val library = compiler.library
-                ?: return CompletableFuture.completedFuture(null)
+            val uri =
+                Uris.parseOrNull(uriString)
+                    ?: return CompletableFuture.completedFuture(null)
+            val compiler =
+                cqlCompilationManager.compile(uri)
+                    ?: return CompletableFuture.completedFuture(null)
+            val library =
+                compiler.library
+                    ?: return CompletableFuture.completedFuture(null)
             if (elmType.equals("xml", ignoreCase = true)) {
                 CompletableFuture.completedFuture(convertToXml(library))
             } else {

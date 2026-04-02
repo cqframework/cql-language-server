@@ -21,18 +21,23 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 
 class ActiveContentService : ContentService {
-
     data class VersionedContent(val content: String, val version: Int)
 
     private val activeContent = ConcurrentHashMap<URI, VersionedContent>()
 
-    override fun locate(root: URI, identifier: VersionedIdentifier): Set<URI> {
+    override fun locate(
+        root: URI,
+        identifier: VersionedIdentifier,
+    ): Set<URI> {
         requireNotNull(root)
         requireNotNull(identifier)
         return searchActiveContent(root, identifier)
     }
 
-    override fun read(root: URI, identifier: VersionedIdentifier): InputStream? {
+    override fun read(
+        root: URI,
+        identifier: VersionedIdentifier,
+    ): InputStream? {
         requireNotNull(root)
         requireNotNull(identifier)
         val uris = locate(root, identifier)
@@ -82,7 +87,10 @@ class ActiveContentService : ContentService {
     }
 
     @Suppress("DEPRECATION")
-    internal fun patch(sourceText: String, change: TextDocumentContentChangeEvent): String {
+    internal fun patch(
+        sourceText: String,
+        change: TextDocumentContentChangeEvent,
+    ): String {
         val range = change.range
         val reader = BufferedReader(StringReader(sourceText))
         val writer = StringWriter()
@@ -100,11 +108,15 @@ class ActiveContentService : ContentService {
         return writer.toString()
     }
 
-    internal fun searchActiveContent(root: URI, identifier: VersionedIdentifier): Set<URI> {
+    internal fun searchActiveContent(
+        root: URI,
+        identifier: VersionedIdentifier,
+    ): Set<URI> {
         val id = identifier.id
         val version = identifier.version
-        val matchText = "(?s).*library\\s+$id" +
-            if (version != null) "\\s+version\\s+'$version'\\s+(?s).*" else "'\\s+(?s).*"
+        val matchText =
+            "(?s).*library\\s+$id" +
+                if (version != null) "\\s+version\\s+'$version'\\s+(?s).*" else "'\\s+(?s).*"
         val pattern = matchText.toRegex()
         return activeContent
             .filterKeys { root.relativize(it) != it }

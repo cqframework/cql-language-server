@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.ls.server.manager
 
 import kotlinx.io.files.Path
-import java.nio.file.Paths as NioPaths
 import org.cqframework.cql.cql2elm.CqlCompilerOptions
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions
 import org.cqframework.cql.cql2elm.LibraryBuilder.SignatureLevel
@@ -12,9 +11,9 @@ import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Paths as NioPaths
 
 class CompilerOptionsManager(private val contentService: ContentService) {
-
     companion object {
         private val log = LoggerFactory.getLogger(CompilerOptionsManager::class.java)
     }
@@ -36,24 +35,25 @@ class CompilerOptionsManager(private val contentService: ContentService) {
         val input = optionsUri?.let { contentService.read(it) }
         input?.close()
 
-        val options = if (input != null) {
-            try {
-                CqlTranslatorOptions.fromFile(Path(NioPaths.get(optionsUri).toString()))
-                    .cqlCompilerOptions
-                    ?: CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
-            } catch (e: Exception) {
-                log.info("Exception ${e.message} attempting to load options from $optionsUri, using default options")
+        val options =
+            if (input != null) {
+                try {
+                    CqlTranslatorOptions.fromFile(Path(NioPaths.get(optionsUri).toString()))
+                        .cqlCompilerOptions
+                        ?: CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
+                } catch (e: Exception) {
+                    log.info("Exception ${e.message} attempting to load options from $optionsUri, using default options")
+                    CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
+                }
+            } else {
+                log.info("$optionsUri not found, using default options")
                 CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
             }
-        } else {
-            log.info("$optionsUri not found, using default options")
-            CqlTranslatorOptions.defaultOptions().cqlCompilerOptions
-        }
 
         return requireNotNull(options) { "CqlCompilerOptions must not be null" }.withOptions(
             CqlCompilerOptions.Options.EnableLocators,
             CqlCompilerOptions.Options.EnableResultTypes,
-            CqlCompilerOptions.Options.EnableAnnotations
+            CqlCompilerOptions.Options.EnableAnnotations,
         ).withSignatureLevel(SignatureLevel.All)
     }
 

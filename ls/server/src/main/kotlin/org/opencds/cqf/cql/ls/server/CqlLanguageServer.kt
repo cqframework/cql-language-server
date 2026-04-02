@@ -19,9 +19,8 @@ import java.util.concurrent.CompletableFuture
 class CqlLanguageServer(
     private val client: CompletableFuture<LanguageClient>,
     private val workspaceService: CqlWorkspaceService,
-    private val textDocumentService: CqlTextDocumentService
+    private val textDocumentService: CqlTextDocumentService,
 ) : LanguageServer, LanguageClientAware {
-
     companion object {
         private val log = LoggerFactory.getLogger(CqlLanguageServer::class.java)
     }

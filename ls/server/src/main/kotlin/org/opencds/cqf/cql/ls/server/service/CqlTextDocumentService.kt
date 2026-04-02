@@ -29,15 +29,17 @@ class CqlTextDocumentService(
     private val client: CompletableFuture<LanguageClient>,
     private val hoverProvider: HoverProvider,
     private val formattingProvider: FormattingProvider,
-    private val eventBus: EventBus
+    private val eventBus: EventBus,
 ) : TextDocumentService {
-
     companion object {
         private val log = LoggerFactory.getLogger(CqlTextDocumentService::class.java)
     }
 
     @Suppress("java:S125") // Keeping the commented code for future reference
-    fun initialize(params: InitializeParams, serverCapabilities: ServerCapabilities) {
+    fun initialize(
+        params: InitializeParams,
+        serverCapabilities: ServerCapabilities,
+    ) {
         serverCapabilities.setTextDocumentSync(TextDocumentSyncKind.Full)
         // c.setDefinitionProvider(true);
         // c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
@@ -51,8 +53,9 @@ class CqlTextDocumentService(
     }
 
     override fun hover(position: HoverParams): CompletableFuture<Hover> {
-        val result = CompletableFuture.supplyAsync { hoverProvider.hover(position) }
-            .exceptionally { notifyClient(it) }
+        val result =
+            CompletableFuture.supplyAsync { hoverProvider.hover(position) }
+                .exceptionally { notifyClient(it) }
         @Suppress("UNCHECKED_CAST")
         return result as CompletableFuture<Hover>
     }

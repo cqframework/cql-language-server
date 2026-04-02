@@ -16,17 +16,21 @@ import java.io.InputStream
 import java.net.URI
 
 class DebugCommandContributionTest {
-
     private lateinit var contribution: DebugCommandContribution
 
     @BeforeEach
     fun setUp() {
         // cqlCompilationManager is injected but not referenced inside executeCommand;
         // construct it with a no-op ContentService to keep the build lightweight.
-        val cs = object : ContentService {
-            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
-            override fun read(uri: URI): InputStream? = null
-        }
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ) = emptySet<URI>()
+
+                override fun read(uri: URI): InputStream? = null
+            }
         val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
         contribution = DebugCommandContribution(cm)
     }

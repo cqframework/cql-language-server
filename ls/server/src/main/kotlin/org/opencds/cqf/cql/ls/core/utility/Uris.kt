@@ -16,12 +16,15 @@ object Uris {
     }
 
     @JvmStatic
-    fun withPath(uri: URI, path: String): URI? {
+    fun withPath(
+        uri: URI,
+        path: String,
+    ): URI? {
         return try {
             URI.create(
                 (if (uri.scheme != null) "${uri.scheme}:" else "") +
                     "//" + createAuthority(uri.rawAuthority) + createPath(path) +
-                    createQuery(uri.rawQuery) + createFragment(uri.rawFragment)
+                    createQuery(uri.rawQuery) + createFragment(uri.rawFragment),
             )
         } catch (e: Exception) {
             null
@@ -29,7 +32,10 @@ object Uris {
     }
 
     @JvmStatic
-    fun addPath(uri: URI, path: String): URI? {
+    fun addPath(
+        uri: URI,
+        path: String,
+    ): URI? {
         return withPath(uri, stripTrailingSlash(uri.rawPath) + createPath(path))
     }
 
@@ -69,7 +75,10 @@ object Uris {
 
     private fun createFragment(fragmentValue: String?) = ensurePrefix("#", fragmentValue)
 
-    private fun ensurePrefix(prefix: String, value: String?): String {
+    private fun ensurePrefix(
+        prefix: String,
+        value: String?,
+    ): String {
         if (value.isNullOrEmpty()) return ""
         return if (value.startsWith(prefix)) value else prefix + value
     }
