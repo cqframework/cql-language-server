@@ -17,27 +17,26 @@ data class IgStandardConventions(
     @get:JvmName("typeLayout") val typeLayout: FhirTypeLayout,
     @get:JvmName("categoryLayout") val categoryLayout: CategoryLayout,
     @get:JvmName("compartmentLayout") val compartmentLayout: CompartmentLayout,
-    @get:JvmName("filenameMode") val filenameMode: FilenameMode
+    @get:JvmName("filenameMode") val filenameMode: FilenameMode,
 ) {
-
     enum class FhirTypeLayout {
         DIRECTORY_PER_TYPE,
-        FLAT
+        FLAT,
     }
 
     enum class CategoryLayout {
         DIRECTORY_PER_CATEGORY,
-        FLAT
+        FLAT,
     }
 
     enum class CompartmentLayout {
         DIRECTORY_PER_COMPARTMENT,
-        FLAT
+        FLAT,
     }
 
     enum class FilenameMode {
         TYPE_AND_ID,
-        ID_ONLY
+        ID_ONLY,
     }
 
     override fun toString(): String =
@@ -47,21 +46,27 @@ data class IgStandardConventions(
         private val logger = LoggerFactory.getLogger(IgStandardConventions::class.java)
 
         @JvmField
-        val FLAT = IgStandardConventions(
-            FhirTypeLayout.FLAT, CategoryLayout.FLAT, CompartmentLayout.FLAT, FilenameMode.TYPE_AND_ID
-        )
+        val FLAT =
+            IgStandardConventions(
+                FhirTypeLayout.FLAT,
+                CategoryLayout.FLAT,
+                CompartmentLayout.FLAT,
+                FilenameMode.TYPE_AND_ID,
+            )
 
         @JvmField
-        val STANDARD = IgStandardConventions(
-            FhirTypeLayout.DIRECTORY_PER_TYPE,
-            CategoryLayout.DIRECTORY_PER_CATEGORY,
-            CompartmentLayout.FLAT,
-            FilenameMode.ID_ONLY
-        )
+        val STANDARD =
+            IgStandardConventions(
+                FhirTypeLayout.DIRECTORY_PER_TYPE,
+                CategoryLayout.DIRECTORY_PER_CATEGORY,
+                CompartmentLayout.FLAT,
+                FilenameMode.ID_ONLY,
+            )
 
-        private val FHIR_TYPE_NAMES: List<String> = FHIRAllTypes.values()
-            .map { it.name.lowercase() }
-            .distinct()
+        private val FHIR_TYPE_NAMES: List<String> =
+            FHIRAllTypes.values()
+                .map { it.name.lowercase() }
+                .distinct()
 
         /**
          * Auto-detect the IG conventions based on the structure of the IG.
@@ -72,10 +77,11 @@ data class IgStandardConventions(
                 return STANDARD
             }
 
-            val categoryPath = listOf("tests", "vocabulary", "resources")
-                .map { path.resolve(it) }
-                .firstOrNull { it.toFile().exists() }
-                ?: path
+            val categoryPath =
+                listOf("tests", "vocabulary", "resources")
+                    .map { path.resolve(it) }
+                    .firstOrNull { it.toFile().exists() }
+                    ?: path
 
             val hasCategoryDirectory = path != categoryPath
 
@@ -86,27 +92,30 @@ data class IgStandardConventions(
                 if (tests.toFile().exists()) {
                     val compartments = FHIR_TYPE_NAMES.map { tests.resolve(it) }.filter { it.toFile().exists() }
 
-                    hasCompartmentDirectory = compartments
-                        .flatMap { listFiles(it).toList() }
-                        .filter { Files.isDirectory(it) }
-                        .any { matchesAnyResource(it) }
+                    hasCompartmentDirectory =
+                        compartments
+                            .flatMap { listFiles(it).toList() }
+                            .filter { Files.isDirectory(it) }
+                            .any { matchesAnyResource(it) }
                 }
             }
 
-            val typePath = FHIR_TYPE_NAMES
-                .map { categoryPath.resolve(it) }
-                .firstOrNull { Files.exists(it) }
-                ?: categoryPath
+            val typePath =
+                FHIR_TYPE_NAMES
+                    .map { categoryPath.resolve(it) }
+                    .firstOrNull { Files.exists(it) }
+                    ?: categoryPath
 
             val hasTypeDirectory = categoryPath != typePath
             val hasTypeFilename = hasTypeFilename(typePath)
 
-            val config = IgStandardConventions(
-                if (hasTypeDirectory) FhirTypeLayout.DIRECTORY_PER_TYPE else FhirTypeLayout.FLAT,
-                if (hasCategoryDirectory) CategoryLayout.DIRECTORY_PER_CATEGORY else CategoryLayout.FLAT,
-                if (hasCompartmentDirectory) CompartmentLayout.DIRECTORY_PER_COMPARTMENT else CompartmentLayout.FLAT,
-                if (hasTypeFilename) FilenameMode.TYPE_AND_ID else FilenameMode.ID_ONLY
-            )
+            val config =
+                IgStandardConventions(
+                    if (hasTypeDirectory) FhirTypeLayout.DIRECTORY_PER_TYPE else FhirTypeLayout.FLAT,
+                    if (hasCategoryDirectory) CategoryLayout.DIRECTORY_PER_CATEGORY else CategoryLayout.FLAT,
+                    if (hasCompartmentDirectory) CompartmentLayout.DIRECTORY_PER_COMPARTMENT else CompartmentLayout.FLAT,
+                    if (hasTypeFilename) FilenameMode.TYPE_AND_ID else FilenameMode.ID_ONLY,
+                )
 
             logger.info("Auto-detected repository configuration: {}", config)
 
@@ -145,7 +154,10 @@ data class IgStandardConventions(
             }
         }
 
-        private fun contentsMatchClaimedType(filePath: Path, claimedFhirType: FHIRAllTypes): Boolean {
+        private fun contentsMatchClaimedType(
+            filePath: Path,
+            claimedFhirType: FHIRAllTypes,
+        ): Boolean {
             return try {
                 Files.lines(filePath, StandardCharsets.UTF_8).use { linesStream ->
                     val contents = linesStream.collect(java.util.stream.Collectors.joining())

@@ -32,7 +32,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class DiagnosticsServiceTest {
-
     companion object {
         private lateinit var diagnosticsService: DiagnosticsService
 
@@ -41,11 +40,12 @@ class DiagnosticsServiceTest {
         fun beforeAll() {
             val cs = TestContentService()
             val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
-            diagnosticsService = DiagnosticsService(
-                CompletableFuture.completedFuture(Mockito.mock(LanguageClient::class.java)),
-                compilationManager,
-                cs
-            )
+            diagnosticsService =
+                DiagnosticsService(
+                    CompletableFuture.completedFuture(Mockito.mock(LanguageClient::class.java)),
+                    compilationManager,
+                    cs,
+                )
         }
 
         /** Builds a fresh DiagnosticsService backed by a Mockito LanguageClient. */
@@ -228,8 +228,8 @@ class DiagnosticsServiceTest {
         val firstExecuted = AtomicBoolean(false)
         val secondLatch = CountDownLatch(1)
 
-        svc.debounce(500L) { firstExecuted.set(true) }   // long delay — will be cancelled
-        svc.debounce(50L) { secondLatch.countDown() }     // short delay — cancels the first
+        svc.debounce(500L) { firstExecuted.set(true) } // long delay — will be cancelled
+        svc.debounce(50L) { secondLatch.countDown() } // short delay — cancels the first
 
         assertTrue(secondLatch.await(2, TimeUnit.SECONDS), "Second task should execute")
         assertFalse(firstExecuted.get(), "First task should have been cancelled before it ran")

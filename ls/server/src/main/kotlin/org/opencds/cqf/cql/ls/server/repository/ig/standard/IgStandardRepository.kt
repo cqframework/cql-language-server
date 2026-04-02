@@ -35,7 +35,6 @@ import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
 open class IgStandardRepository : IRepository {
-
     companion object {
         private val log = LoggerFactory.getLogger(IgStandardRepository::class.java)
 
@@ -44,20 +43,25 @@ open class IgStandardRepository : IRepository {
         const val FHIR_COMPARTMENT_HEADER = "X-FHIR-Compartment"
 
         @JvmField
-        val CATEGORY_DIRECTORIES: Map<IgStandardResourceCategory, String> = ImmutableMap.builder<IgStandardResourceCategory, String>()
-            .put(IgStandardResourceCategory.CONTENT, "resources")
-            .put(IgStandardResourceCategory.DATA, "tests")
-            .put(IgStandardResourceCategory.TERMINOLOGY, "vocabulary")
-            .build()
+        val CATEGORY_DIRECTORIES: Map<IgStandardResourceCategory, String> =
+            ImmutableMap.builder<IgStandardResourceCategory, String>()
+                .put(IgStandardResourceCategory.CONTENT, "resources")
+                .put(IgStandardResourceCategory.DATA, "tests")
+                .put(IgStandardResourceCategory.TERMINOLOGY, "vocabulary")
+                .build()
 
         @JvmField
-        val FILE_EXTENSIONS: BiMap<EncodingEnum, String> = ImmutableBiMap.builder<EncodingEnum, String>()
-            .put(EncodingEnum.JSON, "json")
-            .put(EncodingEnum.XML, "xml")
-            .put(EncodingEnum.RDF, "rdf")
-            .build()
+        val FILE_EXTENSIONS: BiMap<EncodingEnum, String> =
+            ImmutableBiMap.builder<EncodingEnum, String>()
+                .put(EncodingEnum.JSON, "json")
+                .put(EncodingEnum.XML, "xml")
+                .put(EncodingEnum.RDF, "rdf")
+                .build()
 
-        private fun parserForEncoding(fhirContext: FhirContext, encodingEnum: EncodingEnum): IParser {
+        private fun parserForEncoding(
+            fhirContext: FhirContext,
+            encodingEnum: EncodingEnum,
+        ): IParser {
             return when (encodingEnum) {
                 EncodingEnum.JSON -> fhirContext.newJsonParser()
                 EncodingEnum.XML -> fhirContext.newXmlParser()
@@ -74,10 +78,11 @@ open class IgStandardRepository : IRepository {
     private val resourceMatcher: ResourceMatcher
     private var operationProvider: IRepositoryOperationProvider?
 
-    private val resourceCache = CacheBuilder.newBuilder()
-        .concurrencyLevel(10)
-        .maximumSize(500)
-        .build<Path, IBaseResource>()
+    private val resourceCache =
+        CacheBuilder.newBuilder()
+            .concurrencyLevel(10)
+            .maximumSize(500)
+            .build<Path, IBaseResource>()
 
     /**
      * Creates a new IgRepository with auto-detected conventions and default encoding behavior.
@@ -90,7 +95,7 @@ open class IgStandardRepository : IRepository {
         root: Path,
         conventions: IgStandardConventions,
         encodingBehavior: IgStandardEncodingBehavior,
-        operationProvider: IRepositoryOperationProvider?
+        operationProvider: IRepositoryOperationProvider?,
     ) {
         this.fhirContext = requireNotNull(fhirContext) { "fhirContext cannot be null" }
         this.root = requireNotNull(root) { "root cannot be null" }
@@ -108,11 +113,12 @@ open class IgStandardRepository : IRepository {
         resourceCache.invalidateAll()
     }
 
-    private fun isExternalPath(path: Path): Boolean =
-        path.parent != null && path.parent.toString().lowercase().endsWith(EXTERNAL_DIRECTORY)
+    private fun isExternalPath(path: Path): Boolean = path.parent != null && path.parent.toString().lowercase().endsWith(EXTERNAL_DIRECTORY)
 
     protected open fun <T : IBaseResource, I : IIdType> preferredPathForResource(
-        resourceType: Class<T>, id: I, igRepositoryCompartment: IgStandardRepositoryCompartment
+        resourceType: Class<T>,
+        id: I,
+        igRepositoryCompartment: IgStandardRepositoryCompartment,
     ): Path {
         val directory = directoryForResource(resourceType, igRepositoryCompartment)
         val fileName = fileNameForResource(resourceType.simpleName, id.idPart, encodingBehavior.preferredEncoding)
@@ -120,15 +126,18 @@ open class IgStandardRepository : IRepository {
     }
 
     protected open fun <T : IBaseResource, I : IIdType> potentialPathsForResource(
-        resourceType: Class<T>, id: I, igRepositoryCompartment: IgStandardRepositoryCompartment
+        resourceType: Class<T>,
+        id: I,
+        igRepositoryCompartment: IgStandardRepositoryCompartment,
     ): List<Path> {
         val directory = directoryForResource(resourceType, igRepositoryCompartment)
-        val potentialDirectories = buildList {
-            add(directory)
-            if (IgStandardResourceCategory.forType(resourceType.simpleName) == IgStandardResourceCategory.TERMINOLOGY) {
-                add(directory.resolve(EXTERNAL_DIRECTORY))
+        val potentialDirectories =
+            buildList {
+                add(directory)
+                if (IgStandardResourceCategory.forType(resourceType.simpleName) == IgStandardResourceCategory.TERMINOLOGY) {
+                    add(directory.resolve(EXTERNAL_DIRECTORY))
+                }
             }
-        }
         return potentialDirectories.flatMap { dir ->
             FILE_EXTENSIONS.keys.map { encoding ->
                 dir.resolve(fileNameForResource(resourceType.simpleName, id.idPart, encoding))
@@ -136,23 +145,32 @@ open class IgStandardRepository : IRepository {
         }
     }
 
-    protected open fun fileNameForResource(resourceType: String, resourceId: String, encoding: EncodingEnum): String {
+    protected open fun fileNameForResource(
+        resourceType: String,
+        resourceId: String,
+        encoding: EncodingEnum,
+    ): String {
         val name = "$resourceId.${FILE_EXTENSIONS[encoding]}"
-        return if (IgStandardConventions.FilenameMode.ID_ONLY == conventions.filenameMode) name
-        else "$resourceType-$name"
+        return if (IgStandardConventions.FilenameMode.ID_ONLY == conventions.filenameMode) {
+            name
+        } else {
+            "$resourceType-$name"
+        }
     }
 
     protected open fun <T : IBaseResource> directoryForCategory(
-        resourceType: Class<T>, igStandardRepositoryCompartment: IgStandardRepositoryCompartment
+        resourceType: Class<T>,
+        igStandardRepositoryCompartment: IgStandardRepositoryCompartment,
     ): Path {
         if (conventions.categoryLayout == IgStandardConventions.CategoryLayout.FLAT) {
             return root
         }
 
         val category = IgStandardResourceCategory.forType(resourceType.simpleName)
-        val directory = requireNotNull(CATEGORY_DIRECTORIES[category]) {
-            "No directory configured for category: $category"
-        }
+        val directory =
+            requireNotNull(CATEGORY_DIRECTORIES[category]) {
+                "No directory configured for category: $category"
+            }
         val categoryPath = root.resolve(directory)
 
         if (conventions.compartmentLayout == IgStandardConventions.CompartmentLayout.DIRECTORY_PER_COMPARTMENT &&
@@ -167,7 +185,8 @@ open class IgStandardRepository : IRepository {
     }
 
     protected open fun <T : IBaseResource> directoryForResource(
-        resourceType: Class<T>, igRepositoryCompartment: IgStandardRepositoryCompartment
+        resourceType: Class<T>,
+        igRepositoryCompartment: IgStandardRepositoryCompartment,
     ): Path {
         val directory = directoryForCategory(resourceType, igRepositoryCompartment)
         if (conventions.typeLayout == IgStandardConventions.FhirTypeLayout.FLAT) {
@@ -184,10 +203,11 @@ open class IgStandardRepository : IRepository {
             return null
         }
 
-        val extension = fileExtension(path) ?: run {
-            log.info("IgStandardRepository.readResource - Extension check failed")
-            return null
-        }
+        val extension =
+            fileExtension(path) ?: run {
+                log.info("IgStandardRepository.readResource - Extension check failed")
+                return null
+            }
 
         val encoding = FILE_EXTENSIONS.inverse()[extension] ?: return null
 
@@ -223,14 +243,18 @@ open class IgStandardRepository : IRepository {
 
     protected open fun encodingForPath(path: Path): EncodingEnum? = FILE_EXTENSIONS.inverse()[fileExtension(path)]
 
-    protected open fun <T : IBaseResource> writeResource(resource: T, path: Path) {
+    protected open fun <T : IBaseResource> writeResource(
+        resource: T,
+        path: Path,
+    ) {
         try {
             val encoding = encodingForPath(path) ?: return
             path.parent?.toFile()?.mkdirs()
             FileOutputStream(path.toFile()).use { stream ->
-                val result = parserForEncoding(fhirContext, encoding)
-                    .setPrettyPrint(true)
-                    .encodeResourceToString(resource)
+                val result =
+                    parserForEncoding(fhirContext, encoding)
+                        .setPrettyPrint(true)
+                        .encodeResourceToString(resource)
                 stream.write(result.toByteArray())
                 resource.setUserData(SOURCE_PATH_TAG, path)
                 resourceCache.put(path, resource)
@@ -256,22 +280,27 @@ open class IgStandardRepository : IRepository {
         return FILE_EXTENSIONS.containsValue(extension)
     }
 
-    private fun acceptByFileExtensionAndPrefix(path: Path, prefix: String): Boolean {
+    private fun acceptByFileExtensionAndPrefix(
+        path: Path,
+        prefix: String,
+    ): Boolean {
         if (!acceptByFileExtension(path)) return false
         return path.fileName.toString().lowercase().startsWith(prefix.lowercase() + "-")
     }
 
     protected open fun <T : IBaseResource> readDirectoryForResourceType(
-        resourceClass: Class<T>, igRepositoryCompartment: IgStandardRepositoryCompartment
+        resourceClass: Class<T>,
+        igRepositoryCompartment: IgStandardRepositoryCompartment,
     ): Map<IIdType, T> {
         val path = directoryForResource(resourceClass, igRepositoryCompartment)
         if (!path.toFile().exists()) return emptyMap()
 
         val resources = ConcurrentHashMap<IIdType, T>()
-        val resourceFileFilter: (Path) -> Boolean = when (conventions.filenameMode) {
-            IgStandardConventions.FilenameMode.ID_ONLY -> ::acceptByFileExtension
-            else -> { p -> acceptByFileExtensionAndPrefix(p, resourceClass.simpleName) }
-        }
+        val resourceFileFilter: (Path) -> Boolean =
+            when (conventions.filenameMode) {
+                IgStandardConventions.FilenameMode.ID_ONLY -> ::acceptByFileExtension
+                else -> { p -> acceptByFileExtensionAndPrefix(p, resourceClass.simpleName) }
+            }
 
         try {
             Files.walk(path).use { paths ->
@@ -296,7 +325,9 @@ open class IgStandardRepository : IRepository {
     override fun fhirContext(): FhirContext = fhirContext
 
     override fun <T : IBaseResource, I : IIdType> read(
-        resourceType: Class<T>, id: I, headers: Map<String, String>?
+        resourceType: Class<T>,
+        id: I,
+        headers: Map<String, String>?,
     ): T {
         requireNotNull(resourceType) { "resourceType cannot be null" }
         requireNotNull(id) { "id cannot be null" }
@@ -323,7 +354,10 @@ open class IgStandardRepository : IRepository {
         throw ResourceNotFoundException(id)
     }
 
-    override fun <T : IBaseResource> create(resource: T, headers: Map<String, String>?): MethodOutcome {
+    override fun <T : IBaseResource> create(
+        resource: T,
+        headers: Map<String, String>?,
+    ): MethodOutcome {
         requireNotNull(resource) { "resource cannot be null" }
         requireNotNull(resource.idElement.idPart) { "resource id cannot be null" }
 
@@ -334,37 +368,48 @@ open class IgStandardRepository : IRepository {
         return MethodOutcome(resource.idElement, true)
     }
 
-    private fun <T : IBaseResource> validateResource(resourceType: Class<T>, resource: IBaseResource, id: IIdType): T {
+    private fun <T : IBaseResource> validateResource(
+        resourceType: Class<T>,
+        resource: IBaseResource,
+        id: IIdType,
+    ): T {
         val path = resource.getUserData(SOURCE_PATH_TAG) as? Path
 
         if (resourceType.simpleName != resource.fhirType()) {
             throw ResourceNotFoundException(
-                "Expected to find a resource with type: ${resourceType.simpleName} at path: $path. Found resource with type ${resource.fhirType()} instead."
+                "Expected to find a resource with type: ${resourceType.simpleName} at path: $path. " +
+                    "Found resource with type ${resource.fhirType()} instead.",
             )
         }
 
         if (!resource.idElement.hasIdPart()) {
             throw ResourceNotFoundException(
-                "Expected to find a resource with id: ${id.toUnqualifiedVersionless()} at path: $path. Found resource without an id instead."
+                "Expected to find a resource with id: ${id.toUnqualifiedVersionless()} at path: $path. " +
+                    "Found resource without an id instead.",
             )
         }
 
         if (id.idPart != resource.idElement.idPart) {
             throw ResourceNotFoundException(
-                "Expected to find a resource with id: ${id.idPart} at path: $path. Found resource with an id ${resource.idElement.idPart} instead."
+                "Expected to find a resource with id: ${id.idPart} at path: $path. " +
+                    "Found resource with an id ${resource.idElement.idPart} instead.",
             )
         }
 
         if (id.hasVersionIdPart() && id.versionIdPart != resource.idElement.versionIdPart) {
             throw ResourceNotFoundException(
-                "Expected to find a resource with version: ${id.versionIdPart} at path: $path. Found resource with version ${resource.idElement.versionIdPart} instead."
+                "Expected to find a resource with version: ${id.versionIdPart} at path: $path. " +
+                    "Found resource with version ${resource.idElement.versionIdPart} instead.",
             )
         }
 
         return resourceType.cast(resource)
     }
 
-    override fun <T : IBaseResource> update(resource: T, headers: Map<String, String>?): MethodOutcome {
+    override fun <T : IBaseResource> update(
+        resource: T,
+        headers: Map<String, String>?,
+    ): MethodOutcome {
         requireNotNull(resource) { "resource cannot be null" }
         requireNotNull(resource.idElement.idPart) { "resource id cannot be null" }
 
@@ -374,7 +419,8 @@ open class IgStandardRepository : IRepository {
 
         if (isExternalPath(actual)) {
             throw ForbiddenOperationException(
-                "Unable to create or update: ${resource.idElement.toUnqualifiedVersionless()}. Resource is marked as external, and external resources are read-only."
+                "Unable to create or update: ${resource.idElement.toUnqualifiedVersionless()}. " +
+                    "Resource is marked as external, and external resources are read-only.",
             )
         }
 
@@ -395,7 +441,9 @@ open class IgStandardRepository : IRepository {
     }
 
     override fun <T : IBaseResource, I : IIdType> delete(
-        resourceType: Class<T>, id: I, headers: Map<String, String>?
+        resourceType: Class<T>,
+        id: I,
+        headers: Map<String, String>?,
     ): MethodOutcome {
         requireNotNull(resourceType) { "resourceType cannot be null" }
         requireNotNull(id) { "id cannot be null" }
@@ -422,7 +470,7 @@ open class IgStandardRepository : IRepository {
         bundleType: Class<B>,
         resourceType: Class<T>,
         searchParameters: Multimap<String, List<IQueryParameterType>>,
-        headers: Map<String, String>?
+        headers: Map<String, String>?,
     ): B {
         val builder = BundleBuilder(fhirContext)
         builder.setType("searchset")
@@ -453,7 +501,9 @@ open class IgStandardRepository : IRepository {
     }
 
     private fun <T : IBaseResource> getIdCandidates(
-        idQueries: Collection<List<IQueryParameterType>>, resourceIdMap: Map<IIdType, T>, resourceType: Class<T>
+        idQueries: Collection<List<IQueryParameterType>>,
+        resourceIdMap: Map<IIdType, T>,
+        resourceType: Class<T>,
     ): List<T> {
         return idQueries.flatten()
             .filterIsInstance<TokenParam>()
@@ -464,7 +514,8 @@ open class IgStandardRepository : IRepository {
     }
 
     private fun allParametersMatch(
-        searchParameters: Multimap<String, List<IQueryParameterType>>, resource: IBaseResource
+        searchParameters: Multimap<String, List<IQueryParameterType>>,
+        resource: IBaseResource,
     ): Boolean {
         for (nextEntry in searchParameters.entries()) {
             if (!resourceMatcher.matches(nextEntry.key, nextEntry.value, resource)) return false
@@ -473,32 +524,50 @@ open class IgStandardRepository : IRepository {
     }
 
     override fun <R : IBaseResource, P : IBaseParameters, T : IBaseResource> invoke(
-        resourceType: Class<T>, name: String, parameters: P, returnType: Class<R>, headers: Map<String, String>?
+        resourceType: Class<T>,
+        name: String,
+        parameters: P,
+        returnType: Class<R>,
+        headers: Map<String, String>?,
     ): R {
         return invokeOperation(null, resourceType.simpleName, name, parameters)
     }
 
     override fun <R : IBaseResource, P : IBaseParameters, I : IIdType> invoke(
-        id: I, name: String, parameters: P, returnType: Class<R>, headers: Map<String, String>?
+        id: I,
+        name: String,
+        parameters: P,
+        returnType: Class<R>,
+        headers: Map<String, String>?,
     ): R {
         return invokeOperation(id, id.resourceType, name, parameters)
     }
 
     protected open fun <R : IBaseResource> invokeOperation(
-        id: IIdType?, resourceType: String, operationName: String, parameters: IBaseParameters
+        id: IIdType?,
+        resourceType: String,
+        operationName: String,
+        parameters: IBaseParameters,
     ): R {
         val provider = checkNotNull(operationProvider) { "No operation provider found. Unable to invoke operations." }
         @Suppress("UNCHECKED_CAST")
         return provider.invokeOperation<org.hl7.fhir.instance.model.api.IPrimitiveType<String>, R>(
-            this, id, resourceType, operationName, parameters
+            this,
+            id,
+            resourceType,
+            operationName,
+            parameters,
         )
     }
 
     protected open fun compartmentFrom(headers: Map<String, String>?): IgStandardRepositoryCompartment {
         if (headers == null) return IgStandardRepositoryCompartment()
         val compartmentHeader = headers[FHIR_COMPARTMENT_HEADER]
-        return if (compartmentHeader == null) IgStandardRepositoryCompartment()
-        else IgStandardRepositoryCompartment(compartmentHeader)
+        return if (compartmentHeader == null) {
+            IgStandardRepositoryCompartment()
+        } else {
+            IgStandardRepositoryCompartment(compartmentHeader)
+        }
     }
 
     protected open fun pathForCompartment(igStandardRepositoryCompartment: IgStandardRepositoryCompartment): String {

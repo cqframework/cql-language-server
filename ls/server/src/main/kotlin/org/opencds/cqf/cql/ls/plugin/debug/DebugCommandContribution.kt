@@ -8,9 +8,8 @@ import org.opencds.cqf.cql.ls.server.utility.Futures
 import java.util.concurrent.CompletableFuture
 
 class DebugCommandContribution(
-    private val cqlCompilationManager: CqlCompilationManager
+    private val cqlCompilationManager: CqlCompilationManager,
 ) : CommandContribution {
-
     companion object {
         const val START_DEBUG_COMMAND = "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession"
     }
@@ -37,12 +36,12 @@ class DebugCommandContribution(
                 }
             } else {
                 throw IllegalStateException(
-                    "Please wait for the current debug session to end before starting a new one."
+                    "Please wait for the current debug session to end before starting a new one.",
                 )
             }
         } else {
             throw IllegalArgumentException(
-                "DebugPlugin doesn't support command ${params.command}"
+                "DebugPlugin doesn't support command ${params.command}",
             )
         }
     }

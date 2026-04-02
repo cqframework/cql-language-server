@@ -13,7 +13,6 @@ import java.util.concurrent.CompletableFuture
 
 // TODO: This will be moved to the debug plugin once that's more fully baked..
 class DebugCqlCommandContribution(private val igContextManager: IgContextManager) : CommandContribution {
-
     companion object {
         // TODO: Delete once the plugin is fully supported
         const val START_DEBUG_COMMAND = "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession"
@@ -31,9 +30,10 @@ class DebugCqlCommandContribution(private val igContextManager: IgContextManager
 
     private fun executeCql(params: ExecuteCommandParams): CompletableFuture<Any> {
         try {
-            val arguments = params.arguments
-                .mapNotNull { it as? JsonElement }
-                .map { it.asString }
+            val arguments =
+                params.arguments
+                    .mapNotNull { it as? JsonElement }
+                    .map { it.asString }
 
             // Temporarily redirect std out, because uh... I didn't do that very smart.
             val baosOut = ByteArrayOutputStream()

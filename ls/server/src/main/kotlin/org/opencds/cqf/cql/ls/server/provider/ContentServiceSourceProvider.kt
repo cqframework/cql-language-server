@@ -9,9 +9,8 @@ import java.net.URI
 
 class ContentServiceSourceProvider(
     private val root: URI,
-    private val contentService: ContentService
+    private val contentService: ContentService,
 ) : LibrarySourceProvider {
-
     override fun getLibrarySource(libraryIdentifier: VersionedIdentifier): Source? {
         val inputStream = contentService.read(root, libraryIdentifier) ?: return null
         return Converters.inputStreamToSource(inputStream)

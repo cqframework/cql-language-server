@@ -10,7 +10,6 @@ import org.junit.jupiter.api.condition.OS
 import java.nio.file.Paths
 
 class UrisTest {
-
     @Test
     @EnabledOnOs(OS.MAC, OS.LINUX)
     fun encodedUriGetHead() {
@@ -249,9 +248,10 @@ class UrisTest {
         // Windows file URI with forward slashes — chain resolves successfully
         val rootUri = Uris.parseOrNull("file:///C:/Users/user/projects/myproject")
         assertNotNull(rootUri)
-        val cqlUri = rootUri
-            ?.let { Uris.addPath(it, "input") }
-            ?.let { Uris.addPath(it, "cql") }
+        val cqlUri =
+            rootUri
+                ?.let { Uris.addPath(it, "input") }
+                ?.let { Uris.addPath(it, "cql") }
         assertNotNull(cqlUri)
     }
 
@@ -262,9 +262,10 @@ class UrisTest {
         // rather than throwing NPE.
         val rootUri = Uris.parseOrNull("C:\\Users\\user\\projects\\myproject")
         assertNull(rootUri, "Raw Windows backslash paths return null from parseOrNull")
-        val cqlUri = rootUri
-            ?.let { Uris.addPath(it, "input") }
-            ?.let { Uris.addPath(it, "cql") }
+        val cqlUri =
+            rootUri
+                ?.let { Uris.addPath(it, "input") }
+                ?.let { Uris.addPath(it, "cql") }
         assertNull(cqlUri)
     }
 }

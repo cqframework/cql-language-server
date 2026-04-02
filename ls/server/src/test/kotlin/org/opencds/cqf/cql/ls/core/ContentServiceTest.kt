@@ -13,9 +13,10 @@ import java.net.URI
 import java.nio.file.Files
 
 class ContentServiceTest {
-
-    private fun id(name: String, version: String? = null): VersionedIdentifier =
-        VersionedIdentifier().withId(name).let { if (version != null) it.withVersion(version) else it }
+    private fun id(
+        name: String,
+        version: String? = null,
+    ): VersionedIdentifier = VersionedIdentifier().withId(name).let { if (version != null) it.withVersion(version) else it }
 
     private val root = URI("file:///workspace/root/")
 
@@ -35,9 +36,13 @@ class ContentServiceTest {
 
     @Test
     fun `read returns null when locate finds no locations`() {
-        val cs = object : ContentService {
-            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
-        }
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ) = emptySet<URI>()
+            }
         assertNull(cs.read(root, id("Foo")))
     }
 
@@ -45,28 +50,39 @@ class ContentServiceTest {
     fun `read delegates to read(uri) when locate finds a single location`() {
         val targetUri = URI("file:///workspace/root/Foo.cql")
         val sentinel: InputStream = "sentinel".byteInputStream()
-        val cs = object : ContentService {
-            override fun locate(root: URI, identifier: VersionedIdentifier) = setOf(targetUri)
-            override fun read(uri: URI) = if (uri == targetUri) sentinel else null
-        }
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ) = setOf(targetUri)
+
+                override fun read(uri: URI) = if (uri == targetUri) sentinel else null
+            }
         assertSame(sentinel, cs.read(root, id("Foo")))
     }
 
     @Test
     fun `read throws IllegalStateException when locate finds multiple locations`() {
-        val cs = object : ContentService {
-            override fun locate(root: URI, identifier: VersionedIdentifier) =
-                setOf(URI("file:///a/Foo.cql"), URI("file:///b/Foo.cql"))
-        }
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ) = setOf(URI("file:///a/Foo.cql"), URI("file:///b/Foo.cql"))
+            }
         assertThrows<IllegalStateException> { cs.read(root, id("Foo")) }
     }
 
     @Test
     fun `IllegalStateException message includes library id and version`() {
-        val cs = object : ContentService {
-            override fun locate(root: URI, identifier: VersionedIdentifier) =
-                setOf(URI("file:///a/MyLib.cql"), URI("file:///b/MyLib.cql"))
-        }
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ) = setOf(URI("file:///a/MyLib.cql"), URI("file:///b/MyLib.cql"))
+            }
         val ex = assertThrows<IllegalStateException> { cs.read(root, id("MyLib", "2.3.0")) }
         assertTrue(ex.message!!.contains("MyLib"), "message should include library id")
         assertTrue(ex.message!!.contains("2.3.0"), "message should include library version")

@@ -14,20 +14,33 @@ import org.hl7.fhir.instance.model.api.IIdType
 import java.util.Collections
 
 class NoOpRepository(private val fhirContext: FhirContext) : IRepository {
-
-    override fun <T : IBaseResource, I : IIdType> read(aClass: Class<T>, i: I, map: Map<String, String>): T {
+    override fun <T : IBaseResource, I : IIdType> read(
+        aClass: Class<T>,
+        i: I,
+        map: Map<String, String>,
+    ): T {
         throw UnsupportedOperationException("Unimplemented method 'read'")
     }
 
-    override fun <T : IBaseResource> create(t: T, map: Map<String, String>): MethodOutcome {
+    override fun <T : IBaseResource> create(
+        t: T,
+        map: Map<String, String>,
+    ): MethodOutcome {
         throw UnsupportedOperationException("Unimplemented method 'create'")
     }
 
-    override fun <T : IBaseResource> update(t: T, map: Map<String, String>): MethodOutcome {
+    override fun <T : IBaseResource> update(
+        t: T,
+        map: Map<String, String>,
+    ): MethodOutcome {
         throw UnsupportedOperationException("Unimplemented method 'update'")
     }
 
-    override fun <T : IBaseResource, I : IIdType> delete(aClass: Class<T>, i: I, map: Map<String, String>): MethodOutcome {
+    override fun <T : IBaseResource, I : IIdType> delete(
+        aClass: Class<T>,
+        i: I,
+        map: Map<String, String>,
+    ): MethodOutcome {
         throw UnsupportedOperationException("Unimplemented method 'delete'")
     }
 
@@ -36,23 +49,35 @@ class NoOpRepository(private val fhirContext: FhirContext) : IRepository {
         aClass: Class<B>,
         aClass1: Class<T>,
         multimap: Multimap<String, List<IQueryParameterType>>,
-        map: Map<String, String>
+        map: Map<String, String>,
     ): B {
         val factory = fhirContext.newBundleFactory()
         factory.addResourcesToBundle(
-            Collections.emptyList(), BundleTypeEnum.SEARCHSET, "", BundleInclusionRule.BASED_ON_INCLUDES, emptySet()
+            Collections.emptyList(),
+            BundleTypeEnum.SEARCHSET,
+            "",
+            BundleInclusionRule.BASED_ON_INCLUDES,
+            emptySet(),
         )
         return factory.resourceBundle as B
     }
 
     override fun <R : IBaseResource, P : IBaseParameters, T : IBaseResource> invoke(
-        aClass: Class<T>, s: String, p: P, aClass1: Class<R>, map: Map<String, String>
+        aClass: Class<T>,
+        s: String,
+        p: P,
+        aClass1: Class<R>,
+        map: Map<String, String>,
     ): R {
         throw UnsupportedOperationException("Unimplemented method 'invoke'")
     }
 
     override fun <R : IBaseResource, P : IBaseParameters, I : IIdType> invoke(
-        i: I, s: String, p: P, aClass: Class<R>, map: Map<String, String>
+        i: I,
+        s: String,
+        p: P,
+        aClass: Class<R>,
+        map: Map<String, String>,
     ): R {
         throw UnsupportedOperationException("Unimplemented method 'invoke'")
     }

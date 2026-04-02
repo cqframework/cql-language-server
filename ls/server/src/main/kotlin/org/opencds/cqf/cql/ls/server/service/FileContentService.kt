@@ -19,43 +19,65 @@ import java.nio.file.Paths
 // NOTE: This implementation is naive and assumes library file names will always take the form:
 // <filename>[-<version>].cql
 class FileContentService(protected val workspaceFolders: List<WorkspaceFolder>) : ContentService {
-
     companion object {
         private val log = LoggerFactory.getLogger(FileContentService::class.java)
 
         @JvmStatic
-        fun searchFolder(directory: URI, libraryIdentifier: VersionedIdentifier): File? {
-            val path = try {
-                Paths.get(directory)
-            } catch (e: Exception) {
-                log.warn("error searching directory $directory. Skipping.", e)
-                return null
-            }
+        fun searchFolder(
+            directory: URI,
+            libraryIdentifier: VersionedIdentifier,
+        ): File? {
+            val path =
+                try {
+                    Paths.get(directory)
+                } catch (e: Exception) {
+                    log.warn("error searching directory $directory. Skipping.", e)
+                    return null
+                }
 
             val libraryName = libraryIdentifier.id ?: return null
-            val libraryPath = path.resolve(
-                "$libraryName${if (libraryIdentifier.version != null) "-${libraryIdentifier.version}" else ""}.cql"
-            )
+            val libraryPath =
+                path.resolve(
+                    "$libraryName${if (libraryIdentifier.version != null) "-${libraryIdentifier.version}" else ""}.cql",
+                )
             val libraryFile = libraryPath.toFile()
-            return if (libraryFile.exists()) libraryFile
-            else nearestMatch(path.toFile(), libraryName, libraryIdentifier.version)
+            return if (libraryFile.exists()) {
+                libraryFile
+            } else {
+                nearestMatch(path.toFile(), libraryName, libraryIdentifier.version)
+            }
         }
 
-        private fun ioFilter(name: String): IOFileFilter = object : IOFileFilter {
-            override fun accept(dir: File, filename: String) =
-                filename.startsWith(name) && filename.endsWith(".cql")
+        private fun ioFilter(name: String): IOFileFilter =
+            object : IOFileFilter {
+                override fun accept(
+                    dir: File,
+                    filename: String,
+                ) = filename.startsWith(name) && filename.endsWith(".cql")
 
-            override fun accept(file: File) =
-                if (file.isFile) accept(file, file.name) else false
-        }
+                override fun accept(file: File) = if (file.isFile) accept(file, file.name) else false
+            }
 
-        private fun nearestMatch(directory: File, name: String, version: String?): File? {
+        private fun nearestMatch(
+            directory: File,
+            name: String,
+            version: String?,
+        ): File? {
             val files = FileUtils.listFiles(directory, ioFilter(name), TrueFileFilter.INSTANCE)
             if (files == null || files.isEmpty()) return null
 
             var mostRecentFile: File? = null
             var mostRecent: Version? = null
-            val requestedVersion = if (version != null) try { Version(version) } catch (e: Exception) { null } else null
+            val requestedVersion =
+                if (version != null) {
+                    try {
+                        Version(version)
+                    } catch (e: Exception) {
+                        null
+                    }
+                } else {
+                    null
+                }
 
             for (file in files) {
                 val fileName = file.name
@@ -77,7 +99,11 @@ class FileContentService(protected val workspaceFolders: List<WorkspaceFolder>) 
         }
 
         private fun getVersion(version: String): Version? {
-            return try { Version(version) } catch (e: Exception) { null }
+            return try {
+                Version(version)
+            } catch (e: Exception) {
+                null
+            }
         }
 
         private fun getNameAndVersion(fileName: String): Pair<String, Version?> {
@@ -95,7 +121,10 @@ class FileContentService(protected val workspaceFolders: List<WorkspaceFolder>) 
         }
     }
 
-    override fun locate(root: URI, identifier: VersionedIdentifier): Set<URI> {
+    override fun locate(
+        root: URI,
+        identifier: VersionedIdentifier,
+    ): Set<URI> {
         requireNotNull(root)
         requireNotNull(identifier)
 

@@ -35,16 +35,18 @@ class CqlWorkspaceService(
     private val client: CompletableFuture<LanguageClient>,
     private val commandContributions: CompletableFuture<List<CommandContribution>>,
     private val workspaceFolders: MutableList<WorkspaceFolder>,
-    private val eventBus: EventBus
+    private val eventBus: EventBus,
 ) : WorkspaceService {
-
     companion object {
         private val log = LoggerFactory.getLogger(CqlWorkspaceService::class.java)
         private val basicWatchers = listOf("**/cql-options.json", "ig.ini")
     }
 
     @Suppress("java:S125") // Keeping the commented code for future reference
-    fun initialize(params: InitializeParams, serverCapabilities: ServerCapabilities) {
+    fun initialize(
+        params: InitializeParams,
+        serverCapabilities: ServerCapabilities,
+    ) {
         addFolders(params.workspaceFolders)
 
         val wsc = WorkspaceServerCapabilities()
@@ -73,27 +75,32 @@ class CqlWorkspaceService(
 
         client.join().unregisterCapability(
             UnregistrationParams(
-                listOf(Unregistration(
-                    Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
-                    Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD
-                ))
-            )
+                listOf(
+                    Unregistration(
+                        Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
+                        Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD,
+                    ),
+                ),
+            ),
         )
 
-        val watchers = basicWatchers
-            .map { Either.forLeft<String, RelativePattern>(it) }
-            .map { FileSystemWatcher(it) }
+        val watchers =
+            basicWatchers
+                .map { Either.forLeft<String, RelativePattern>(it) }
+                .map { FileSystemWatcher(it) }
 
         val registrationOptions = DidChangeWatchedFilesRegistrationOptions(watchers)
 
         client.join().registerCapability(
             RegistrationParams(
-                listOf(Registration(
-                    Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
-                    Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD,
-                    registrationOptions
-                ))
-            )
+                listOf(
+                    Registration(
+                        Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_ID,
+                        Constants.WORKSPACE_DID_CHANGE_WATCHED_FILES_METHOD,
+                        registrationOptions,
+                    ),
+                ),
+            ),
         )
     }
 
@@ -103,7 +110,7 @@ class CqlWorkspaceService(
         } catch (e: Exception) {
             log.error("executeCommand for ${params.command}", e)
             client.join().showMessage(
-                MessageParams(MessageType.Error, "Command ${params.command} failed with: ${e.message}")
+                MessageParams(MessageType.Error, "Command ${params.command} failed with: ${e.message}"),
             )
             Futures.failed(e)
         }
