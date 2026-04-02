@@ -13,7 +13,6 @@ import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
-import org.opencds.cqf.cql.ls.plugin.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider
@@ -56,7 +55,6 @@ fun main(args: Array<String>) {
     )
 
     val contributions = mutableListOf<CommandContribution>()
-    contributions.add(DebugCommandContribution(compilationManager))
     contributions.add(ViewElmCommandContribution(compilationManager))
     contributions.add(DebugCqlCommandContribution(igContextManager))
     commandsFuture.complete(contributions)
