@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
-import org.mockito.Mockito.mock
-import org.mockito.Mockito.`when`
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -34,8 +32,9 @@ class ConvertersTest {
 
     @Test
     fun should_throwIOException_when_inputStreamToStringHasAnIOError() {
-        val inputStream = mock(InputStream::class.java)
-        `when`(inputStream.read()).thenThrow(IOException("Simulated failure"))
+        val inputStream = object : InputStream() {
+            override fun read(): Int = throw IOException("Simulated failure")
+        }
         assertThrows(IOException::class.java) { Converters.inputStreamToString(inputStream) }
     }
 
@@ -56,8 +55,9 @@ class ConvertersTest {
 
     @Test
     fun should_throwIOException_when_inputStreamToSourceCalledWithNull() {
-        val inputStream = mock(InputStream::class.java)
-        `when`(inputStream.read()).thenThrow(IOException("Simulated failure"))
+        val inputStream = object : InputStream() {
+            override fun read(): Int = throw IOException("Simulated failure")
+        }
         assertThrows(IOException::class.java) { Converters.inputStreamToSource(inputStream) }
     }
 }
