@@ -39,11 +39,9 @@ import java.util.concurrent.Callable
 
 @Command(name = "cql", mixinStandardHelpOptions = true)
 class CqlCommand : Callable<Int> {
-
     companion object {
         private val log = LoggerFactory.getLogger(CqlCommand::class.java)
     }
-
 
     @Option(names = ["-fv", "--fhir-version"], required = true)
     var fhirVersion: String = ""
@@ -129,7 +127,10 @@ class CqlCommand : Callable<Int> {
             log.warn(s)
         }
 
-        override fun logDebugMessage(logCategory: ILoggingService.LogCategory, s: String) {
+        override fun logDebugMessage(
+            logCategory: ILoggingService.LogCategory,
+            s: String,
+        ) {
             log.debug("{}: {}", logCategory, s)
         }
 
@@ -180,32 +181,39 @@ class CqlCommand : Callable<Int> {
 
         val optionsPathVal = optionsPath
         if (optionsPathVal != null) {
-            val optUri = Uris.parseOrNull(optionsPathVal)
-                ?: run { log.warn("Could not parse options path: $optionsPathVal"); return 1 }
+            val optUri =
+                Uris.parseOrNull(optionsPathVal)
+                    ?: run {
+                        log.warn("Could not parse options path: $optionsPathVal")
+                        return 1
+                    }
             val op = Path(Paths.get(optUri).toString())
             val options = CqlTranslatorOptions.fromFile(Path(op))
             cqlOptions.setCqlCompilerOptions(options.cqlCompilerOptions)
         }
 
-        val terminologySettings = TerminologySettings().apply {
-            setValuesetExpansionMode(VALUESET_EXPANSION_MODE.PERFORM_NAIVE_EXPANSION)
-            setValuesetPreExpansionMode(VALUESET_PRE_EXPANSION_MODE.USE_IF_PRESENT)
-            setValuesetMembershipMode(VALUESET_MEMBERSHIP_MODE.USE_EXPANSION)
-            setCodeLookupMode(CODE_LOOKUP_MODE.USE_CODESYSTEM_URL)
-        }
+        val terminologySettings =
+            TerminologySettings().apply {
+                setValuesetExpansionMode(VALUESET_EXPANSION_MODE.PERFORM_NAIVE_EXPANSION)
+                setValuesetPreExpansionMode(VALUESET_PRE_EXPANSION_MODE.USE_IF_PRESENT)
+                setValuesetMembershipMode(VALUESET_MEMBERSHIP_MODE.USE_EXPANSION)
+                setCodeLookupMode(CODE_LOOKUP_MODE.USE_CODESYSTEM_URL)
+            }
 
-        val retrieveSettings = RetrieveSettings().apply {
-            setTerminologyParameterMode(TERMINOLOGY_FILTER_MODE.FILTER_IN_MEMORY)
-            setSearchParameterMode(SEARCH_FILTER_MODE.FILTER_IN_MEMORY)
-            setProfileMode(PROFILE_MODE.DECLARED)
-        }
+        val retrieveSettings =
+            RetrieveSettings().apply {
+                setTerminologyParameterMode(TERMINOLOGY_FILTER_MODE.FILTER_IN_MEMORY)
+                setSearchParameterMode(SEARCH_FILTER_MODE.FILTER_IN_MEMORY)
+                setProfileMode(PROFILE_MODE.DECLARED)
+            }
 
-        val evaluationSettings = EvaluationSettings.getDefault().apply {
-            setCqlOptions(cqlOptions)
-            setTerminologySettings(terminologySettings)
-            setRetrieveSettings(retrieveSettings)
-            setNpmProcessor(npmProcessor)
-        }
+        val evaluationSettings =
+            EvaluationSettings.getDefault().apply {
+                setCqlOptions(cqlOptions)
+                setTerminologySettings(terminologySettings)
+                setRetrieveSettings(retrieveSettings)
+                setNpmProcessor(npmProcessor)
+            }
 
         for (library in libraries) {
             // Paths are mixed types
@@ -248,11 +256,12 @@ class CqlCommand : Callable<Int> {
                 }
 
             val expressions = library.expression?.toSet()
-            val result = if (expressions != null) {
-                engine.evaluate(identifier, expressions, contextParameter)
-            } else {
-                engine.evaluate(identifier, contextParameter)
-            }
+            val result =
+                if (expressions != null) {
+                    engine.evaluate(identifier, expressions, contextParameter)
+                } else {
+                    engine.evaluate(identifier, contextParameter)
+                }
 
             writeResult(result)
         }
@@ -260,13 +269,25 @@ class CqlCommand : Callable<Int> {
         return 0
     }
 
-    private fun createRepository(fhirContext: FhirContext, terminologyPath: java.nio.file.Path?, modelPath: java.nio.file.Path?): IRepository {
+    private fun createRepository(
+        fhirContext: FhirContext,
+        terminologyPath: java.nio.file.Path?,
+        modelPath: java.nio.file.Path?,
+    ): IRepository {
         if (terminologyPath == null && modelPath == null) {
             return NoOpRepository(fhirContext)
         }
 
         val data: IRepository = if (modelPath != null) IgStandardRepository(fhirContext, modelPath) else NoOpRepository(fhirContext)
-        val terminology: IRepository = if (terminologyPath != null) IgStandardRepository(fhirContext, terminologyPath) else NoOpRepository(fhirContext)
+        val terminology: IRepository =
+            if (terminologyPath != null) {
+                IgStandardRepository(
+                    fhirContext,
+                    terminologyPath,
+                )
+            } else {
+                NoOpRepository(fhirContext)
+            }
 
         return ProxyRepository(data, data, terminology)
     }
@@ -287,8 +308,9 @@ class CqlCommand : Callable<Int> {
                 val items = value.joinToString(", ") { tempConvert(it) }
                 "[$items]"
             }
-            is IBaseResource -> value.fhirType() +
-                if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
+            is IBaseResource ->
+                value.fhirType() +
+                    if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
             is IBase -> value.fhirType()
             is IBaseDatatype -> value.fhirType()
             else -> value.toString()

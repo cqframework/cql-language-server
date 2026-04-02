@@ -5,5 +5,5 @@ enum class ServerState {
     INITIALIZED,
     CONFIGURED,
     RUNNING,
-    STOPPED
+    STOPPED,
 }

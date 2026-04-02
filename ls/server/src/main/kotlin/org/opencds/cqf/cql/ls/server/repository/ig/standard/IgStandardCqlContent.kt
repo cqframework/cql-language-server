@@ -8,9 +8,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 object IgStandardCqlContent {
-
     @JvmStatic
-    fun loadCqlContent(resource: IBaseResource, resourcePath: Path) {
+    fun loadCqlContent(
+        resource: IBaseResource,
+        resourcePath: Path,
+    ) {
         requireNotNull(resource) { "resource can not be null" }
         requireNotNull(resourcePath) { "resourcePath can not be null" }
 
@@ -18,21 +20,34 @@ object IgStandardCqlContent {
             return
         }
 
-        val (cqlPathExtractor, cqlContentAttacher) = when (resource.structureFhirVersionEnum) {
-            ca.uhn.fhir.context.FhirVersionEnum.DSTU3 -> Pair(
-                { r: IBaseResource -> org.opencds.cqf.fhir.utility.dstu3.AttachmentUtil.getCqlLocation(r) },
-                { r: IBaseResource, s: String -> org.opencds.cqf.fhir.utility.dstu3.AttachmentUtil.addData(r, s); Unit }
-            )
-            ca.uhn.fhir.context.FhirVersionEnum.R4 -> Pair(
-                { r: IBaseResource -> org.opencds.cqf.fhir.utility.r4.AttachmentUtil.getCqlLocation(r) },
-                { r: IBaseResource, s: String -> org.opencds.cqf.fhir.utility.r4.AttachmentUtil.addData(r, s); Unit }
-            )
-            ca.uhn.fhir.context.FhirVersionEnum.R5 -> Pair(
-                { r: IBaseResource -> org.opencds.cqf.fhir.utility.r5.AttachmentUtil.getCqlLocation(r) },
-                { r: IBaseResource, s: String -> org.opencds.cqf.fhir.utility.r5.AttachmentUtil.addData(r, s); Unit }
-            )
-            else -> throw IllegalArgumentException("Unsupported FHIR version: ${resource.structureFhirVersionEnum}")
-        }
+        val (cqlPathExtractor, cqlContentAttacher) =
+            when (resource.structureFhirVersionEnum) {
+                ca.uhn.fhir.context.FhirVersionEnum.DSTU3 ->
+                    Pair(
+                        { r: IBaseResource -> org.opencds.cqf.fhir.utility.dstu3.AttachmentUtil.getCqlLocation(r) },
+                        { r: IBaseResource, s: String ->
+                            org.opencds.cqf.fhir.utility.dstu3.AttachmentUtil.addData(r, s)
+                            Unit
+                        },
+                    )
+                ca.uhn.fhir.context.FhirVersionEnum.R4 ->
+                    Pair(
+                        { r: IBaseResource -> org.opencds.cqf.fhir.utility.r4.AttachmentUtil.getCqlLocation(r) },
+                        { r: IBaseResource, s: String ->
+                            org.opencds.cqf.fhir.utility.r4.AttachmentUtil.addData(r, s)
+                            Unit
+                        },
+                    )
+                ca.uhn.fhir.context.FhirVersionEnum.R5 ->
+                    Pair(
+                        { r: IBaseResource -> org.opencds.cqf.fhir.utility.r5.AttachmentUtil.getCqlLocation(r) },
+                        { r: IBaseResource, s: String ->
+                            org.opencds.cqf.fhir.utility.r5.AttachmentUtil.addData(r, s)
+                            Unit
+                        },
+                    )
+                else -> throw IllegalArgumentException("Unsupported FHIR version: ${resource.structureFhirVersionEnum}")
+            }
 
         readAndAttachCqlContent(resource, resourcePath, cqlPathExtractor, cqlContentAttacher)
     }
@@ -41,14 +56,17 @@ object IgStandardCqlContent {
         resource: IBaseResource,
         resourcePath: Path,
         cqlPathExtractor: (IBaseResource) -> String?,
-        cqlContentAttacher: (IBaseResource, String) -> Unit
+        cqlContentAttacher: (IBaseResource, String) -> Unit,
     ) {
         val cqlPath = cqlPathExtractor(resource) ?: return
         val cqlContent = getCqlContent(resourcePath, cqlPath)
         cqlContentAttacher(resource, cqlContent)
     }
 
-    internal fun getCqlContent(rootPath: Path, relativePath: String): String {
+    internal fun getCqlContent(
+        rootPath: Path,
+        relativePath: String,
+    ): String {
         val path = rootPath.resolve(relativePath).normalize()
         return try {
             String(Files.readAllBytes(path), StandardCharsets.UTF_8)

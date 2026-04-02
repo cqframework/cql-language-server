@@ -20,8 +20,7 @@ object Diagnostics {
     }
 
     @JvmStatic
-    fun convert(errors: Iterable<CqlCompilerException>): Set<Diagnostic> =
-        errors.mapNotNull { convert(it) }.toSet()
+    fun convert(errors: Iterable<CqlCompilerException>): Set<Diagnostic> = errors.mapNotNull { convert(it) }.toSet()
 
     private fun severity(severity: CqlCompilerException.ErrorSeverity): DiagnosticSeverity {
         return when (severity) {
@@ -35,12 +34,12 @@ object Diagnostics {
         return Range(
             Position(
                 maxOf(locator.startLine - 1, 0),
-                maxOf(locator.startChar - 1, 0)
+                maxOf(locator.startChar - 1, 0),
             ),
             Position(
                 maxOf(locator.endLine - 1, 0),
-                maxOf(locator.endChar, 0)
-            )
+                maxOf(locator.endChar, 0),
+            ),
         )
     }
 }

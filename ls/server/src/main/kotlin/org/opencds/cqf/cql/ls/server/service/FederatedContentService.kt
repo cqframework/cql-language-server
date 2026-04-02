@@ -7,10 +7,12 @@ import java.net.URI
 
 class FederatedContentService(
     private val activeContentService: ActiveContentService,
-    private val fileContentService: ContentService
+    private val fileContentService: ContentService,
 ) : ContentService {
-
-    override fun locate(root: URI, identifier: VersionedIdentifier): Set<URI> {
+    override fun locate(
+        root: URI,
+        identifier: VersionedIdentifier,
+    ): Set<URI> {
         requireNotNull(root)
         requireNotNull(identifier)
         val locations = activeContentService.locate(root, identifier).toMutableSet()

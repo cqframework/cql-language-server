@@ -1,7 +1,7 @@
 package org.opencds.cqf.cql.ls.core.utility
 
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
@@ -12,7 +12,6 @@ import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 class ConvertersTest {
-
     @Test
     fun should_returnInstance_when_creatingConverter() {
         // Converters is a Kotlin object (singleton); verify it is accessible
@@ -48,9 +47,10 @@ class ConvertersTest {
 
     @Test
     fun should_returnSource_when_inputStreamExists() {
-        val expected = Converters.inputStreamToSource(
-            ByteArrayInputStream("The quick brown fox jumps over the lazy dog".toByteArray(StandardCharsets.UTF_8))
-        )
+        val expected =
+            Converters.inputStreamToSource(
+                ByteArrayInputStream("The quick brown fox jumps over the lazy dog".toByteArray(StandardCharsets.UTF_8)),
+            )
         assertNotNull(expected)
     }
 

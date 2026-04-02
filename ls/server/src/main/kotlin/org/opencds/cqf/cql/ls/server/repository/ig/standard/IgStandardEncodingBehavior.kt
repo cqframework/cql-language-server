@@ -10,22 +10,23 @@ import ca.uhn.fhir.rest.api.EncodingEnum
  */
 class IgStandardEncodingBehavior(
     internal val preferredEncoding: EncodingEnum,
-    internal val preserveEncoding: PreserveEncoding
+    internal val preserveEncoding: PreserveEncoding,
 ) {
-
     /**
      * When updating a resource, you can choose to preserve the original encoding of the resource
      * or you can choose to overwrite the original encoding with the preferred encoding.
      */
     enum class PreserveEncoding {
         PRESERVE_ORIGINAL_ENCODING,
-        OVERWRITE_WITH_PREFERRED_ENCODING
+        OVERWRITE_WITH_PREFERRED_ENCODING,
     }
 
     companion object {
         @JvmField
-        val DEFAULT = IgStandardEncodingBehavior(
-            EncodingEnum.JSON, PreserveEncoding.PRESERVE_ORIGINAL_ENCODING
-        )
+        val DEFAULT =
+            IgStandardEncodingBehavior(
+                EncodingEnum.JSON,
+                PreserveEncoding.PRESERVE_ORIGINAL_ENCODING,
+            )
     }
 }

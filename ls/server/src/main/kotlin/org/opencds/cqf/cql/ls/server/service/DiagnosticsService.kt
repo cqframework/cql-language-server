@@ -27,17 +27,17 @@ import java.util.concurrent.TimeUnit
 class DiagnosticsService(
     private val client: CompletableFuture<LanguageClient>,
     private val cqlCompilationManager: CqlCompilationManager,
-    private val contentService: ContentService
+    private val contentService: ContentService,
 ) {
-
     companion object {
         private val log = LoggerFactory.getLogger(DiagnosticsService::class.java)
         private const val BOUNCE_DELAY = 200L
     }
 
-    private val executor = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "Debouncer").also { it.isDaemon = true }
-    }
+    private val executor =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "Debouncer").also { it.isDaemon = true }
+        }
 
     private var future: ScheduledFuture<*>? = null
 
@@ -62,7 +62,7 @@ class DiagnosticsService(
 
     private fun mergeDiagnostics(
         currentDiagnostics: MutableMap<URI, MutableSet<Diagnostic>>,
-        newDiagnostics: Map<URI, Set<Diagnostic>>
+        newDiagnostics: Map<URI, Set<Diagnostic>>,
     ) {
         for ((uri, diagnostics) in newDiagnostics) {
             currentDiagnostics.getOrPut(uri) { mutableSetOf() }.addAll(diagnostics)
@@ -73,12 +73,13 @@ class DiagnosticsService(
         val diagnostics = mutableMapOf<URI, MutableSet<Diagnostic>>()
         val compiler = cqlCompilationManager.compile(uri)
         if (compiler == null) {
-            val d = Diagnostic(
-                Range(Position(0, 0), Position(0, 0)),
-                "Library does not contain CQL content.",
-                DiagnosticSeverity.Warning,
-                "lint"
-            )
+            val d =
+                Diagnostic(
+                    Range(Position(0, 0), Position(0, 0)),
+                    "Library does not contain CQL content.",
+                    DiagnosticSeverity.Warning,
+                    "lint",
+                )
             diagnostics.getOrPut(uri) { mutableSetOf() }.add(d)
             return diagnostics
         }
@@ -87,11 +88,12 @@ class DiagnosticsService(
 
         log.debug("lint completed on {} with {} messages.", uri, exceptions.size)
 
-        val uniqueLibraries: List<VersionedIdentifier> = exceptions
-            .map { it?.locator?.library }
-            .distinct()
-            .filterNotNull()
-            .filter { it.id != null }
+        val uniqueLibraries: List<VersionedIdentifier> =
+            exceptions
+                .map { it?.locator?.library }
+                .distinct()
+                .filterNotNull()
+                .filter { it.id != null }
 
         val root = Uris.getHead(uri)
         val libraryUris = mutableMapOf<VersionedIdentifier, URI>()
@@ -113,9 +115,12 @@ class DiagnosticsService(
         for (exception in exceptions) {
             val exLocator = exception.locator
             val exLibrary = exLocator?.library
-            var eUri = if (exLibrary != null && exLibrary.id != null) {
-                libraryUris[exLibrary]
-            } else null
+            var eUri =
+                if (exLibrary != null && exLibrary.id != null) {
+                    libraryUris[exLibrary]
+                } else {
+                    null
+                }
 
             if (eUri == null) {
                 eUri = uri // put all unknown or indeterminate errors to the current uri so at least they get reported
@@ -131,7 +136,7 @@ class DiagnosticsService(
                     d.range.start.character,
                     d.range.end.line,
                     d.range.end.character,
-                    d.message
+                    d.message,
                 )
 
                 diagnostics.getOrPut(eUri) { mutableSetOf() }.add(d)
@@ -165,7 +170,10 @@ class DiagnosticsService(
         }
     }
 
-    internal fun debounce(delay: Long, task: Runnable) {
+    internal fun debounce(
+        delay: Long,
+        task: Runnable,
+    ) {
         future?.takeIf { !it.isDone }?.cancel(false)
         future = executor.schedule(task, delay, TimeUnit.MILLISECONDS)
     }

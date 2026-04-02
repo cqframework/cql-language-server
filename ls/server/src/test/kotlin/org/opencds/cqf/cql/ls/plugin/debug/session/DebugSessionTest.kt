@@ -12,7 +12,6 @@ import org.opencds.cqf.cql.ls.plugin.debug.client.TestDebugClient
 import java.net.Socket
 
 class DebugSessionTest {
-
     // This test starts a Debug session on a background thread
     // which listens at a random socket. It creates a dummy client to
     // connect to that socket.
@@ -26,9 +25,12 @@ class DebugSessionTest {
 
         try {
             Socket("localhost", port).use { socket ->
-                val launcher = DSPLauncher.createClientLauncher(
-                    client, socket.getInputStream(), socket.getOutputStream()
-                )
+                val launcher =
+                    DSPLauncher.createClientLauncher(
+                        client,
+                        socket.getInputStream(),
+                        socket.getOutputStream(),
+                    )
                 val clientThread = launcher.startListening()
                 val server: IDebugProtocolServer = launcher.remoteProxy
                 server.initialize(InitializeRequestArguments()).get()

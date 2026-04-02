@@ -1,12 +1,12 @@
 package org.opencds.cqf.cql.ls.server.manager
 
+import org.cqframework.cql.cql2elm.LibraryManager
 import org.cqframework.fhir.npm.ILibraryReader
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider
 import org.cqframework.fhir.npm.NpmModelInfoProvider
 import org.cqframework.fhir.npm.NpmProcessor
 import org.cqframework.fhir.utilities.IGContext
 import org.cqframework.fhir.utilities.LoggerAdapter
-import org.cqframework.cql.cql2elm.LibraryManager
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.opencds.cqf.cql.ls.core.ContentService
@@ -19,7 +19,6 @@ import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 
 class IgContextManager(private val contentService: ContentService) {
-
     companion object {
         private val log = LoggerFactory.getLogger(IgContextManager::class.java)
     }
@@ -42,7 +41,10 @@ class IgContextManager(private val contentService: ContentService) {
     }
 
     @Synchronized
-    fun setupLibraryManager(uri: URI, libraryManager: LibraryManager) {
+    fun setupLibraryManager(
+        uri: URI,
+        libraryManager: LibraryManager,
+    ) {
         val npmProcessor = getContext(uri) ?: return
         val namespaceManager = libraryManager.namespaceManager
         npmProcessor.igNamespace?.let { namespaceManager.ensureNamespaceRegistered(it) }
@@ -51,10 +53,10 @@ class IgContextManager(private val contentService: ContentService) {
         val adapter = LoggerAdapter(log)
         val npmList = npmProcessor.getPackageManager().npmList
         libraryManager.librarySourceLoader.registerProvider(
-            NpmLibrarySourceProvider(npmList, reader, adapter)
+            NpmLibrarySourceProvider(npmList, reader, adapter),
         )
         libraryManager.modelManager.modelInfoLoader.registerModelInfoProvider(
-            NpmModelInfoProvider(npmList, reader, adapter)
+            NpmModelInfoProvider(npmList, reader, adapter),
         )
 
         val keys = mutableSetOf<String>()

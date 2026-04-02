@@ -32,7 +32,6 @@ import org.opencds.cqf.cql.ls.server.service.TestContentService
 import java.util.concurrent.CompletableFuture
 
 class LanguageServerTest {
-
     companion object {
         private lateinit var server: CqlLanguageServer
 
@@ -45,11 +44,12 @@ class LanguageServerTest {
             val languageClientFuture = CompletableFuture<LanguageClient>()
             val commandsFuture = CompletableFuture<List<CommandContribution>>()
             commandsFuture.complete(emptyList())
-            server = CqlLanguageServer(
-                languageClientFuture,
-                CqlWorkspaceService(languageClientFuture, commandsFuture, mutableListOf(), eventBus),
-                CqlTextDocumentService(languageClientFuture, HoverProvider(compilationManager), FormattingProvider(cs), eventBus)
-            )
+            server =
+                CqlLanguageServer(
+                    languageClientFuture,
+                    CqlWorkspaceService(languageClientFuture, commandsFuture, mutableListOf(), eventBus),
+                    CqlTextDocumentService(languageClientFuture, HoverProvider(compilationManager), FormattingProvider(cs), eventBus),
+                )
         }
 
         /** Builds a fresh, isolated server instance for tests that mutate server state. */
@@ -62,7 +62,7 @@ class LanguageServerTest {
             return CqlLanguageServer(
                 clientFuture,
                 CqlWorkspaceService(clientFuture, commandsFuture, mutableListOf(), eventBus),
-                CqlTextDocumentService(clientFuture, HoverProvider(compilationManager), FormattingProvider(cs), eventBus)
+                CqlTextDocumentService(clientFuture, HoverProvider(compilationManager), FormattingProvider(cs), eventBus),
             )
         }
     }
@@ -75,9 +75,10 @@ class LanguageServerTest {
     @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverInt() {
-        val hover = server.getTextDocumentService()
-            .hover(HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(5, 2)))
-            .get()
+        val hover =
+            server.getTextDocumentService()
+                .hover(HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(5, 2)))
+                .get()
 
         assertNotNull(hover)
         assertNotNull(hover!!.contents.right)
@@ -90,9 +91,10 @@ class LanguageServerTest {
     @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverNothing() {
-        val hover = server.getTextDocumentService()
-            .hover(HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(2, 0)))
-            .get()
+        val hover =
+            server.getTextDocumentService()
+                .hover(HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(2, 0)))
+                .get()
 
         assertNull(hover)
     }
@@ -100,9 +102,10 @@ class LanguageServerTest {
     @Disabled("Disabled until LibraryManager caching issues are resolved")
     @Test
     fun hoverList() {
-        val hover = server.getTextDocumentService()
-            .hover(HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(8, 2)))
-            .get()
+        val hover =
+            server.getTextDocumentService()
+                .hover(HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(8, 2)))
+                .get()
 
         assertNotNull(hover)
         assertNotNull(hover!!.contents.right)

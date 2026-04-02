@@ -11,7 +11,6 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 
 class DebugServerTest {
-
     @Test
     fun handshake() {
         val client = Mockito.mock(IDebugProtocolClient::class.java)

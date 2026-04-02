@@ -12,9 +12,8 @@ import java.net.URI
 
 class ContentServiceModelInfoProvider(
     private val root: URI,
-    private val contentService: ContentService
+    private val contentService: ContentService,
 ) : ModelInfoProvider {
-
     companion object {
         private val log = LoggerFactory.getLogger(ContentServiceModelInfoProvider::class.java)
     }
@@ -24,10 +23,11 @@ class ContentServiceModelInfoProvider(
         val modelVersion = modelIdentifier.version
 
         return try {
-            val modelUri = Uris.addPath(
-                root,
-                "/${modelName.lowercase()}-modelinfo${if (modelVersion != null) "-$modelVersion" else ""}.xml"
-            ) ?: return null
+            val modelUri =
+                Uris.addPath(
+                    root,
+                    "/${modelName.lowercase()}-modelinfo${if (modelVersion != null) "-$modelVersion" else ""}.xml",
+                ) ?: return null
             val modelInputStream = contentService.read(modelUri) ?: return null
             parseModelInfoXml(Converters.inputStreamToString(modelInputStream))
         } catch (e: Exception) {

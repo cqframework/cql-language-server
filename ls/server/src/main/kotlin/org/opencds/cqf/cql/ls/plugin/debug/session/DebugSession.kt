@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.ls.plugin.debug.session
 
 import org.eclipse.lsp4j.debug.launch.DSPLauncher
-import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.opencds.cqf.cql.debug.CqlDebugServer
 import org.slf4j.LoggerFactory
 import java.io.IOException
@@ -12,7 +11,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class DebugSession {
-
     companion object {
         private val log = LoggerFactory.getLogger(DebugSession::class.java)
         private val threadService: ExecutorService = Executors.newCachedThreadPool()
@@ -48,9 +46,12 @@ class DebugSession {
                     serverSocket.soTimeout = 10000
                     this.port.complete(serverSocket.localPort)
                     val s = serverSocket.accept()
-                    val launcher = DSPLauncher.createServerLauncher(
-                        this.getDebugServer(), s.getInputStream(), s.getOutputStream()
-                    )
+                    val launcher =
+                        DSPLauncher.createServerLauncher(
+                            this.getDebugServer(),
+                            s.getInputStream(),
+                            s.getOutputStream(),
+                        )
                     this.getDebugServer().connect(launcher.remoteProxy)
 
                     // We'll exit the server when the client disconnects.

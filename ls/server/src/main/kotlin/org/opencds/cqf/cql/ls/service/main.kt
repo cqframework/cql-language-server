@@ -47,12 +47,13 @@ fun main(args: Array<String>) {
     val commandsFuture = CompletableFuture<List<CommandContribution>>()
 
     val workspaceService = CqlWorkspaceService(languageClientFuture, commandsFuture, workspaceFolders, eventBus)
-    val textDocumentService = CqlTextDocumentService(
-        languageClientFuture,
-        HoverProvider(compilationManager),
-        FormattingProvider(federatedContentService),
-        eventBus
-    )
+    val textDocumentService =
+        CqlTextDocumentService(
+            languageClientFuture,
+            HoverProvider(compilationManager),
+            FormattingProvider(federatedContentService),
+            eventBus,
+        )
 
     val contributions = mutableListOf<CommandContribution>()
     contributions.add(ViewElmCommandContribution(compilationManager))
@@ -77,17 +78,18 @@ fun main(args: Array<String>) {
     log.info("cql-language-server started")
 
     val executor = Executors.newSingleThreadExecutor()
-    val connectionClosed = CompletableFuture.runAsync(
-        {
-            try {
-                serverThread.get()
-                log.info("LSP connection closed")
-            } catch (e: Exception) {
-                log.debug("Server thread exception", e)
-            }
-        },
-        executor
-    )
+    val connectionClosed =
+        CompletableFuture.runAsync(
+            {
+                try {
+                    serverThread.get()
+                    log.info("LSP connection closed")
+                } catch (e: Exception) {
+                    log.debug("Server thread exception", e)
+                }
+            },
+            executor,
+        )
 
     try {
         CompletableFuture.anyOf(server.exited(), connectionClosed).get()

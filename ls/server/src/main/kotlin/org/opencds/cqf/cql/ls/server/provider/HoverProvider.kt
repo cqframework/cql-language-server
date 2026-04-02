@@ -14,7 +14,6 @@ import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 
 class HoverProvider(private val cqlCompilationManager: CqlCompilationManager) {
-
     fun hover(position: HoverParams): Hover? {
         // Returning null here effectively disables hover functionality from the server side.
         // 2026-03-30 RGT: Disable hover functionality for now.
@@ -43,17 +42,21 @@ class HoverProvider(private val cqlCompilationManager: CqlCompilationManager) {
         // (maybe the alternative is to select the specific node under the cursor, but that may be less user-friendly)
         //
         // The current code always picks the first ExpressionDef in the graph.
-        val exp = getExpressionDefForPosition(
-            position.position,
-            compiler.compiledLibrary?.library?.statements
-        ) ?: return null
+        val exp =
+            getExpressionDefForPosition(
+                position.position,
+                compiler.compiledLibrary?.library?.statements,
+            ) ?: return null
 
         val markup = markup(exp.second) ?: return null
 
         return Hover(markup, exp.first)
     }
 
-    private fun getExpressionDefForPosition(position: Position, statements: Statements?): Pair<Range, ExpressionDef>? {
+    private fun getExpressionDefForPosition(
+        position: Position,
+        statements: Statements?,
+    ): Pair<Range, ExpressionDef>? {
         if (statements == null || statements.def.isEmpty()) {
             return null
         }
@@ -64,10 +67,11 @@ class HoverProvider(private val cqlCompilationManager: CqlCompilationManager) {
 
             for (tb in def.trackbacks) {
                 if (positionInTrackBack(position, tb)) {
-                    val range = Range(
-                        Position(tb.startLine - 1, tb.startChar - 1),
-                        Position(tb.endLine - 1, tb.endChar)
-                    )
+                    val range =
+                        Range(
+                            Position(tb.startLine - 1, tb.startChar - 1),
+                            Position(tb.endLine - 1, tb.endChar),
+                        )
                     return Pair(range, def)
                 }
             }
@@ -76,7 +80,10 @@ class HoverProvider(private val cqlCompilationManager: CqlCompilationManager) {
         return null
     }
 
-    private fun positionInTrackBack(p: Position, tb: TrackBack): Boolean {
+    private fun positionInTrackBack(
+        p: Position,
+        tb: TrackBack,
+    ): Boolean {
         val startLine = tb.startLine - 1
         val endLine = tb.endLine - 1
 
