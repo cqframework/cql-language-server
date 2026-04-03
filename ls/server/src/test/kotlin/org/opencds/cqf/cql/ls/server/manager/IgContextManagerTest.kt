@@ -24,6 +24,8 @@ import java.io.InputStream
 import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 
 class IgContextManagerTest {
     private lateinit var manager: IgContextManager
@@ -141,6 +143,55 @@ class IgContextManagerTest {
 
         localManager.getContext(TEST_URI) // should still be cached
         assertEquals(countAfterFirst, readCount, "Unrelated file change should not clear cache")
+    }
+
+    // -----------------------------------------------------------------------
+    // getContext — concurrent callers trigger readContext() exactly once
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getContext_concurrentCalls_onlyReadsContextOnce() {
+        val readCount = AtomicInteger(0)
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ) = emptySet<URI>()
+
+                override fun read(uri: URI): InputStream? {
+                    readCount.incrementAndGet()
+                    return null
+                }
+            }
+
+        // Establish baseline: how many content-service reads does one getContext() trigger?
+        val baselineManager = IgContextManager(cs)
+        baselineManager.getContext(TEST_URI)
+        val readsPerContext = readCount.get()
+
+        // Reset and run N threads simultaneously against a cold cache.
+        readCount.set(0)
+        val localManager = IgContextManager(cs)
+        val threadCount = 10
+        val startGate = CountDownLatch(1)
+        val threads =
+            (1..threadCount).map {
+                Thread {
+                    startGate.await()
+                    localManager.getContext(TEST_URI)
+                }
+            }
+        threads.forEach { it.start() }
+        startGate.countDown()
+        threads.forEach { it.join() }
+
+        assertEquals(
+            readsPerContext,
+            readCount.get(),
+            "Concurrent getContext() calls should invoke readContext() exactly once " +
+                "(expected $readsPerContext reads, got ${readCount.get()})",
+        )
     }
 
     // -----------------------------------------------------------------------
