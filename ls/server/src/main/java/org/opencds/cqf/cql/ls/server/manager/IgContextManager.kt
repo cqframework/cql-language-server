@@ -28,7 +28,7 @@ class IgContextManager(private val contentService: ContentService) {
 
     fun getContext(uri: URI): NpmProcessor? {
         val root = Uris.getHead(uri)
-        return cachedContext.getOrPut(root) { readContext(root) }.orElse(null)
+        return cachedContext.computeIfAbsent(root) { readContext(it) }.orElse(null)
     }
 
     protected fun clearContext(uri: URI) {
