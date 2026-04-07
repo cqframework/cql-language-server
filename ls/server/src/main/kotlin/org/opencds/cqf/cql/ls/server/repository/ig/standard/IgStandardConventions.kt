@@ -3,10 +3,8 @@ package org.opencds.cqf.cql.ls.server.repository.ig.standard
 import org.hl7.fhir.r4.model.Enumerations.FHIRAllTypes
 import org.slf4j.LoggerFactory
 import java.io.IOException
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.stream.Stream
 
 /**
  * This class represents the different file structures for an IG repository. The main differences
@@ -14,10 +12,10 @@ import java.util.stream.Stream
  * and/or category, and whether the files are prefixed with the resource type.
  */
 data class IgStandardConventions(
-    @get:JvmName("typeLayout") val typeLayout: FhirTypeLayout,
-    @get:JvmName("categoryLayout") val categoryLayout: CategoryLayout,
-    @get:JvmName("compartmentLayout") val compartmentLayout: CompartmentLayout,
-    @get:JvmName("filenameMode") val filenameMode: FilenameMode,
+    val typeLayout: FhirTypeLayout,
+    val categoryLayout: CategoryLayout,
+    val compartmentLayout: CompartmentLayout,
+    val filenameMode: FilenameMode,
 ) {
     enum class FhirTypeLayout {
         DIRECTORY_PER_TYPE,
@@ -45,7 +43,6 @@ data class IgStandardConventions(
     companion object {
         private val logger = LoggerFactory.getLogger(IgStandardConventions::class.java)
 
-        @JvmField
         val FLAT =
             IgStandardConventions(
                 FhirTypeLayout.FLAT,
@@ -54,7 +51,6 @@ data class IgStandardConventions(
                 FilenameMode.TYPE_AND_ID,
             )
 
-        @JvmField
         val STANDARD =
             IgStandardConventions(
                 FhirTypeLayout.DIRECTORY_PER_TYPE,
@@ -71,7 +67,6 @@ data class IgStandardConventions(
         /**
          * Auto-detect the IG conventions based on the structure of the IG.
          */
-        @JvmStatic
         fun autoDetect(path: Path?): IgStandardConventions {
             if (path == null || !Files.exists(path)) {
                 return STANDARD
@@ -145,12 +140,12 @@ data class IgStandardConventions(
             return !FHIR_TYPE_NAMES.contains(innerFile.fileName.toString().lowercase())
         }
 
-        private fun listFiles(innerPath: Path): Stream<Path> {
+        private fun listFiles(innerPath: Path): List<Path> {
             return try {
-                Files.list(innerPath)
+                Files.list(innerPath).toList()
             } catch (e: IOException) {
                 logger.error("Error listing files in path: {}", innerPath, e)
-                Stream.empty()
+                emptyList()
             }
         }
 
@@ -159,15 +154,13 @@ data class IgStandardConventions(
             claimedFhirType: FHIRAllTypes,
         ): Boolean {
             return try {
-                Files.lines(filePath, StandardCharsets.UTF_8).use { linesStream ->
-                    val contents = linesStream.collect(java.util.stream.Collectors.joining())
-                    if (contents.isEmpty()) return false
+                val contents = filePath.toFile().readText(Charsets.UTF_8)
+                if (contents.isEmpty()) return false
 
-                    val filename = filePath.fileName.toString()
-                    val fileNameWithoutExtension = filename.substring(0, filename.lastIndexOf("."))
-                    contents.uppercase().contains("\"RESOURCETYPE\": \"${claimedFhirType.name}\"") &&
-                        !contents.uppercase().contains("\"ID\": \"${fileNameWithoutExtension.uppercase()}\"")
-                }
+                val filename = filePath.fileName.toString()
+                val fileNameWithoutExtension = filename.substring(0, filename.lastIndexOf("."))
+                contents.uppercase().contains("\"RESOURCETYPE\": \"${claimedFhirType.name}\"") &&
+                    !contents.uppercase().contains("\"ID\": \"${fileNameWithoutExtension.uppercase()}\"")
             } catch (e: IOException) {
                 false
             }

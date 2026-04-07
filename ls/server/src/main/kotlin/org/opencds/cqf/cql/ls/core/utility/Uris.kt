@@ -8,14 +8,12 @@ object Uris {
     private const val FILE_UNC_PREFIX = "file:////"
     private const val FILE_SCHEME = "file"
 
-    @JvmStatic
     fun getHead(uri: URI): URI {
         val path = uri.rawPath ?: return uri
         val index = path.lastIndexOf("/")
         return if (index > -1) withPath(uri, path.substring(0, index)) ?: uri else uri
     }
 
-    @JvmStatic
     fun withPath(
         uri: URI,
         path: String,
@@ -31,7 +29,6 @@ object Uris {
         }
     }
 
-    @JvmStatic
     fun addPath(
         uri: URI,
         path: String,
@@ -39,7 +36,6 @@ object Uris {
         return withPath(uri, stripTrailingSlash(uri.rawPath) + createPath(path))
     }
 
-    @JvmStatic
     fun parseOrNull(uriString: String): URI? {
         return try {
             var uri = URI(uriString)
@@ -52,7 +48,6 @@ object Uris {
         }
     }
 
-    @JvmStatic
     fun toClientUri(uri: URI?): String? {
         if (uri == null) return null
         var uriString = uri.toString()

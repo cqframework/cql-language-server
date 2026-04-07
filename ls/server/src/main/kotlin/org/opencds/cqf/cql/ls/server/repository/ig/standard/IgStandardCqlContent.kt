@@ -3,12 +3,9 @@ package org.opencds.cqf.cql.ls.server.repository.ig.standard
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException
 import org.hl7.fhir.instance.model.api.IBaseResource
 import java.io.IOException
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 
 object IgStandardCqlContent {
-    @JvmStatic
     fun loadCqlContent(
         resource: IBaseResource,
         resourcePath: Path,
@@ -69,7 +66,7 @@ object IgStandardCqlContent {
     ): String {
         val path = rootPath.resolve(relativePath).normalize()
         return try {
-            String(Files.readAllBytes(path), StandardCharsets.UTF_8)
+            path.toFile().readText(Charsets.UTF_8)
         } catch (e: IOException) {
             throw ResourceNotFoundException("Unable to read CQL content from path: $path")
         }

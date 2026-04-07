@@ -22,7 +22,6 @@ class FileContentService(protected val workspaceFolders: List<WorkspaceFolder>) 
     companion object {
         private val log = LoggerFactory.getLogger(FileContentService::class.java)
 
-        @JvmStatic
         fun searchFolder(
             directory: URI,
             libraryIdentifier: VersionedIdentifier,

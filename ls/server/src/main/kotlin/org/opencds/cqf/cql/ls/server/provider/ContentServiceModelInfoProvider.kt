@@ -26,7 +26,7 @@ class ContentServiceModelInfoProvider(
             val modelUri =
                 Uris.addPath(
                     root,
-                    "/${modelName.lowercase()}-modelinfo${if (modelVersion != null) "-$modelVersion" else ""}.xml",
+                    "/${modelName.lowercase()}-modelinfo${modelVersion?.let { "-$it" } ?: ""}.xml",
                 ) ?: return null
             val modelInputStream = contentService.read(modelUri) ?: return null
             parseModelInfoXml(Converters.inputStreamToString(modelInputStream))

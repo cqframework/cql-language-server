@@ -42,7 +42,7 @@ class DiagnosticsService(
     private var future: ScheduledFuture<*>? = null
 
     protected fun doLint(paths: Collection<URI>?) {
-        if (paths == null || paths.isEmpty()) return
+        if (paths.isNullOrEmpty()) return
 
         log.debug("Lint: {}", Joiner.on(", ").join(paths))
 
@@ -101,7 +101,7 @@ class DiagnosticsService(
         for (libraryIdentifier in uniqueLibraries) {
             val uris = contentService.locate(root, libraryIdentifier)
             if (!uris.isNullOrEmpty()) {
-                libraryUris[libraryIdentifier] = uris.iterator().next()
+                libraryUris[libraryIdentifier] = uris.first()
             } else {
                 // The message is associated with a library loaded from outside the content service (e.g. an npm
                 // library). So associate the message with the current uri

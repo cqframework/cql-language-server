@@ -40,8 +40,6 @@ class CqlCompilationManager(
 
     private val globalCache = HashMap<ModelIdentifier, Model>()
 
-    private fun getIgContextManager(): IgContextManager = igContextManager
-
     fun compile(uri: URI): CqlCompiler? {
         val input = contentService.read(uri) ?: return null
         return compile(uri, input)
@@ -72,7 +70,7 @@ class CqlCompilationManager(
             ContentServiceSourceProvider(root, contentService),
         )
         libraryManager.librarySourceLoader.registerProvider(FhirLibrarySourceProvider())
-        getIgContextManager().setupLibraryManager(root, libraryManager)
+        igContextManager.setupLibraryManager(root, libraryManager)
         return libraryManager
     }
 }

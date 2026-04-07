@@ -17,7 +17,6 @@ import java.io.InputStream
 import java.io.StringReader
 import java.io.StringWriter
 import java.net.URI
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 
 class ActiveContentService : ContentService {
@@ -55,8 +54,7 @@ class ActiveContentService : ContentService {
     fun didOpen(e: DidOpenTextDocumentEvent) {
         val document: TextDocumentItem = e.params().textDocument
         val uri = Uris.parseOrNull(document.uri) ?: return
-        val encodedText = String(document.text.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
-        activeContent[uri] = VersionedContent(encodedText, document.version)
+        activeContent[uri] = VersionedContent(document.text, document.version)
     }
 
     @Subscribe(priority = 100)
@@ -76,8 +74,7 @@ class ActiveContentService : ContentService {
         if (document.version > existing.version) {
             for (change in e.params().contentChanges) {
                 if (change.range == null) {
-                    val encodedText = String(change.text.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
-                    activeContent[uri] = VersionedContent(encodedText, document.version)
+                    activeContent[uri] = VersionedContent(change.text, document.version)
                 } else {
                     val newText = patch(existingText, change)
                     activeContent[uri] = VersionedContent(newText, document.version)
@@ -98,8 +95,7 @@ class ActiveContentService : ContentService {
         repeat(range.start.line) { writer.write(reader.readLine() + '\n') }
         repeat(range.start.character) { writer.write(reader.read()) }
 
-        val encodedText = String(change.text.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
-        writer.write(encodedText)
+        writer.write(change.text)
 
         reader.skip(change.rangeLength.toLong())
 

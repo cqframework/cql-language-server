@@ -11,7 +11,6 @@ import org.hl7.fhir.instance.model.api.IBaseBundle
 import org.hl7.fhir.instance.model.api.IBaseParameters
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.hl7.fhir.instance.model.api.IIdType
-import java.util.Collections
 
 class NoOpRepository(private val fhirContext: FhirContext) : IRepository {
     override fun <T : IBaseResource, I : IIdType> read(
@@ -53,7 +52,7 @@ class NoOpRepository(private val fhirContext: FhirContext) : IRepository {
     ): B {
         val factory = fhirContext.newBundleFactory()
         factory.addResourcesToBundle(
-            Collections.emptyList(),
+            emptyList(),
             BundleTypeEnum.SEARCHSET,
             "",
             BundleInclusionRule.BASED_ON_INCLUDES,

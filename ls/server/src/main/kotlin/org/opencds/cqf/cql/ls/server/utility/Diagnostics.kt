@@ -8,18 +8,15 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 
 object Diagnostics {
-    @JvmStatic
     fun convert(error: CqlCompilerException): Diagnostic? {
         val locator = error.locator ?: return null
-        val range = position(locator)
-        val diagnostic = Diagnostic()
-        diagnostic.severity = severity(error.severity)
-        diagnostic.range = range
-        diagnostic.message = error.message
-        return diagnostic
+        return Diagnostic().apply {
+            severity = severity(error.severity)
+            range = position(locator)
+            message = error.message
+        }
     }
 
-    @JvmStatic
     fun convert(errors: Iterable<CqlCompilerException>): Set<Diagnostic> = errors.mapNotNull { convert(it) }.toSet()
 
     private fun severity(severity: CqlCompilerException.ErrorSeverity): DiagnosticSeverity {

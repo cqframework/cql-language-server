@@ -13,7 +13,7 @@ class FormattingProvider(private val contentService: ContentService) {
 
         val fr =
             try {
-                CqlFormatterVisitor.Companion.getFormattedOutput(
+                CqlFormatterVisitor.getFormattedOutput(
                     contentService.read(u) ?: throw IllegalArgumentException("Unable to read content from: $u"),
                 )
             } catch (e: Exception) {
