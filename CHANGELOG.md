@@ -1,9 +1,5 @@
 # Change Log
 
-## v4.5.0-SNAPSHOT (snapshot)
-
-Date: 2026-04-02
-
 ### Module Consolidation
 
 Collapses the six-module Maven layout into a single module (`ls/server`) that produces
