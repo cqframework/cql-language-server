@@ -166,7 +166,7 @@ class CqlCommand : Callable<Int> {
                 val rootUri = Uris.parseOrNull(rd)
                 val inputUri = rootUri?.let { Uris.addPath(it, "input") }
                 val cqlUri = inputUri?.let { Uris.addPath(it, "cql") }
-                npmProcessor = cqlUri?.let { pc.getIgContextManager().getContext(it) }
+                npmProcessor = cqlUri?.let { pc.igContextManager.getContext(it) }
             }
             if (npmProcessor != null) {
                 igContext = npmProcessor.igContext

@@ -20,13 +20,11 @@ class DebugCqlCommandContribution(private val igContextManager: IgContextManager
 
     override fun getCommands(): Set<String> = setOf(START_DEBUG_COMMAND)
 
-    override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
-        return if (START_DEBUG_COMMAND == params.command) {
-            executeCql(params)
-        } else {
-            super.executeCommand(params)
+    override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> =
+        when (params.command) {
+            START_DEBUG_COMMAND -> executeCql(params)
+            else -> super.executeCommand(params)
         }
-    }
 
     private fun executeCql(params: ExecuteCommandParams): CompletableFuture<Any> {
         try {

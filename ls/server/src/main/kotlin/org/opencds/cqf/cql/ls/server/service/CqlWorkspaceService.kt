@@ -84,10 +84,7 @@ class CqlWorkspaceService(
             ),
         )
 
-        val watchers =
-            basicWatchers
-                .map { Either.forLeft<String, RelativePattern>(it) }
-                .map { FileSystemWatcher(it) }
+        val watchers = basicWatchers.map { FileSystemWatcher(Either.forLeft<String, RelativePattern>(it)) }
 
         val registrationOptions = DidChangeWatchedFilesRegistrationOptions(watchers)
 

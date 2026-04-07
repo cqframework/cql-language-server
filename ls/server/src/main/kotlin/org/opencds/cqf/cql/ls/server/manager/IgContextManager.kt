@@ -37,7 +37,7 @@ class IgContextManager(private val contentService: ContentService) {
 
     protected fun readContext(rootUri: URI): Optional<NpmProcessor> {
         val igContext = findIgContext(rootUri)
-        return if (igContext != null) Optional.of(NpmProcessor(igContext)) else Optional.empty()
+        return igContext?.let { Optional.of(NpmProcessor(it)) } ?: Optional.empty()
     }
 
     @Synchronized

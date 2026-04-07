@@ -29,7 +29,6 @@ import org.slf4j.LoggerFactory
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -42,7 +41,6 @@ open class IgStandardRepository : IRepository {
         const val EXTERNAL_DIRECTORY = "external"
         const val FHIR_COMPARTMENT_HEADER = "X-FHIR-Compartment"
 
-        @JvmField
         val CATEGORY_DIRECTORIES: Map<IgStandardResourceCategory, String> =
             ImmutableMap.builder<IgStandardResourceCategory, String>()
                 .put(IgStandardResourceCategory.CONTENT, "resources")
@@ -50,7 +48,6 @@ open class IgStandardRepository : IRepository {
                 .put(IgStandardResourceCategory.TERMINOLOGY, "vocabulary")
                 .build()
 
-        @JvmField
         val FILE_EXTENSIONS: BiMap<EncodingEnum, String> =
             ImmutableBiMap.builder<EncodingEnum, String>()
                 .put(EncodingEnum.JSON, "json")
@@ -212,7 +209,7 @@ open class IgStandardRepository : IRepository {
         val encoding = FILE_EXTENSIONS.inverse()[extension] ?: return null
 
         return try {
-            val s = String(Files.readAllBytes(path), StandardCharsets.UTF_8)
+            val s = path.toFile().readText(Charsets.UTF_8)
             val resource = parserForEncoding(fhirContext, encoding).parseResource(s)
             resource.setUserData(SOURCE_PATH_TAG, path)
             IgStandardCqlContent.loadCqlContent(resource, path.parent)
@@ -308,7 +305,7 @@ open class IgStandardRepository : IRepository {
                     .parallel()
                     .map { cachedReadResource(it) }
                     .filter { it != null }
-                    .map { checkNotNull(it) }
+                    .map { it!! }
                     .forEach { r ->
                         if (r.fhirType() != resourceClass.simpleName) return@forEach
                         val validated = validateResource(resourceClass, r, r.idElement)
