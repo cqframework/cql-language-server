@@ -2,7 +2,7 @@
 
 ## v4.5.0
 
-Date: 2026-04-08
+Date: 2026-04-07
 
 ### Module Consolidation
 
@@ -21,6 +21,11 @@ the fat JAR directly.
 * fixes duplicate debug command error
 * code cleanup and consolidation
 * fixes threading issue with context loading (#132)
+* remove lingering springboot artifacts from pom files
+* code clean up
+* spotless apply
+* fixes renamed main issue
+* spotless applied, adds changelog check to ci pipeline
 
 ## v4.4.1
 
