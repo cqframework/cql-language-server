@@ -4,6 +4,13 @@ const { execSync } = require('child_process');
 const CHANGELOG_PATH = './CHANGELOG.md';
 const POM_PATH = './pom.xml';
 
+// Commit messages containing any of these substrings (case-insensitive) are excluded from changelog entries
+const IGNORED_COMMIT_PATTERNS = [
+    'spotless:apply',
+    'update changelog',
+    'updates changelog',
+];
+
 function updateChangelog() {
     // 1. Get version from pom.xml, stripping -SNAPSHOT
     const pomContent = fs.readFileSync(POM_PATH, 'utf8');
@@ -42,7 +49,7 @@ function updateChangelog() {
                 .filter(line => line.length > 0)
                 .filter(line => {
                     const l = line.toLowerCase();
-                    if (l.includes('spotless:apply')) return false;
+                    if (IGNORED_COMMIT_PATTERNS.some(p => l.includes(p))) return false;
                     return l.startsWith('feature/') || l.startsWith('bugfix/') || l.startsWith('task/') || !line.includes('/');
                 });
         } catch (e) {
