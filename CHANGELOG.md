@@ -1,8 +1,8 @@
 # Change Log
 
-## v4.5.0-SNAPSHOT (snapshot)
+## v4.5.0
 
-Date: 2026-04-02
+Date: 2026-04-08
 
 ### Module Consolidation
 
@@ -15,7 +15,12 @@ the fat JAR directly.
 * `DebugCommandContribution` wired directly in `main.kt`
 * Source directories renamed: `src/main/java` → `src/main/kotlin`, `src/test/java` → `src/test/kotlin`
 * Artifact ID changed from `cql-ls-service` to `cql-ls-server`
-* All 360 tests pass; fat JAR starts cleanly with no Spring banner
+* adds unit tests
+* fixes testing issues related to github java version
+* adds changelog check to ci pipeline
+* fixes duplicate debug command error
+* code cleanup and consolidation
+* fixes threading issue with context loading (#132)
 
 ## v4.4.1
 
