@@ -33,11 +33,10 @@ jobs:
           tree = ET.parse('pom.xml')
           version = tree.find('m:version', ns).text.strip()
 
-          is_snapshot = version.endswith('-SNAPSHOT')
-          expected_header = f'## v{version} (snapshot)' if is_snapshot else f'## v{version}'
+          clean_version = version.removesuffix('-SNAPSHOT')
+          expected_header = f'## v{clean_version}'
 
-          label = 'Snapshot' if is_snapshot else 'Release'
-          print(f'Checking for {label} version: {version}')
+          print(f'Checking for version: {version}')
 
           with open('CHANGELOG.md', encoding='utf-8') as f:
               changelog = f.read()
@@ -50,7 +49,7 @@ jobs:
               print('✅ CHANGELOG.md is correctly formatted.')
           else:
               print(f'❌ Error: CHANGELOG.md is missing an entry or formatted incorrectly.', file=sys.stderr)
-              print(f'Expected format:\n\n[Blank Line]\n{expected_header}\n\nDate: YYYY-MM-DD', file=sys.stderr)
+              print(f'Expected format:\n\n[Blank Line]\n{expected_header}\n\nDate: YYYY-MM-DD\n* ...', file=sys.stderr)
               sys.exit(1)
 
   # --- Tests ---
