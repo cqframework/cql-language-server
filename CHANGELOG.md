@@ -2,7 +2,7 @@
 
 ## v4.5.0
 
-Date: 2026-04-07
+Date: 2026-04-08
 
 ### Module Consolidation
 
@@ -26,6 +26,7 @@ the fat JAR directly.
 * spotless apply
 * fixes renamed main issue
 * spotless applied, adds changelog check to ci pipeline
+* removes lingering springboot artifacts from pom files
 
 ## v4.4.1
 
