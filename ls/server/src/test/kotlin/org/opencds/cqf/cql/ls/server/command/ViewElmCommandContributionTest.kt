@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
@@ -169,5 +170,16 @@ class ViewElmCommandContributionTest {
         params.command = "org.opencds.cqf.cql.ls.viewElm"
         params.arguments = listOf(JsonParser.parseString("\"file:///nonexistent/Missing.cql\""))
         assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    // -----------------------------------------------------------------------
+    // Unknown command — falls through to interface default which throws
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun executeCommand_unknownCommand_throwsRuntimeException() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.unknownCommand"
+        assertThrows<RuntimeException> { viewElmCommandContribution.executeCommand(params) }
     }
 }
