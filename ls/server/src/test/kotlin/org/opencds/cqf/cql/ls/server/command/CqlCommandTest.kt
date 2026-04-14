@@ -255,4 +255,19 @@ class CqlCommandTest {
         val uri = Uris.parseOrNull("file:///C:\\Users\\cql\\")
         assertNull(uri, "Backslash paths are not valid URIs; parseOrNull should return null")
     }
+
+    // -----------------------------------------------------------------------
+    // Tests 18–19: optionsPath and context parameter paths
+    // -----------------------------------------------------------------------
+
+    @Test
+    @Order(18)
+    fun `optionsPath with invalid URI returns 1`() {
+        // Uris.parseOrNull returns null for an invalid URI (spaces, etc.),
+        // causing CqlCommand.call() to log a warning and return 1.
+        val cmd = buildCommand("One")
+        cmd.optionsPath = "not a valid uri has spaces and %%% invalid chars"
+        val result = cmd.call()
+        assertEquals(1, result)
+    }
 }

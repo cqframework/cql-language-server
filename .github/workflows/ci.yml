@@ -16,7 +16,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # --- Verify Changelog ---
+  verify-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Changelog Format
+        shell: python3 {0}
+        run: |
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+          tree = ET.parse('pom.xml')
+          version = tree.find('m:version', ns).text.strip()
+
+          clean_version = version.removesuffix('-SNAPSHOT')
+          expected_header = f'## v{clean_version}'
+
+          print(f'Checking for version: {version}')
+
+          with open('CHANGELOG.md', encoding='utf-8') as f:
+              changelog = f.read()
+
+          # Require: blank line, then the header, then blank line, then "Date: YYYY-MM-DD"
+          escaped = re.escape(expected_header)
+          pattern = re.compile(r'\n\n' + escaped + r'\n\nDate: \d{4}-\d{2}-\d{2}')
+
+          if pattern.search(changelog):
+              print('✅ CHANGELOG.md is correctly formatted.')
+          else:
+              print(f'❌ Error: CHANGELOG.md is missing an entry or formatted incorrectly.', file=sys.stderr)
+              print(f'Expected format:\n\n[Blank Line]\n{expected_header}\n\nDate: YYYY-MM-DD\n* ...', file=sys.stderr)
+              sys.exit(1)
+
+  # --- Tests ---
   test:
+    needs: verify-changelog  # Prevents tests from running if changelog is wrong
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]

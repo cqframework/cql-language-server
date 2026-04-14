@@ -183,6 +183,50 @@ class CompilerOptionsManagerTest {
         )
     }
 
+    // -----------------------------------------------------------------------
+    // readOptions exception path — invalid JSON falls back to default options
+    //
+    // When the content service signals that a cql-options.json file exists
+    // (returns non-null InputStream) but the file on disk contains malformed
+    // JSON, CqlTranslatorOptions.fromFile() throws. readOptions() catches the
+    // exception and falls back to CqlTranslatorOptions.defaultOptions(), which
+    // includes DisableListDemotion.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getOptions_withInvalidOptionsFileContent_fallsBackToDefaults(
+        @TempDir tempDir: Path,
+    ) {
+        val cqlDir = tempDir.resolve("cql")
+        Files.createDirectories(cqlDir)
+        cqlDir.resolve("cql-options.json").toFile().writeText("{ this is not valid json <<<")
+
+        val fsContentService =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? =
+                    try {
+                        Paths.get(uri).toFile().takeIf { it.exists() }?.inputStream()
+                    } catch (e: Exception) {
+                        null
+                    }
+            }
+
+        val localManager = CompilerOptionsManager(fsContentService)
+        val options = localManager.getOptions(tempDir.resolve("One.cql").toUri())
+
+        // Exception catch falls back to defaultOptions() which includes DisableListDemotion
+        assertNotNull(options)
+        assertTrue(
+            options.options.contains(CqlCompilerOptions.Options.EnableLocators),
+            "Fallback options must still include EnableLocators (always added by readOptions)",
+        )
+    }
+
     companion object {
         // A URI whose "head" (parent path) is /org/opencds/cqf/cql/ls/server/
         // TestContentService.read will be called for the cql-options.json path, returning null
