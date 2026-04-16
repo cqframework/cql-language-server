@@ -82,6 +82,17 @@ open class IgStandardRepository : IRepository {
             .build<Path, IBaseResource>()
 
     /**
+     * Directory-level cache: caches the full result of scanning a directory for a given
+     * resource type + compartment combination. Keyed by "${resourceType}|${compartmentPath}".
+     *
+     * Without this cache, every `search()` call (e.g. ValueSet lookup during terminology
+     * expansion) re-walks the entire directory (600+ files for a terminology bundle), even
+     * when the result has already been computed for a prior patient in the same batch.
+     * This cache makes the scan happen at most once per resource type per repository instance.
+     */
+    private val typeResourceCache = ConcurrentHashMap<String, Map<IIdType, IBaseResource>>()
+
+    /**
      * Creates a new IgRepository with auto-detected conventions and default encoding behavior.
      */
     constructor(fhirContext: FhirContext, root: Path) :
@@ -108,6 +119,7 @@ open class IgStandardRepository : IRepository {
 
     fun clearCache() {
         resourceCache.invalidateAll()
+        typeResourceCache.clear()
     }
 
     private fun isExternalPath(path: Path): Boolean = path.parent != null && path.parent.toString().lowercase().endsWith(EXTERNAL_DIRECTORY)
@@ -193,16 +205,16 @@ open class IgStandardRepository : IRepository {
     }
 
     protected open fun readResource(path: Path): IBaseResource? {
-        log.info("IgStandardRepository.readResource - Attempting to read resource from path: {}", path)
+        log.debug("IgStandardRepository.readResource - Attempting to read resource from path: {}", path)
         val file = path.toFile()
         if (!file.exists()) {
-            log.info("IgStandardRepository.readResource - Didn't find file")
+            log.debug("IgStandardRepository.readResource - Didn't find file")
             return null
         }
 
         val extension =
             fileExtension(path) ?: run {
-                log.info("IgStandardRepository.readResource - Extension check failed")
+                log.debug("IgStandardRepository.readResource - Extension check failed")
                 return null
             }
 
@@ -213,7 +225,7 @@ open class IgStandardRepository : IRepository {
             val resource = parserForEncoding(fhirContext, encoding).parseResource(s)
             resource.setUserData(SOURCE_PATH_TAG, path)
             IgStandardCqlContent.loadCqlContent(resource, path.parent)
-            log.info("IgStandardRepository.readResource - Returning resource: {}", resource)
+            log.debug("IgStandardRepository.readResource - Returning resource: {}", resource)
             resource
         } catch (e: FileNotFoundException) {
             null
@@ -227,14 +239,14 @@ open class IgStandardRepository : IRepository {
     protected open fun cachedReadResource(path: Path): IBaseResource? {
         val cached = resourceCache.getIfPresent(path)
         if (cached != null) {
-            log.info("IgStandardRepository.cachedReadResource - Returning cached resource: {}", cached)
+            log.debug("IgStandardRepository.cachedReadResource - Returning cached resource: {}", cached)
             return cached
         }
         val resource = readResource(path)
         if (resource != null) {
             resourceCache.put(path, resource)
         }
-        log.info("IgStandardRepository.cachedReadResource - Returning freshly loaded resource: {}", resource)
+        log.debug("IgStandardRepository.cachedReadResource - Returning freshly loaded resource: {}", resource)
         return resource
     }
 
@@ -285,14 +297,25 @@ open class IgStandardRepository : IRepository {
         return path.fileName.toString().lowercase().startsWith(prefix.lowercase() + "-")
     }
 
+    @Suppress("UNCHECKED_CAST")
     protected open fun <T : IBaseResource> readDirectoryForResourceType(
         resourceClass: Class<T>,
         igRepositoryCompartment: IgStandardRepositoryCompartment,
     ): Map<IIdType, T> {
+        val cacheKey = "${resourceClass.simpleName}|${pathForCompartment(igRepositoryCompartment)}"
+        return typeResourceCache.computeIfAbsent(cacheKey) {
+            readDirectoryForResourceTypeUncached(resourceClass, igRepositoryCompartment)
+        } as Map<IIdType, T>
+    }
+
+    private fun <T : IBaseResource> readDirectoryForResourceTypeUncached(
+        resourceClass: Class<T>,
+        igRepositoryCompartment: IgStandardRepositoryCompartment,
+    ): Map<IIdType, IBaseResource> {
         val path = directoryForResource(resourceClass, igRepositoryCompartment)
         if (!path.toFile().exists()) return emptyMap()
 
-        val resources = ConcurrentHashMap<IIdType, T>()
+        val resources = ConcurrentHashMap<IIdType, IBaseResource>()
         val resourceFileFilter: (Path) -> Boolean =
             when (conventions.filenameMode) {
                 IgStandardConventions.FilenameMode.ID_ONLY -> ::acceptByFileExtension
@@ -308,8 +331,8 @@ open class IgStandardRepository : IRepository {
                     .map { it!! }
                     .forEach { r ->
                         if (r.fhirType() != resourceClass.simpleName) return@forEach
-                        val validated = validateResource(resourceClass, r, r.idElement)
-                        resources[r.idElement.toUnqualifiedVersionless()] = validated
+                        if (!r.idElement.hasIdPart()) return@forEach
+                        resources[r.idElement.toUnqualifiedVersionless()] = r
                     }
             }
         } catch (e: IOException) {
@@ -328,26 +351,26 @@ open class IgStandardRepository : IRepository {
     ): T {
         requireNotNull(resourceType) { "resourceType cannot be null" }
         requireNotNull(id) { "id cannot be null" }
-        log.info("IgStandardRepository.read - Attempting to read resource [{}].", id)
-        log.info("IgStandardRepository.read - headers: {}", headers)
+        log.debug("IgStandardRepository.read - Attempting to read resource [{}].", id)
+        log.debug("IgStandardRepository.read - headers: {}", headers)
 
         val compartment = compartmentFrom(headers)
         val paths = potentialPathsForResource(resourceType, id, compartment)
         for (path in paths) {
-            log.info("IgStandardRepository.read - potentialPathsForResource path: {}", path)
+            log.debug("IgStandardRepository.read - potentialPathsForResource path: {}", path)
             if (!Files.exists(path)) {
-                log.info("IgStandardRepository.read - File doesn't exist at [{}]. Continuing loop.", path)
+                log.debug("IgStandardRepository.read - File doesn't exist at [{}]. Continuing loop.", path)
                 continue
             }
 
             val resource = cachedReadResource(path)
             if (resource != null) {
-                log.info("IgStandardRepository.read - Found resource [{}].", id)
+                log.debug("IgStandardRepository.read - Found resource [{}].", id)
                 return validateResource(resourceType, resource, id)
             }
         }
 
-        log.info("IgStandardRepository.read - Unable to find resource [{}]. Throwing Exception", id)
+        log.debug("IgStandardRepository.read - Unable to find resource [{}]. Throwing Exception", id)
         throw ResourceNotFoundException(id)
     }
 

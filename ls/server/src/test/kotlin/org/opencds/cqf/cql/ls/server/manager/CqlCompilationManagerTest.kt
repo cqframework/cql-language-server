@@ -4,7 +4,9 @@ import org.cqframework.cql.cql2elm.CqlCompilerException
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -23,6 +25,8 @@ class CqlCompilationManagerTest {
         private val TWO_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/Two.cql")!!
         private val SYNTAX_ERROR_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/SyntaxError.cql")!!
         private val MISSING_INCLUDE_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/MissingInclude.cql")!!
+        private val FUNCTION_LIB_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionLib.cql")!!
+        private val FUNCTION_CALLER_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionCaller.cql")!!
 
         @BeforeAll
         @JvmStatic
@@ -130,5 +134,76 @@ class CqlCompilationManagerTest {
                 it.severity == CqlCompilerException.ErrorSeverity.Error
             }
         assertTrue(errors.isEmpty(), "Expected no errors when compiling One.cql from stream")
+    }
+
+    // -----------------------------------------------------------------------
+    // Compilation cache — cache hits and surgical invalidation
+    // Each test uses its own manager instance to avoid inter-test cache bleed.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun compile_cachedResult_returnsSameInstance() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val first = localManager.compile(ONE_URI)
+        val second = localManager.compile(ONE_URI)
+        assertSame(first, second, "Expected cache hit to return the same CqlCompiler instance")
+    }
+
+    @Test
+    fun invalidate_evictsChangedFile() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val first = localManager.compile(ONE_URI)
+        localManager.invalidate(ONE_URI)
+        val second = localManager.compile(ONE_URI)
+        assertNotSame(first, second, "Expected a new compiler instance after invalidation")
+    }
+
+    @Test
+    fun invalidate_evictsDependentFile_butNotUnrelated() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        localManager.compile(FUNCTION_LIB_URI)
+        val caller = localManager.compile(FUNCTION_CALLER_URI)
+        val unrelated = localManager.compile(ONE_URI)
+
+        localManager.invalidate(FUNCTION_LIB_URI)
+
+        // FunctionCaller depends on FunctionLib → evicted → new instance
+        val callerAfter = localManager.compile(FUNCTION_CALLER_URI)
+        assertNotSame(caller, callerAfter, "Dependent file should be evicted when its dependency is invalidated")
+
+        // One.cql is unrelated → still cached → same instance
+        val unrelatedAfter = localManager.compile(ONE_URI)
+        assertSame(unrelated, unrelatedAfter, "Unrelated file should remain in cache")
+    }
+
+    @Test
+    fun compile_stream_populatesCache() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val stream = cs.read(ONE_URI)!!
+        val fromStream = localManager.compile(ONE_URI, stream)
+        val fromCache = localManager.compile(ONE_URI)
+        assertSame(fromStream, fromCache, "compile(uri) should return the instance cached by compile(uri, stream)")
+    }
+
+    @Test
+    fun invalidate_onUncachedUri_isNoOp() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        // Should not throw — URI was never compiled
+        localManager.invalidate(ONE_URI)
+        // Cache miss → fresh compile
+        assertNotNull(localManager.compile(ONE_URI))
+    }
+
+    @Test
+    fun getDependentUris_returnsCallers() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+
+        val libIdentifier = localManager.compile(FUNCTION_LIB_URI)!!.compiledLibrary!!.library!!.identifier!!
+        localManager.compile(FUNCTION_CALLER_URI)
+
+        val deps = localManager.getDependentUris(libIdentifier)
+
+        assertTrue(FUNCTION_CALLER_URI in deps, "FunctionCaller should be listed as a dependent of FunctionLib")
+        assertFalse(ONE_URI in deps, "One.cql should not appear as a dependent of FunctionLib")
     }
 }

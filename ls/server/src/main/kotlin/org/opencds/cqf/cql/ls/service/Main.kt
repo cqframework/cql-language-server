@@ -8,7 +8,7 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Logger.JavaLogger
 import org.opencds.cqf.cql.engine.execution.CqlEngine
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer
-import org.opencds.cqf.cql.ls.server.command.DebugCqlCommandContribution
+import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
@@ -57,7 +57,7 @@ fun main(args: Array<String>) {
 
     val contributions = mutableListOf<CommandContribution>()
     contributions.add(ViewElmCommandContribution(compilationManager))
-    contributions.add(DebugCqlCommandContribution(igContextManager))
+    contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService))
     commandsFuture.complete(contributions)
 
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService)

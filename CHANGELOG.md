@@ -2,7 +2,30 @@
 
 ## v4.5.0
 
-Date: 2026-04-08
+Date: 2026-04-15
+
+### Execute CQL
+
+Adds a JSON-RPC–based Execute CQL command (`org.opencds.cqf.cql.ls.executeCql`) that
+replaces the previous CLI-based approach.
+
+* Accepts a structured `ExecuteCqlRequest` with per-library FHIR model paths, terminology URI,
+  context, and user-defined parameters
+* Evaluates all test cases for a library in a single batch (compile once, evaluate per patient)
+* `CqlEvaluator` — new evaluator that builds a shared engine per batch and runs each patient context
+* `DelegatingRepository` — mutable repository wrapper that swaps the patient bundle between evaluations
+* `ExecuteCqlCommandContribution` — registers the command and dispatches to `CqlEvaluator`
+* Removed `CliCommand` and `CqlCommand` (picocli CLI) — no longer needed
+* Returns structured JSON: expression results, server-side logs, and used-default-parameter metadata
+
+### Compilation Cache + Surgical Invalidation
+
+* `CqlCompilationManager` now caches compiled `CqlCompiler` results per source URI
+* Reverse dependency index tracks which URIs depend on each library identifier
+* `invalidate(uri)` evicts the URI and all dependents from the cache
+* `DiagnosticsService.didChangeWatchedFiles` triggers surgical invalidation on `.cql` file changes
+* `IgStandardRepository` adds a `typeResourceCache` — caches directory scans per resource
+  type/compartment combination, eliminating redundant filesystem walks across patients in a batch
 
 ### Module Consolidation
 

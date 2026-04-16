@@ -9,6 +9,7 @@ docpath.txt
 
 *.log
 *.log.*
+LOG_FILE_IS_UNDEFINED
 .idea
 *.iml
 *.vsix
