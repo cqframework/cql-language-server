@@ -273,4 +273,61 @@ class CqlEvaluatorTest {
         assertEquals("default", defaultParam!!.source)
         assertFalse(defaultParam.value.isBlank(), "Expected non-blank resolved value for default Interval<Date>")
     }
+
+    // ------------------------------------------------------------------
+    // tempConvert — Iterable branch
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `tempConvert renders list expression as bracketed comma-separated values`() {
+        // ListResult.cql defines `"Items": {1, 2, 3}` — the engine returns a java.util.List whose
+        // elements each go through tempConvert individually, producing "[1, 2, 3]".
+        val response = evaluate("ListResult")
+        assertEquals(1, response.results.size)
+        val expr = response.results[0].expressions.find { it.name == "Items" }
+        assertNotNull(expr, "Expected 'Items' expression in results")
+        assertEquals("[1, 2, 3]", expr!!.value)
+    }
+
+    // ------------------------------------------------------------------
+    // parseCqlIntervalValue — remaining endpoint branches
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `Interval_DateTime with null high endpoint is coerced without exception`() {
+        // Tests the null-endpoint branch for groupValues[3] (high endpoint position).
+        // Existing null-endpoint test covers groupValues[2] (low endpoint).
+        val response =
+            evaluate(
+                "One",
+                ParameterRequest("Unused", "Interval<DateTime>", "Interval[@2024-01-01T00:00:00.000Z, null]"),
+            )
+        assertEquals(1, response.results.size)
+    }
+
+    @Test
+    fun `Interval_DateTime with bad endpoint inside valid structure falls back without exception`() {
+        // The outer interval regex matches, but parseCqlDateTimeValue("@bad") throws inside
+        // parseEndpoint → caught → warning logged → endpoint falls back to the raw string.
+        // One.cql ignores the parameter, so no Error expression propagates.
+        val response =
+            evaluate(
+                "One",
+                ParameterRequest("Unused", "Interval<DateTime>", "Interval[@2024-01-01T00:00:00.000Z, @bad)"),
+            )
+        assertEquals(1, response.results.size)
+    }
+
+    // ------------------------------------------------------------------
+    // quantityLiteralRegex — decimal branch
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `Quantity with decimal value coerces without exception`() {
+        // Tests the (?:\\.\\d+)? group of quantityLiteralRegex — only integer quantities were
+        // previously exercised (e.g. "5 'mg'").
+        val response = evaluate("One", ParameterRequest("Unused", "Quantity", "1.5 'd'"))
+        assertEquals(1, response.results.size)
+        assertFalse(response.results[0].expressions.any { it.name == "Error" })
+    }
 }
