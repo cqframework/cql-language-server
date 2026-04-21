@@ -120,7 +120,14 @@ class ExecuteCqlCommandContributionTest {
                             terminologyUri = null,
                             model = null,
                             context = null,
-                            parameters = listOf(ParameterRequest(parameterName = "Unused", parameterType = "String", parameterValue = "hello")),
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Unused",
+                                        parameterType = "String",
+                                        parameterValue = "hello",
+                                    ),
+                                ),
                         ),
                     ),
             )
@@ -149,7 +156,14 @@ class ExecuteCqlCommandContributionTest {
                             terminologyUri = null,
                             model = null,
                             context = null,
-                            parameters = listOf(ParameterRequest(parameterName = "Unused", parameterType = null, parameterValue = "value")),
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Unused",
+                                        parameterType = null,
+                                        parameterValue = "value",
+                                    ),
+                                ),
                         ),
                     ),
             )
@@ -232,10 +246,20 @@ class ExecuteCqlCommandContributionTest {
 
         assertEquals(1, response.results.size)
         val defaultParam = response.results[0].usedDefaultParameters.find { it.name == "Measurement Period" }
-        assertNotNull(defaultParam, "Expected 'Measurement Period' in usedDefaultParameters, got: ${response.results[0].usedDefaultParameters}")
+        assertNotNull(
+            defaultParam,
+            "Expected 'Measurement Period' in usedDefaultParameters, got: ${response.results[0].usedDefaultParameters}",
+        )
         // The CQL default is Interval[@2023-01-01T00:00:00.000, @2024-01-01T00:00:00.000) — value must be non-null/non-empty
-        assertFalse(defaultParam!!.value.isBlank(), "Expected non-blank resolved value for default parameter, got: '${defaultParam.value}'")
-        assertEquals("default", defaultParam.source, "Expected source 'default' for a CQL-declared default parameter")
+        assertFalse(
+            defaultParam!!.value.isBlank(),
+            "Expected non-blank resolved value for default parameter, got: '${defaultParam.value}'",
+        )
+        assertEquals(
+            "default",
+            defaultParam.source,
+            "Expected source 'default' for a CQL-declared default parameter",
+        )
     }
 
     @Test
@@ -303,7 +327,14 @@ class ExecuteCqlCommandContributionTest {
                             model = null,
                             context = null,
                             // Unrelated parameter not declared in WithParam.cql
-                            parameters = listOf(ParameterRequest(parameterName = "Measurement Period Sample", parameterType = "String", parameterValue = "some-value")),
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Measurement Period Sample",
+                                        parameterType = "String",
+                                        parameterValue = "some-value",
+                                    ),
+                                ),
                         ),
                     ),
             )
@@ -314,7 +345,7 @@ class ExecuteCqlCommandContributionTest {
         assertEquals(1, response.results.size)
         assertTrue(
             response.results[0].usedDefaultParameters.any { it.name == "Measurement Period" },
-            "Expected 'Measurement Period' in usedDefaultParameters even when an unrelated param is in config, got: ${response.results[0].usedDefaultParameters}",
+            "Expected 'Measurement Period' in usedDefaultParameters, got: ${response.results[0].usedDefaultParameters}",
         )
     }
 
@@ -370,7 +401,11 @@ class ExecuteCqlCommandContributionTest {
                             libraryUri = "file:///any/path",
                             libraryVersion = null,
                             terminologyUri = null,
-                            model = ModelRequest(modelName = "FHIR", modelUri = "file:///nonexistent/path/that/does/not/exist"),
+                            model =
+                                ModelRequest(
+                                    modelName = "FHIR",
+                                    modelUri = "file:///nonexistent/path/that/does/not/exist",
+                                ),
                             context = ContextRequest(contextName = "Patient", contextValue = "bad-patient"),
                             parameters = emptyList(),
                         ),

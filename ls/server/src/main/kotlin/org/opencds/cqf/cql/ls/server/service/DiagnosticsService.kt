@@ -182,7 +182,6 @@ class DiagnosticsService(
         doLint(uris)
     }
 
-
     internal fun debounce(
         delay: Long,
         task: Runnable,

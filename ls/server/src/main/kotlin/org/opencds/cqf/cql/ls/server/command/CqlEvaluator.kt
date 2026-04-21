@@ -35,17 +35,17 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE
 import org.opencds.cqf.fhir.utility.repository.FederatedRepository
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository
-import org.opencds.cqf.cql.engine.runtime.Date as CqlDate
-import org.opencds.cqf.cql.engine.runtime.DateTime as CqlDateTime
-import org.opencds.cqf.cql.engine.runtime.Interval as CqlInterval
-import org.opencds.cqf.cql.engine.runtime.Quantity as CqlQuantity
-import org.opencds.cqf.cql.engine.runtime.Time as CqlTime
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
+import org.opencds.cqf.cql.engine.runtime.Date as CqlDate
+import org.opencds.cqf.cql.engine.runtime.DateTime as CqlDateTime
+import org.opencds.cqf.cql.engine.runtime.Interval as CqlInterval
+import org.opencds.cqf.cql.engine.runtime.Quantity as CqlQuantity
+import org.opencds.cqf.cql.engine.runtime.Time as CqlTime
 
 object CqlEvaluator {
     private val log = LoggerFactory.getLogger(CqlEvaluator::class.java)
