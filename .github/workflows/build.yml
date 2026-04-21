@@ -26,6 +26,15 @@ jobs:
           server-url: https://repo1.maven.org/maven2
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
+      - name: Verify version is a SNAPSHOT
+        run: |
+          VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "Project version: $VERSION"
+          if [[ "$VERSION" != *-SNAPSHOT ]]; then
+            echo "ERROR: Refusing to deploy non-SNAPSHOT version '$VERSION'. Bump the version to a -SNAPSHOT before merging to master."
+            exit 1
+          fi
+        shell: bash
       - name: Publish snapshot
         run: ./mvnw --batch-mode -no-transfer-progress --update-snapshots deploy -Ppackage
         env:
