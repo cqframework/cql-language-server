@@ -107,6 +107,20 @@ open class LibraryResolutionManager(
         }
     }
 
+    /**
+     * Reads the package ID and canonical base URL from an ig.ini file.
+     * Returns null when either field is absent; throws on I/O or parse failure
+     * (caller catches and skips the folder).
+     * Declared protected open for test overriding — see [IgContextManager.findIgContext].
+     */
+    protected open fun readIgContextInfo(igIniFile: File): Pair<String, String>? {
+        val igContext = IGContext(LoggerAdapter(log))
+        igContext.initializeFromIni(igIniFile.path)
+        val packageId = igContext.packageId ?: return null
+        val canonicalBase = igContext.canonicalBase ?: return null
+        return packageId to canonicalBase
+    }
+
     private fun buildNamespaceIndex(): Map<String, NamespaceEntry> {
         val result = mutableMapOf<String, NamespaceEntry>()
         log.debug("buildNamespaceIndex: scanning {} workspace folder(s)", workspaceFolders.size)
@@ -132,15 +146,12 @@ open class LibraryResolutionManager(
                     else WorkspaceFolder(dir.toURI().toString(), dir.name)
                 val dirUri = dir.toURI()
                 try {
-                    val igContext = IGContext(LoggerAdapter(log))
-                    igContext.initializeFromIni(igIniFile.path)
                     // igNamespace is just NamespaceInfo(packageId, canonicalBase) — read directly
                     // from IGContext so we never need NpmProcessor here.  NpmProcessor loads all
                     // declared npm dependencies from the local FHIR package cache; if any are
                     // missing it throws, which would silently drop this project from the index and
                     // break namespace-qualified includes that point to local workspace libraries.
-                    val packageId = igContext.packageId ?: continue
-                    val canonicalBase = igContext.canonicalBase ?: continue
+                    val (packageId, canonicalBase) = readIgContextInfo(igIniFile) ?: continue
                     val nsInfo = NamespaceInfo(packageId, canonicalBase)
                     val inputCqlUri = Uris.addPath(dirUri, "input")
                         ?.let { Uris.addPath(it, "cql") }
