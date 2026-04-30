@@ -2,8 +2,11 @@ package org.opencds.cqf.cql.ls.server.service
 
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.FileChangeType
+import org.eclipse.lsp4j.FileEvent
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.Range
@@ -20,6 +23,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.opencds.cqf.cql.ls.core.utility.Uris
+import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
@@ -208,6 +212,34 @@ class DiagnosticsServiceTest {
 
         // doLint() calls publishDiagnostics synchronously — verify it was called at least once.
         Mockito.verify(mockClient, Mockito.atLeastOnce()).publishDiagnostics(Mockito.any())
+    }
+
+    // -------------------------------------------------------------------------
+    // debounce() — task execution and cancellation
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun didChangeWatchedFiles_publishesDiagnosticsForCqlFiles() {
+        val mockClient = Mockito.mock(LanguageClient::class.java)
+        val svc = buildService(mockClient)
+
+        val fileEvent = FileEvent("/org/opencds/cqf/cql/ls/server/One.cql", FileChangeType.Changed)
+        val params = DidChangeWatchedFilesParams(listOf(fileEvent))
+        svc.didChangeWatchedFiles(DidChangeWatchedFilesEvent(params))
+
+        Mockito.verify(mockClient, Mockito.atLeastOnce()).publishDiagnostics(Mockito.any())
+    }
+
+    @Test
+    fun didChangeWatchedFiles_ignoresNonCqlFiles() {
+        val mockClient = Mockito.mock(LanguageClient::class.java)
+        val svc = buildService(mockClient)
+
+        val fileEvent = FileEvent("/some/path/options.json", FileChangeType.Changed)
+        val params = DidChangeWatchedFilesParams(listOf(fileEvent))
+        svc.didChangeWatchedFiles(DidChangeWatchedFilesEvent(params))
+
+        Mockito.verify(mockClient, Mockito.never()).publishDiagnostics(Mockito.any())
     }
 
     // -------------------------------------------------------------------------

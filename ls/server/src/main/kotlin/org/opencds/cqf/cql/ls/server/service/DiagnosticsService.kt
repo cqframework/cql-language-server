@@ -13,6 +13,7 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent
+import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
@@ -165,9 +166,20 @@ class DiagnosticsService(
     @Subscribe
     fun didChange(e: DidChangeTextDocumentEvent) {
         log.debug("didChange: {}", e.params().textDocument.uri)
+        Uris.parseOrNull(e.params().textDocument.uri)?.let { cqlCompilationManager.invalidate(it) }
         debounce(BOUNCE_DELAY) {
             doLint(listOfNotNull(Uris.parseOrNull(e.params().textDocument.uri)))
         }
+    }
+
+    @Subscribe
+    fun didChangeWatchedFiles(e: DidChangeWatchedFilesEvent) {
+        val uris =
+            e.params().changes
+                .mapNotNull { Uris.parseOrNull(it.uri) }
+                .filter { it.toString().endsWith(".cql") }
+        uris.forEach { cqlCompilationManager.invalidate(it) }
+        doLint(uris)
     }
 
     internal fun debounce(
