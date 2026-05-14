@@ -462,10 +462,11 @@ object CqlEvaluator {
                         library(identifier)
                         parameters = coercedParams
                         if (library.context != null) {
-                            contextParameter = Pair(
-                                library.context.contextName,
-                                library.context.contextValue as Any,
-                            )
+                            contextParameter =
+                                Pair(
+                                    library.context.contextName,
+                                    library.context.contextValue as Any,
+                                )
                         }
                     }
                 val evaluatedAt = System.currentTimeMillis()
