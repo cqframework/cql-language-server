@@ -30,35 +30,56 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
     // So it's not client agnostic. The client has to know that the result of this
     // command is XML and display it accordingly.
     private fun viewElm(params: ExecuteCommandParams): CompletableFuture<Any> {
+        log.debug("viewElm: received")
         val args = params.arguments
 
         // Defensive check: ensure we have at least the URI
         if (args == null || args.isEmpty()) {
+            log.warn("viewElm: no arguments provided")
             return CompletableFuture.completedFuture(null)
         }
 
         val uriString =
             (args[0] as? JsonElement)?.asString
-                ?: return CompletableFuture.completedFuture(null)
+                ?: run {
+                    log.warn("viewElm: first argument is not a string")
+                    return CompletableFuture.completedFuture(null)
+                }
 
         val elmType = (args.getOrNull(1) as? JsonElement)?.asString ?: "xml"
+        log.debug("viewElm: uri={} elmType={}", uriString, elmType)
 
         return try {
             val uri =
                 Uris.parseOrNull(uriString)
-                    ?: return CompletableFuture.completedFuture(null)
+                    ?: run {
+                        log.warn("viewElm: could not parse uri={}", uriString)
+                        return CompletableFuture.completedFuture(null)
+                    }
+            log.debug("viewElm: compiling")
             val compiler =
                 cqlCompilationManager.compile(uri)
-                    ?: return CompletableFuture.completedFuture(null)
+                    ?: run {
+                        log.warn("viewElm: compilation returned null for uri={}", uriString)
+                        return CompletableFuture.completedFuture(null)
+                    }
             val library =
                 compiler.library
-                    ?: return CompletableFuture.completedFuture(null)
-            if (elmType.equals("xml", ignoreCase = true)) {
-                CompletableFuture.completedFuture(convertToXml(library))
-            } else {
-                CompletableFuture.completedFuture(convertToJson(library))
-            }
+                    ?: run {
+                        log.warn("viewElm: library is null for uri={}", uriString)
+                        return CompletableFuture.completedFuture(null)
+                    }
+            log.debug("viewElm: serializing as {}", elmType)
+            val elm =
+                if (elmType.equals("xml", ignoreCase = true)) {
+                    convertToXml(library)
+                } else {
+                    convertToJson(library)
+                }
+            log.debug("viewElm: serialization complete, length={}", elm.length)
+            CompletableFuture.completedFuture(elm)
         } catch (e: Exception) {
+            log.error("viewElm: exception for uri={}", uriString, e)
             CompletableFuture.completedFuture(null)
         }
     }

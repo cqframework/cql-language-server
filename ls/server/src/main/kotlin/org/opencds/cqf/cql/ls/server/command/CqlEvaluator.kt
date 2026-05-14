@@ -304,6 +304,7 @@ object CqlEvaluator {
         contentService: ContentService,
         igContextManager: IgContextManager,
     ): ExecuteCqlResponse {
+        log.debug("evaluate: fhirVersion={} libraries={} rootDir={}", request.fhirVersion, request.libraries.size, request.rootDir)
         val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
 
         var igContext: IGContext? = null
