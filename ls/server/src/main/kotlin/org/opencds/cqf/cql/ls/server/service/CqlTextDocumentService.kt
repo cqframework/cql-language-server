@@ -45,7 +45,7 @@ class CqlTextDocumentService(
         // c.setCompletionProvider(new CompletionOptions(true, ImmutableList.of(".")));
         serverCapabilities.setDocumentFormattingProvider(true)
         // serverCapabilities.setDocumentRangeFormattingProvider(false);
-        serverCapabilities.setHoverProvider(true)
+        serverCapabilities.setHoverProvider(false)
         // c.setReferencesProvider(true);
         // c.setDocumentSymbolProvider(true);
         // c.setCodeActionProvider(true);

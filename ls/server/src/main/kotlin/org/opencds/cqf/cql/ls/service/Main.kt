@@ -30,6 +30,11 @@ import java.util.concurrent.Executors
 private val log = LoggerFactory.getLogger("org.opencds.cqf.cql.ls.service.Main")
 
 fun main(args: Array<String>) {
+    // Capture the real stdout before redirecting it. The LSP channel writes to this
+    // reference. After redirect, any library code that calls System.out.println() goes
+    // to stderr instead, preventing corruption of the LSP Content-Length framing.
+    @Suppress("java:S106")
+    val lspOut = System.out
     configureLogging()
 
     val eventBus = EventBus.builder().logger(JavaLogger("eventBus")).build()
@@ -63,8 +68,7 @@ fun main(args: Array<String>) {
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService)
     DiagnosticsService(languageClientFuture, compilationManager, federatedContentService).also { eventBus.register(it) }
 
-    @Suppress("java:S106")
-    val launcher = LSPLauncher.createServerLauncher(server, System.`in`, System.out)
+    val launcher = LSPLauncher.createServerLauncher(server, System.`in`, lspOut)
     val client = launcher.remoteProxy
 
     server.connect(client)
@@ -105,6 +109,12 @@ fun main(args: Array<String>) {
 }
 
 private fun configureLogging() {
+    // Redirect System.out to System.err so library code that writes directly to
+    // stdout (HAPI FHIR startup messages, CQL compiler diagnostics, etc.) goes to
+    // stderr instead of corrupting the LSP Content-Length framing. The real stdout
+    // reference is captured in main() before this call and passed to the launcher.
+    @Suppress("java:S106")
+    System.setOut(System.err)
     SLF4JBridgeHandler.removeHandlersForRootLogger()
     SLF4JBridgeHandler.install()
 }

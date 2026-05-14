@@ -8,10 +8,12 @@ import org.hl7.elm.r1.Library
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
+import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 
 class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilationManager) : CommandContribution {
     companion object {
+        private val log = LoggerFactory.getLogger(ViewElmCommandContribution::class.java)
         private const val VIEW_ELM_COMMAND = "org.opencds.cqf.cql.ls.viewElm"
     }
 
