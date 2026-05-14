@@ -1,5 +1,16 @@
 # Change Log
 
+
+## v4.6.0
+
+Date: 2026-05-14
+
+* adds logging details to view elm command
+* fix logging issues. cql-ls.log was not being updated
+* bump CR to 4.6.0
+* bump version to 4.6.0
+
+
 ## v4.5.0
 
 Date: 2026-04-15

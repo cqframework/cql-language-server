@@ -150,8 +150,8 @@ object CqlEvaluator {
         return CqlInterval(parseEndpoint(match.groupValues[2]), lowClosed, parseEndpoint(match.groupValues[3]), highClosed)
     }
 
-    private fun coerceParameters(parameters: List<ParameterRequest>): MutableMap<String?, Any?> {
-        val result = mutableMapOf<String?, Any?>()
+    private fun coerceParameters(parameters: List<ParameterRequest>): MutableMap<String, Any?> {
+        val result = mutableMapOf<String, Any?>()
         for (param in parameters) {
             val value: Any? =
                 when (param.parameterType?.lowercase()) {
@@ -304,6 +304,7 @@ object CqlEvaluator {
         contentService: ContentService,
         igContextManager: IgContextManager,
     ): ExecuteCqlResponse {
+        log.debug("evaluate: fhirVersion={} libraries={} rootDir={}", request.fhirVersion, request.libraries.size, request.rootDir)
         val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
 
         var igContext: IGContext? = null
@@ -455,24 +456,19 @@ object CqlEvaluator {
                         patientRepo
                     }
 
-                val contextParameter: org.apache.commons.lang3.tuple.Pair<String?, Any?>? =
-                    if (library.context != null) {
-                        org.apache.commons.lang3.tuple.Pair.of(
-                            library.context.contextName,
-                            library.context.contextValue as Any?,
-                        )
-                    } else {
-                        null
-                    }
-
                 val coercedParams = coerceParameters(library.parameters)
-                val result =
-                    engine.evaluate(
-                        identifier,
-                        expressions = null,
-                        contextParameter = contextParameter,
-                        parameters = coercedParams,
-                    )
+                val evaluationResults =
+                    engine.evaluate {
+                        library(identifier)
+                        parameters = coercedParams
+                        if (library.context != null) {
+                            contextParameter =
+                                Pair(
+                                    library.context.contextName,
+                                    library.context.contextValue as Any,
+                                )
+                        }
+                    }
                 val evaluatedAt = System.currentTimeMillis()
                 val repoMs = repoCreatedAt - patientStart
                 val evalMs = evaluatedAt - repoCreatedAt
@@ -482,9 +478,10 @@ object CqlEvaluator {
                         "repoCreate=${repoMs}ms  evaluate=${evalMs}ms  total=${totalMs}ms  ${heapStats()}",
                 )
 
+                val result = evaluationResults.getResultFor(identifier)!!
                 val expressions =
                     result.expressionResults.map { (key, value) ->
-                        ExpressionResult(key ?: "", tempConvert(value?.value()))
+                        ExpressionResult(key, tempConvert(value.value))
                     }
 
                 // Detect parameters declared in the CQL library that were not supplied via config

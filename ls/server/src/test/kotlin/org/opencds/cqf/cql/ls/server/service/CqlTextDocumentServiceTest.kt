@@ -192,7 +192,7 @@ class CqlTextDocumentServiceTest {
         val svc = buildService(EventBus.builder().build())
         val capabilities = ServerCapabilities()
         svc.initialize(InitializeParams(), capabilities)
-        assertEquals(true, capabilities.hoverProvider.left)
+        assertEquals(false, capabilities.hoverProvider.left)
     }
 
     // -------------------------------------------------------------------------

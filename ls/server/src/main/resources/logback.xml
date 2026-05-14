@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <!-- LOG_FILE is set by the VS Code extension via -DLOG_FILE=... at launch.
+         Falls back to the system temp directory when running outside the extension. -->
+    <variable name="LOG_FILE" value="${LOG_FILE:-${java.io.tmpdir}/cql-ls.log}"/>
+
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.err</target>
         <encoder>
@@ -8,7 +12,7 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${java.io.tmpdir}/cql-ls.log</file>
+        <file>${LOG_FILE}</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>${java.io.tmpdir}/cql-ls.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>
@@ -20,7 +24,9 @@
         </encoder>
     </appender>
 
-    <root level="WARN">
+    <!-- log.level is set by the VS Code extension via -Dlog.level=ALL in debug mode.
+         Defaults to INFO so startup and command-lifecycle messages are visible. -->
+    <root level="${log.level:-INFO}">
         <appender-ref ref="STDERR" />
         <appender-ref ref="FILE" />
     </root>
