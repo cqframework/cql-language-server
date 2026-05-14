@@ -28,6 +28,7 @@ import org.opencds.cqf.cql.ls.server.event.DidSaveTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider
 import java.util.concurrent.CompletableFuture
@@ -42,7 +43,7 @@ class CqlTextDocumentServiceTest {
         clientFuture: CompletableFuture<LanguageClient> = CompletableFuture(),
     ): CqlTextDocumentService {
         val cs = TestContentService()
-        val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         return CqlTextDocumentService(
             clientFuture,
             HoverProvider(compilationManager),

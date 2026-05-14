@@ -13,6 +13,8 @@ import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.JsonLibraryResolutionConfigProvider
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider
@@ -41,12 +43,18 @@ fun main(args: Array<String>) {
     val workspaceFolders = mutableListOf<WorkspaceFolder>()
 
     val activeContentService = ActiveContentService().also { eventBus.register(it) }
-    val fileContentService = FileContentService(workspaceFolders)
+    val libraryResolutionManager = LibraryResolutionManager(workspaceFolders)
+        .also { eventBus.register(it) }
+    val configProvider = JsonLibraryResolutionConfigProvider(workspaceFolders)
+        .also { eventBus.register(it) }
+    val fileContentService = FileContentService(workspaceFolders, configProvider, libraryResolutionManager)
     val federatedContentService = FederatedContentService(activeContentService, fileContentService)
 
     val compilerOptionsManager = CompilerOptionsManager(federatedContentService).also { eventBus.register(it) }
     val igContextManager = IgContextManager(federatedContentService).also { eventBus.register(it) }
-    val compilationManager = CqlCompilationManager(federatedContentService, compilerOptionsManager, igContextManager)
+    val compilationManager = CqlCompilationManager(
+        federatedContentService, compilerOptionsManager, igContextManager, libraryResolutionManager,
+    )
 
     val languageClientFuture = CompletableFuture<LanguageClient>()
     val commandsFuture = CompletableFuture<List<CommandContribution>>()
@@ -62,7 +70,7 @@ fun main(args: Array<String>) {
 
     val contributions = mutableListOf<CommandContribution>()
     contributions.add(ViewElmCommandContribution(compilationManager))
-    contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService))
+    contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
     commandsFuture.complete(contributions)
 
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService)

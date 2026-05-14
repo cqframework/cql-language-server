@@ -39,7 +39,7 @@ class CqlWorkspaceService(
 ) : WorkspaceService {
     companion object {
         private val log = LoggerFactory.getLogger(CqlWorkspaceService::class.java)
-        private val basicWatchers = listOf("**/cql-options.json", "ig.ini")
+        private val basicWatchers = listOf("**/cql-options.json", "ig.ini", "**/config.json", "**/config.jsonc")
     }
 
     @Suppress("java:S125") // Keeping the commented code for future reference

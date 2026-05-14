@@ -1,6 +1,10 @@
-library WithParam
+library WithParam version '1'
 
-parameter "Measurement Period" Interval<DateTime>
-  default Interval[@2023-01-01T00:00:00.000, @2024-01-01T00:00:00.000)
+parameter "Measurement Period" default Interval[@2024-01-01, @2024-12-31]
+parameter "Rate" default 1.0
 
-define "Period Start": start of "Measurement Period"
+define "Using Measurement Period":
+    "Measurement Period"
+
+define "Using Rate":
+    "Rate"

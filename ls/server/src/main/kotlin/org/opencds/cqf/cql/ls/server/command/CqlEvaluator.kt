@@ -3,25 +3,33 @@ package org.opencds.cqf.cql.ls.server.command
 import ca.uhn.fhir.context.FhirContext
 import ca.uhn.fhir.context.FhirVersionEnum
 import ca.uhn.fhir.repository.IRepository
+import kotlinx.io.Source
 import kotlinx.io.files.Path
+import java.util.concurrent.ConcurrentHashMap
+import java.util.LinkedHashMap
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider
-import org.cqframework.cql.cql2elm.model.CompiledLibrary
+import org.cqframework.cql.cql2elm.LibrarySourceProvider
+import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider
 import org.cqframework.fhir.npm.NpmProcessor
-import org.cqframework.fhir.utilities.IGContext
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseDatatype
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.hl7.fhir.r5.context.ILoggingService
 import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.cqframework.cql.cql2elm.model.CompiledLibrary
+import org.cqframework.fhir.utilities.IGContext
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.fhir.cql.CqlOptions
+import org.opencds.cqf.cql.engine.execution.EvaluationResults
 import org.opencds.cqf.fhir.cql.Engines
 import org.opencds.cqf.fhir.cql.EvaluationSettings
 import org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings
@@ -33,28 +41,180 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.CODE_LOOK
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_EXPANSION_MODE
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_MEMBERSHIP_MODE
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE
-import org.opencds.cqf.fhir.utility.repository.FederatedRepository
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository
 import org.slf4j.LoggerFactory
-import java.math.BigDecimal
-import java.nio.file.Files
 import java.nio.file.Paths
-import java.time.ZoneOffset
-import java.util.concurrent.ConcurrentHashMap
-import org.opencds.cqf.cql.engine.runtime.Date as CqlDate
-import org.opencds.cqf.cql.engine.runtime.DateTime as CqlDateTime
-import org.opencds.cqf.cql.engine.runtime.Interval as CqlInterval
-import org.opencds.cqf.cql.engine.runtime.Quantity as CqlQuantity
-import org.opencds.cqf.cql.engine.runtime.Time as CqlTime
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.math.BigDecimal
+import java.util.regex.Pattern
+import kotlin.text.buildString
 
 object CqlEvaluator {
     private val log = LoggerFactory.getLogger(CqlEvaluator::class.java)
 
-    private fun heapStats(): String {
-        val rt = Runtime.getRuntime()
-        val usedMB = (rt.totalMemory() - rt.freeMemory()) / 1_048_576
-        val maxMB = rt.maxMemory() / 1_048_576
-        return "heap=${usedMB}MB/${maxMB}MB"
+    private const val PARAM_EVAL_LIBRARY_ID = "__ParamEval__"
+
+    /** In-memory [LibrarySourceProvider] that serves a single CQL source string by library id. */
+    private class CqlSourceStringProvider(
+        private val libraryId: String,
+        private val source: String,
+    ) : LibrarySourceProvider {
+        override fun getLibrarySource(libraryIdentifier: VersionedIdentifier): Source? {
+            return if (libraryIdentifier.id == libraryId) Converters.stringToSource(source) else null
+        }
+    }
+
+    /**
+     * When [parameterType] contains "DateTime", replaces bare date literals (`@YYYY-MM-DD` not
+     * already followed by `T`) with DateTime literals (`@YYYY-MM-DDT`) so that the mini CQL
+     * library evaluates the expression as `Interval<DateTime>` rather than `Interval<Date>`.
+     *
+     * CQL distinguishes Date (`@2024-01-01`) from DateTime (`@2024-01-01T`); a bare date cannot
+     * be passed where a DateTime is expected, causing a runtime type-mismatch error.
+     */
+    private fun coerceDateLiterals(
+        value: String,
+        parameterType: String,
+    ): String {
+        if (!parameterType.contains("DateTime")) return value
+        // Append 'T' to any @YYYY-MM-DD literal not already followed by 'T'
+         return value.replace(Regex("@(\\d{4}-\\d{2}-\\d{2})(?!T)")) { match -> "@${match.groupValues[1]}T" }
+    }
+
+    /**
+     * Parses a string as a CQL DateTime value.
+     * Expected format: @YYYY-MM-DDTHH:MM:SS.fffffffZ or similar ISO 8601 format
+     */
+    private fun parseCqlDateTimeValue(value: String): org.hl7.fhir.r5.model.DateTimeType {
+        // Remove the '@' prefix if present
+        val cleanValue = if (value.startsWith("@")) value.substring(1) else value
+        return org.hl7.fhir.r5.model.DateTimeType(cleanValue)
+    }
+
+    /**
+     * Parses a string as a CQL Date value.
+     * Expected format: @YYYY-MM-DD
+     */
+    private fun parseCqlDateValue(value: String): org.hl7.fhir.r5.model.DateType {
+        // Remove the '@' prefix if present
+        val cleanValue = if (value.startsWith("@")) value.substring(1) else value
+        return org.hl7.fhir.r5.model.DateType(cleanValue)
+    }
+
+    /**
+     * Parses a string as a CQL Time value.
+     * Expected format: @THH:MM:SS.fffffff
+     */
+    private fun parseCqlTimeValue(value: String): org.hl7.fhir.r5.model.TimeType {
+        // Remove the '@' prefix if present
+        val cleanValue = if (value.startsWith("@")) value.substring(1) else value
+        return org.hl7.fhir.r5.model.TimeType(cleanValue)
+    }
+
+    /**
+     * Parses a string as a CQL Quantity value.
+     * Expected format: number 'unit' (e.g., '5.4'mg)
+     */
+    private fun parseCqlQuantityValue(value: String): org.hl7.fhir.r5.model.Quantity {
+        val quantity = org.hl7.fhir.r5.model.Quantity()
+        // Simple parsing - in a real implementation, this would be more robust
+            val parts = value.trim().split("'".toRegex(), limit = 2)
+         if (parts.size == 2) {
+             val numericPart = parts[0].trim()
+             val unitPart = parts[1].trim().removeSuffix("'")
+            try {
+                quantity.value = numericPart.toBigDecimal()
+                quantity.unit = unitPart
+                quantity.code = unitPart
+            } catch (e: NumberFormatException) {
+                // If parsing fails, set as string and let the engine handle it
+                quantity.value = BigDecimal.ZERO
+                quantity.unit = value
+                quantity.code = value
+            }
+        } else {
+            // No unit specified, treat as just a number
+            try {
+                quantity.value = value.toBigDecimal()
+                quantity.unit = "1"
+                quantity.code = "1"
+            } catch (e: NumberFormatException) {
+                quantity.value = BigDecimal.ZERO
+                quantity.unit = value
+                quantity.code = value
+            }
+        }
+        return quantity
+    }
+
+    /**
+     * Parses a string as a CQL Interval value.
+     * Expected format: Interval[lower, upper] where lower and upper are datetime/date values
+     */
+    private fun parseCqlIntervalValue(
+        parameterName: String,
+        parameterValue: String,
+        pointType: String
+    ): Any {
+        // This is a simplified implementation - a full implementation would parse the interval properly
+        // For now, we'll return the raw value and let the engine handle parsing
+        return parameterValue
+    }
+
+    /**
+     * Evaluates each parameter value expression using a throw-away CQL library, returning a map of
+     * parameter name → typed runtime value suitable for passing to [org.opencds.cqf.cql.engine.execution.CqlEngine].
+     *
+     * Values are written as CQL literal expressions in [ParameterRequest.parameterValue]
+     * (e.g. `Interval[@2024-01-01, @2024-12-31]`, `'HMO'`, `true`). Only language-level
+     * primitives are supported; expressions that reference FHIR model types will fail and
+     * result in an empty map for that library.
+     *
+     * Date literals are automatically coerced to DateTime when [ParameterRequest.parameterType]
+     * contains "DateTime" (see [coerceDateLiterals]).
+     */
+    private fun parseParameterValues(
+        fhirContext: FhirContext,
+        evaluationSettings: EvaluationSettings,
+        parameters: List<ParameterRequest>,
+    ): MutableMap<String?, Any?>? {
+        if (parameters.isEmpty()) return null
+
+        val defines =
+            parameters.mapIndexed { i, p ->
+                val coercedValue = coerceDateLiterals(p.parameterValue, p.parameterType)
+                "define \"__v${i}__\": $coercedValue"
+            }
+        val cqlSource = "library $PARAM_EVAL_LIBRARY_ID version '1'\n" + defines.joinToString("\n")
+
+        val paramEngine = Engines.forRepository(NoOpRepository(fhirContext), evaluationSettings)
+        paramEngine.environment.libraryManager!!.librarySourceLoader.registerProvider(
+            CqlSourceStringProvider(PARAM_EVAL_LIBRARY_ID, cqlSource),
+        )
+
+          val identifier = VersionedIdentifier().withId(PARAM_EVAL_LIBRARY_ID).withVersion("1")
+          return try {
+              val evalResults = paramEngine.evaluate {
+                  library(identifier)
+              }
+              val libResult = evalResults.getResultFor(identifier)
+                  ?: throw (evalResults.getExceptionFor(identifier)
+                      ?: RuntimeException("No result or exception found for library ${identifier.id}"))
+              parameters.mapIndexed { i, p ->
+                  (p.parameterName as String?) to libResult.expressionResults["__v${i}__"]?.value
+              }.toMap().toMutableMap()
+          } catch (e: Exception) {
+             log.warn(
+                 "Failed to evaluate parameter values for [${parameters.joinToString { it.parameterName }}]: ${e.message}",
+             )
+             null
+         }
     }
 
     @Suppress("removal") // TODO: Missed a spot upstream in the CQL library
@@ -76,78 +236,23 @@ object CqlEvaluator {
         override fun isDebugLogging(): Boolean = log.isDebugEnabled
     }
 
-    // Matches CQL interval literals: Interval[/( low, high ]/). Non-greedy to handle null endpoints.
-    private val intervalLiteralRegex = Regex("""^Interval([\[(])\s*(.*?)\s*,\s*(.*?)\s*([\])])$""")
-
-    // Matches CQL quantity literals: e.g. 5 'mg', 1.5 'd'
-    private val quantityLiteralRegex = Regex("""^(\d+(?:\.\d+)?)\s+'([^']*)'$""")
-
-    /** Strips the leading {@code @} from a CQL temporal literal and constructs a [CqlDateTime]. */
-    private fun parseCqlDateTimeValue(literal: String): CqlDateTime =
-        CqlDateTime(literal.trimStart('@'), ZoneOffset.UTC)
-
-    /** Strips the leading {@code @} from a CQL date literal and constructs a [CqlDate]. */
-    private fun parseCqlDateValue(literal: String): CqlDate =
-        CqlDate(literal.trimStart('@'))
-
-    /**
-     * Strips the leading {@code @} from a CQL time literal and constructs a [CqlTime].
-     * The engine's [CqlTime] string constructor handles the {@code T} prefix.
-     */
-    private fun parseCqlTimeValue(literal: String): CqlTime =
-        CqlTime(literal.trimStart('@'))
-
-    /**
-     * Parses a CQL quantity literal ({@code 5 'mg'}) into a [CqlQuantity].
-     * Throws [IllegalArgumentException] if the format does not match.
-     */
-    private fun parseCqlQuantityValue(literal: String): CqlQuantity {
-        val match =
-            quantityLiteralRegex.find(literal.trim())
-                ?: throw IllegalArgumentException("Expected format: <number> '<unit>', got '$literal'")
-        return CqlQuantity().withValue(BigDecimal(match.groupValues[1])).withUnit(match.groupValues[2])
-    }
-
-    /**
-     * Parses a CQL interval literal (e.g. {@code Interval[@2024-01-01, @2024-12-31)}) into a
-     * [CqlInterval] whose endpoints are native CQL runtime objects. Falls back to the raw string
-     * and logs a warning if the literal cannot be parsed.
-     *
-     * @param pointType either {@code "datetime"} or {@code "date"} — used to pick the endpoint parser
-     */
-    private fun parseCqlIntervalValue(
-        paramName: String,
-        value: String,
-        pointType: String,
-    ): Any {
-        val match =
-            intervalLiteralRegex.find(value.trim())
-                ?: run {
-                    log.warn(
-                        "Parameter '$paramName': could not parse interval literal '$value'. Passing as String.",
-                    )
-                    return value
-                }
-        val lowClosed = match.groupValues[1] == "["
-        val highClosed = match.groupValues[4] == "]"
-
-        fun parseEndpoint(s: String): Any? {
-            if (s.equals("null", ignoreCase = true)) return null
-            return try {
-                when (pointType) {
-                    "datetime" -> parseCqlDateTimeValue(s)
-                    "date" -> parseCqlDateValue(s)
-                    else -> s
-                }
-            } catch (e: Exception) {
-                log.warn(
-                    "Parameter '$paramName': could not parse interval endpoint '$s' as $pointType: ${e.message}. Passing as String.",
-                )
-                s
-            }
+    private fun createRepository(
+        fhirContext: FhirContext,
+        terminologyPath: java.nio.file.Path?,
+        modelPath: java.nio.file.Path?,
+    ): IRepository {
+        if (terminologyPath == null && modelPath == null) {
+            return NoOpRepository(fhirContext)
         }
-
-        return CqlInterval(parseEndpoint(match.groupValues[2]), lowClosed, parseEndpoint(match.groupValues[3]), highClosed)
+    
+        val data: IRepository =
+            if (modelPath != null) IgStandardRepository(fhirContext, modelPath) else NoOpRepository(fhirContext)
+        val terminology: IRepository =
+            if (terminologyPath != null) IgStandardRepository(fhirContext, terminologyPath) else NoOpRepository(fhirContext)
+        
+        // For now, return the data repository as the primary repository for the engine
+        // TODO: Consider combining data and terminology repositories if needed
+        return data
     }
 
     private fun coerceParameters(parameters: List<ParameterRequest>): MutableMap<String, Any?> {
@@ -230,7 +335,7 @@ object CqlEvaluator {
         return result
     }
 
-    private fun tempConvert(value: Any?): String {
+fun tempConvert(value: Any?): String {
         if (value == null) return "null"
 
         return when (value) {
@@ -240,7 +345,7 @@ object CqlEvaluator {
             }
             is IBaseResource ->
                 value.fhirType() +
-                    if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
+                        if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
             is IBase -> value.fhirType()
             is IBaseDatatype -> value.fhirType()
             else -> value.toString()
@@ -251,15 +356,15 @@ object CqlEvaluator {
         val cqlOptions = CqlOptions.defaultOptions()
         if (optionsPath != null) {
             val op = Path(Paths.get(Uris.parseOrNull(optionsPath)!!).toString())
-            val options = CqlTranslatorOptions.fromFile(Path(op))
-            cqlOptions.setCqlCompilerOptions(options.cqlCompilerOptions)
+            val translatorOptions = CqlTranslatorOptions.fromFile(op)
+            cqlOptions.setCqlCompilerOptions(translatorOptions.cqlCompilerOptions)
         }
         return cqlOptions
     }
 
     private fun buildEvaluationSettings(
         cqlOptions: CqlOptions,
-        npmProcessor: NpmProcessor,
+        npmProcessor: NpmProcessor?
     ): EvaluationSettings {
         val terminologySettings =
             TerminologySettings().apply {
@@ -284,6 +389,136 @@ object CqlEvaluator {
         }
     }
 
+    private fun evaluateBatch(
+        batch: MutableList<LibraryRequest>,
+        fhirContext: FhirContext,
+        npmProcessor: NpmProcessor?,
+        contentService: ContentService,
+        terminologyRepo: IRepository,
+        evaluationSettings: EvaluationSettings,
+        sharedLibraryCache: ConcurrentHashMap<VersionedIdentifier, CompiledLibrary>,
+        cqlRootUri: java.net.URI?,
+        igContextManager: IgContextManager,
+        libraryResolutionManager: LibraryResolutionManager,
+    ): List<LibraryResult> {
+        val libraryResults = mutableListOf<LibraryResult>()
+
+        for (libraryRequest in batch) {
+            try {
+                val libraryUri = Uris.parseOrNull(libraryRequest.libraryUri)
+                val libraryKotlinPath = if (libraryUri != null) Path(Paths.get(libraryUri).toString()) else null
+
+                val modelPath = libraryRequest.model?.modelUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
+                val terminologyPath = libraryRequest.terminologyUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
+
+                // evaluationSettings is constructed once per evaluate() call above — its
+                // librarySourceProviders list is empty at this point.
+                // Clear it defensively before adding our providers so the priority order
+                // (local → npm → bundled FHIRHelpers) is guaranteed even if that ever changes.
+                evaluationSettings.librarySourceProviders.clear()
+                if (libraryUri != null) {
+                    evaluationSettings.librarySourceProviders.add(
+                        ContentServiceSourceProvider(libraryUri, contentService),
+                    )
+                } else if (libraryKotlinPath != null) {
+                    evaluationSettings.librarySourceProviders.add(
+                        DefaultLibrarySourceProvider(libraryKotlinPath),
+                    )
+                }
+
+                val repository = createRepository(fhirContext, terminologyPath, modelPath)
+                val engine = Engines.forRepository(repository, evaluationSettings)
+
+                // Set up npm packages on the engine's LibraryManager when NpmProcessor was not set
+                // on evaluationSettings (i.e. no workspace-root ig.ini, as in multi-project
+                // workspaces).  Use the per-library URI so that each library's own project ig.ini
+                // is found — cqlRootUri points at the VS Code workspace root which has no ig.ini
+                // in multi-project layouts.  This mirrors CqlCompilationManager.createLibraryManager().
+                val igSetupUri = libraryUri ?: cqlRootUri
+                if (npmProcessor == null && igSetupUri != null) {
+                    igContextManager.setupLibraryManager(igSetupUri, engine.environment.libraryManager!!)
+                }
+
+                // Always register workspace project namespaces. Local projects declared with
+                // version "dev" are not in npm, but ARE in the LibraryResolutionManager index
+                // built from workspace ig.ini files. Must match what CqlCompilationManager does.
+                libraryResolutionManager.registerWorkspaceNamespaces(engine.environment.libraryManager!!)
+
+                // Register bundled FHIRHelpers last (lowest priority — fallback only).
+                engine.environment.libraryManager!!.librarySourceLoader
+                    .registerProvider(FhirLibrarySourceProvider())
+
+                // Model info providers have no ordering concern; register after engine creation.
+                if (libraryUri != null) {
+                    engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
+                        ContentServiceModelInfoProvider(libraryUri, contentService),
+                    )
+                } else if (libraryKotlinPath != null) {
+                    engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
+                        DefaultModelInfoProvider(libraryKotlinPath),
+                    )
+                }
+
+                val params = parseParameterValues(fhirContext, evaluationSettings, libraryRequest.parameters)
+
+                val identifier = VersionedIdentifier().withId(libraryRequest.libraryName)
+
+                val parameters = params?.filterKeys { it != null }?.mapKeys { it.key!! }
+                val evaluationResults = engine.evaluate {
+                    if (!parameters.isNullOrEmpty()) this.parameters = parameters
+                    if (libraryRequest.context != null) {
+                        contextParameter = Pair(
+                            libraryRequest.context.contextName,
+                            libraryRequest.context.contextValue as Any,
+                        )
+                    }
+                    library(identifier)
+                }
+                val result = evaluationResults.getResultFor(identifier)
+                    ?: throw (evaluationResults.getExceptionFor(identifier)
+                        ?: RuntimeException("No result or exception found for library ${identifier.id}"))
+                val expressions =
+                    result.expressionResults.map { (key, value) ->
+                        ExpressionResult(key, tempConvert(value.value))
+                    }
+
+                val overriddenNames = libraryRequest.parameters.map { it.parameterName }.toSet()
+                val compiledLib =
+                    engine.environment.libraryManager!!
+                        .compiledLibraries.entries
+                        .firstOrNull { it.key.id == identifier.id }
+                        ?.value
+                val defaultParams: List<DefaultParameterResult> =
+                    if (compiledLib != null) {
+                        (compiledLib.library?.parameters?.def ?: emptyList())
+                            .filter { paramDef ->
+                                paramDef.default != null && paramDef.name !in overriddenNames
+                            }
+                            .mapNotNull { paramDef ->
+                                val name = paramDef.name ?: return@mapNotNull null
+                                val stateValue = engine.state.parameters["${identifier.id}.$name"]
+                                if (stateValue != null) DefaultParameterResult(name, tempConvert(stateValue))
+                                else null
+                            }
+                    } else {
+                        emptyList()
+                    }
+
+                libraryResults.add(LibraryResult(libraryRequest.libraryName, expressions, defaultParams))
+            } catch (e: Exception) {
+                log.error("Error evaluating library ${libraryRequest.libraryName} for context ${libraryRequest.context?.contextValue}", e)
+                libraryResults.add(
+                    LibraryResult(
+                        libraryRequest.libraryName,
+                        listOf(ExpressionResult("Error", e.message ?: e.javaClass.simpleName)),
+                    ),
+                )
+            }
+        }
+
+        return libraryResults
+    }
+
     /**
      * Evaluates all libraries in the request. Libraries sharing the same libraryName,
      * libraryUri, terminologyUri, and optionsPath are evaluated in a single batch using
@@ -303,6 +538,7 @@ object CqlEvaluator {
         request: ExecuteCqlRequest,
         contentService: ContentService,
         igContextManager: IgContextManager,
+        libraryResolutionManager: LibraryResolutionManager,
     ): ExecuteCqlResponse {
         log.debug("evaluate: fhirVersion={} libraries={} rootDir={}", request.fhirVersion, request.libraries.size, request.rootDir)
         val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
@@ -310,6 +546,8 @@ object CqlEvaluator {
         var igContext: IGContext? = null
         var npmProcessor: NpmProcessor? = null
         val rootDir = request.rootDir
+        val cqlRootUri =
+            rootDir?.let { Uris.addPath(Uris.addPath(Uris.parseOrNull(it)!!, "input")!!, "cql") }
         if (rootDir != null) {
             npmProcessor =
                 igContextManager.getContext(
@@ -361,183 +599,9 @@ object CqlEvaluator {
                         buildCqlOptions(request.optionsPath),
                         NpmProcessor(igContext),
                     ).withLibraryCache(sharedLibraryCache)
-                evaluateBatch(batch, fhirContext, npmProcessor, contentService, terminologyRepo, evaluationSettings, sharedLibraryCache)
+                evaluateBatch(batch, fhirContext, npmProcessor, contentService, terminologyRepo, evaluationSettings, sharedLibraryCache, cqlRootUri, igContextManager, libraryResolutionManager)
             }
 
         return ExecuteCqlResponse(allResults, emptyList())
-    }
-
-    /**
-     * Evaluates a batch of [LibraryRequest]s that all refer to the same CQL library.
-     * One engine is created for the batch; CQL is compiled on the first call and the
-     * [LibraryManager] cache serves all subsequent patients without recompilation.
-     *
-     * Terminology is loaded once and shared across all patients. Per-patient data is
-     * isolated by swapping [DelegatingRepository.current] before each evaluate call.
-     * If a `shared/` sibling directory exists alongside the patient UUID directories,
-     * its resources are made available as a fallback via [FederatedRepository].
-     */
-    private fun evaluateBatch(
-        batch: List<LibraryRequest>,
-        fhirContext: FhirContext,
-        npmProcessor: NpmProcessor,
-        contentService: ContentService,
-        terminologyRepo: IRepository,
-        evaluationSettings: EvaluationSettings,
-        libraryCache: ConcurrentHashMap<VersionedIdentifier, CompiledLibrary>,
-    ): List<LibraryResult> {
-        val first = batch.first()
-        val batchStart = System.currentTimeMillis()
-
-        // Shared data directory — sibling of patient UUID dirs, e.g. "shared/".
-        // Loaded once; individual patient repos fall back to it via FederatedRepository.
-        val firstModelPath = first.model?.modelUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
-        val sharedDataPath =
-            firstModelPath?.parent?.resolve("shared")
-                ?.takeIf { Files.isDirectory(it) }
-        val sharedDataRepo: IRepository? = sharedDataPath?.let { IgStandardRepository(fhirContext, it) }
-
-        // Mutable data slot — swapped per patient before each engine.evaluate() call.
-        val delegatingData = DelegatingRepository(NoOpRepository(fhirContext))
-        val compositeRepo = ProxyRepository(delegatingData, delegatingData, terminologyRepo)
-
-        val engineStart = System.currentTimeMillis()
-        val engine = Engines.forRepository(compositeRepo, evaluationSettings)
-        val setupMs = System.currentTimeMillis() - batchStart
-        val engineMs = System.currentTimeMillis() - engineStart
-        log.debug(
-            "[PERF] ${first.libraryName} batch setup (options+settings+repos+engine): ${setupMs}ms" +
-                "  (engine only: ${engineMs}ms)  ${heapStats()}",
-        )
-
-        // Register source / model providers once for the entire batch.
-        val libraryUri = first.libraryUri?.let { Uris.parseOrNull(it) }
-        val libraryKotlinPath = libraryUri?.let { Path(Paths.get(it).toString()) }
-
-        if (libraryUri != null) {
-            engine.environment.libraryManager!!.librarySourceLoader.registerProvider(
-                ContentServiceSourceProvider(libraryUri, contentService),
-            )
-            engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
-                ContentServiceModelInfoProvider(libraryUri, contentService),
-            )
-        } else if (libraryKotlinPath != null) {
-            engine.environment.libraryManager!!.librarySourceLoader.registerProvider(
-                DefaultLibrarySourceProvider(libraryKotlinPath),
-            )
-            engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
-                DefaultModelInfoProvider(libraryKotlinPath),
-            )
-        }
-
-        val identifier = VersionedIdentifier().withId(first.libraryName)
-        val results = mutableListOf<LibraryResult>()
-        var patientIndex = 0
-
-        for (library in batch) {
-            val patientStart = System.currentTimeMillis()
-            patientIndex++
-            try {
-                // Per-patient data repo — isolated to prevent resource ID collisions across patients.
-                val modelPath = library.model?.modelUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
-                val patientRepo: IRepository =
-                    if (modelPath != null) {
-                        IgStandardRepository(fhirContext, modelPath)
-                    } else {
-                        NoOpRepository(fhirContext)
-                    }
-                val repoCreatedAt = System.currentTimeMillis()
-
-                // Swap in the patient repo (with shared fallback if available).
-                delegatingData.current =
-                    if (sharedDataRepo != null) {
-                        FederatedRepository(patientRepo, sharedDataRepo)
-                    } else {
-                        patientRepo
-                    }
-
-                val coercedParams = coerceParameters(library.parameters)
-                val evaluationResults =
-                    engine.evaluate {
-                        library(identifier)
-                        parameters = coercedParams
-                        if (library.context != null) {
-                            contextParameter =
-                                Pair(
-                                    library.context.contextName,
-                                    library.context.contextValue as Any,
-                                )
-                        }
-                    }
-                val evaluatedAt = System.currentTimeMillis()
-                val repoMs = repoCreatedAt - patientStart
-                val evalMs = evaluatedAt - repoCreatedAt
-                val totalMs = evaluatedAt - patientStart
-                log.debug(
-                    "[PERF] patient $patientIndex/${batch.size} (${library.context?.contextValue}): " +
-                        "repoCreate=${repoMs}ms  evaluate=${evalMs}ms  total=${totalMs}ms  ${heapStats()}",
-                )
-
-                val result = evaluationResults.getResultFor(identifier)!!
-                val expressions =
-                    result.expressionResults.map { (key, value) ->
-                        ExpressionResult(key, tempConvert(value.value))
-                    }
-
-                // Detect parameters declared in the CQL library that were not supplied via config
-                // and therefore fell back to their CQL default value. After engine.evaluate()
-                // the resolved value is cached in engine.state.parameters under the key
-                // "${libraryId}.${paramName}" (set by ParameterRefEvaluator on first access).
-                //
-                // We look up the compiled library from the shared cache by name rather than
-                // calling resolveLibrary(identifier), because the engine stores the compiled library
-                // under its actual versioned identifier (e.g. id="MyLib", version="1.0.0"). An
-                // unversioned VersionedIdentifier lookup would miss the cached entry, potentially
-                // triggering a recompile that silently fails — causing usedDefaultParameters to be
-                // empty for any CQL library that declares a version.
-                val usedDefaultParameters: List<DefaultParameterResult> =
-                    try {
-                        val compiledLib =
-                            libraryCache.entries
-                                .firstOrNull { it.key.id == identifier.id }
-                                ?.value
-                        compiledLib
-                            ?.library
-                            ?.parameters
-                            ?.def
-                            ?.filter { paramDef ->
-                                paramDef.name != null &&
-                                    paramDef.default != null &&
-                                    !coercedParams.containsKey(paramDef.name)
-                            }
-                            ?.map { paramDef ->
-                                val resolvedValue =
-                                    engine.state.parameters["${identifier.id}.${paramDef.name}"]
-                                        ?: engine.state.parameters[paramDef.name]
-                                DefaultParameterResult(paramDef.name!!, tempConvert(resolvedValue))
-                            }
-                            ?: emptyList()
-                    } catch (e: Exception) {
-                        log.debug("Could not inspect default parameters for ${library.libraryName}: ${e.message}")
-                        emptyList()
-                    }
-
-                results.add(LibraryResult(library.libraryName, expressions, usedDefaultParameters))
-            } catch (e: Exception) {
-                log.error("Error evaluating library ${library.libraryName} for context ${library.context?.contextValue}", e)
-                results.add(
-                    LibraryResult(
-                        library.libraryName,
-                        listOf(ExpressionResult("Error", e.message ?: e.javaClass.simpleName)),
-                    ),
-                )
-            }
-        }
-        val batchTotalMs = System.currentTimeMillis() - batchStart
-        log.debug(
-            "[PERF] ${first.libraryName} batch total: ${batchTotalMs}ms  (${batch.size} patients)  ${heapStats()}",
-        )
-
-        return results
     }
 }

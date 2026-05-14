@@ -9,10 +9,13 @@ import org.cqframework.fhir.utilities.IGContext
 import org.cqframework.fhir.utilities.LoggerAdapter
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.hl7.cql.model.NamespaceInfo
+import org.hl7.fhir.utilities.npm.NpmPackage
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 import java.util.Optional
@@ -21,9 +24,14 @@ import java.util.concurrent.ConcurrentHashMap
 class IgContextManager(private val contentService: ContentService) {
     companion object {
         private val log = LoggerFactory.getLogger(IgContextManager::class.java)
+        private val FHIR_CACHE_DIR = File(System.getProperty("user.home"), ".fhir/packages")
     }
 
     private val cachedContext = ConcurrentHashMap<URI, Optional<NpmProcessor>>()
+
+    // Cached IGContext per workspace root — retained even when NpmProcessor fails so the
+    // partial-npm fallback can read sourceIg.dependsOn without re-parsing ig.ini.
+    private val cachedIgContext = ConcurrentHashMap<URI, Optional<IGContext>>()
 
     fun getContext(uri: URI): NpmProcessor? {
         val root = Uris.getHead(uri)
@@ -33,11 +41,23 @@ class IgContextManager(private val contentService: ContentService) {
     protected fun clearContext(uri: URI) {
         val root = Uris.getHead(uri)
         cachedContext.remove(root)
+        cachedIgContext.remove(root)
     }
 
     protected fun readContext(rootUri: URI): Optional<NpmProcessor> {
-        val igContext = findIgContext(rootUri)
-        return igContext?.let { Optional.of(NpmProcessor(it)) } ?: Optional.empty()
+        val igContext = findIgContext(rootUri) ?: return Optional.empty()
+        cachedIgContext[rootUri] = Optional.of(igContext)
+        return try {
+            Optional.of(NpmProcessor(igContext))
+        } catch (e: Exception) {
+            // Truncate before the '{...}' build-server map that the underlying library appends —
+            // it can be thousands of characters and adds no actionable information.
+            val shortMsg = e.message?.substringBefore(" {")?.substringBefore(" (") ?: e.javaClass.simpleName
+            log.warn("Failed to initialize NpmProcessor for {}: {}. " +
+                "Declared dependencies not in ~/.fhir/packages/ will be skipped; cached packages will still be used.",
+                rootUri, shortMsg)
+            Optional.empty()
+        }
     }
 
     @Synchronized
@@ -45,7 +65,19 @@ class IgContextManager(private val contentService: ContentService) {
         uri: URI,
         libraryManager: LibraryManager,
     ) {
-        val npmProcessor = getContext(uri) ?: return
+        val npmProcessor = getContext(uri)
+        if (npmProcessor != null) {
+            setupWithNpmProcessor(npmProcessor, libraryManager)
+        } else {
+            // NpmProcessor failed (a declared dependency is not in the local FHIR package cache).
+            // Fall back: load only the declared dependencies that ARE cached and register those.
+            val root = Uris.getHead(uri)
+            val igContext = cachedIgContext[root]?.orElse(null) ?: return
+            setupWithAvailablePackages(igContext, libraryManager)
+        }
+    }
+
+    private fun setupWithNpmProcessor(npmProcessor: NpmProcessor, libraryManager: LibraryManager) {
         val namespaceManager = libraryManager.namespaceManager
         npmProcessor.igNamespace?.let { namespaceManager.ensureNamespaceRegistered(it) }
         val fhirVersion = npmProcessor.igContext?.fhirVersion ?: return
@@ -67,6 +99,47 @@ class IgContextManager(private val contentService: ContentService) {
                 keys.add(n.name)
                 uris.add(n.uri)
             }
+        }
+    }
+
+    private fun setupWithAvailablePackages(igContext: IGContext, libraryManager: LibraryManager) {
+        val deps = igContext.sourceIg?.dependsOn ?: return
+        val availablePackages = mutableListOf<NpmPackage>()
+
+        for (dep in deps) {
+            val packageId = dep.packageId?.takeIf { it.isNotEmpty() } ?: continue
+            val version = dep.version?.takeIf { it.isNotEmpty() } ?: continue
+            val packageDir = File(FHIR_CACHE_DIR, "$packageId#$version")
+            if (!packageDir.exists()) {
+                log.debug("Skipping dependency {} version {} — not in local FHIR package cache", packageId, version)
+                continue
+            }
+            try {
+                availablePackages.add(NpmPackage.fromFolder(packageDir.path))
+                log.info("Partial npm setup: loaded {} #{} from local cache", packageId, version)
+            } catch (e: Exception) {
+                log.warn("Could not load package {} #{} from local cache: {}", packageId, version, e.message)
+            }
+        }
+
+        if (availablePackages.isEmpty()) return
+
+        val fhirVersion = igContext.fhirVersion
+        val reader: ILibraryReader = org.cqframework.fhir.npm.LibraryLoader(fhirVersion)
+        val adapter = LoggerAdapter(log)
+        libraryManager.librarySourceLoader.registerProvider(
+            NpmLibrarySourceProvider(availablePackages, reader, adapter),
+        )
+        libraryManager.modelManager.modelInfoLoader.registerModelInfoProvider(
+            NpmModelInfoProvider(availablePackages, reader, adapter),
+        )
+
+        // Register the canonical URL of each loaded package as a namespace so
+        // namespace-qualified includes (e.g. "hl7.fhir.uv.cql".FHIRHelpers) resolve correctly.
+        for (pkg in availablePackages) {
+            val name = pkg.name() ?: continue
+            val canonical = pkg.canonical() ?: continue
+            libraryManager.namespaceManager.ensureNamespaceRegistered(NamespaceInfo(name, canonical))
         }
     }
 

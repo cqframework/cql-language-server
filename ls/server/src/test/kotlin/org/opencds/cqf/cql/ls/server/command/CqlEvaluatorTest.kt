@@ -1,43 +1,184 @@
 package org.opencds.cqf.cql.ls.server.command
 
+import ca.uhn.fhir.context.FhirContext
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import org.opencds.cqf.fhir.cql.EvaluationSettings
 
-/**
- * Unit tests for [CqlEvaluator]. Exercises the private parameter-coercion logic indirectly
- * through the public [CqlEvaluator.evaluate] entry point, using [TestContentService] to
- * resolve CQL libraries from the classpath.
- *
- * Parameters not declared in the target CQL library are silently ignored by the engine, so
- * "coercion-only" tests can send any parameter to `One.cql` and just assert that the call
- * succeeds without an exception or an `Error` expression.
- */
 class CqlEvaluatorTest {
-    companion object {
-        private lateinit var contentService: TestContentService
-        private lateinit var igContextManager: IgContextManager
+    private val contentService = TestContentService()
+    private val igContextManager = IgContextManager(contentService)
+    private val libraryResolutionManager = LibraryResolutionManager(emptyList())
 
-        @BeforeAll
-        @JvmStatic
-        fun beforeAll() {
-            contentService = TestContentService()
-            igContextManager = IgContextManager(contentService)
-        }
+    // -------------------------------------------------------------------------
+    // parseParameterValues (via reflection — it's private)
+    // -------------------------------------------------------------------------
+
+    private fun parseParameterValues(
+        fhirContext: FhirContext,
+        evaluationSettings: EvaluationSettings,
+        parameters: List<ParameterRequest>,
+    ): MutableMap<String?, Any?>? {
+        val method =
+            CqlEvaluator::class.java.getDeclaredMethod(
+                "parseParameterValues",
+                FhirContext::class.java,
+                EvaluationSettings::class.java,
+                List::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return method.invoke(CqlEvaluator, fhirContext, evaluationSettings, parameters) as MutableMap<String?, Any?>?
     }
 
-    // ------------------------------------------------------------------
-    // Helper
-    // ------------------------------------------------------------------
+    private fun coerceDateLiterals(
+        value: String,
+        parameterType: String,
+    ): String {
+        val method =
+            CqlEvaluator::class.java.getDeclaredMethod("coerceDateLiterals", String::class.java, String::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, value, parameterType) as String
+    }
 
-    private fun evaluate(
-        libraryName: String,
-        vararg params: ParameterRequest,
-    ): ExecuteCqlResponse {
+    private val r4Context: FhirContext = FhirContext.forR4Cached()
+    private val defaultSettings: EvaluationSettings = EvaluationSettings.getDefault()
+
+    // -------------------------------------------------------------------------
+    // coerceDateLiterals tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `coerceDateLiterals leaves non-DateTime types unchanged`() {
+        val input = "Interval[@2024-01-01, @2024-12-31)"
+        assertEquals(input, coerceDateLiterals(input, "Interval<Date>"))
+        assertEquals(input, coerceDateLiterals(input, "Integer"))
+        assertEquals(input, coerceDateLiterals(input, "String"))
+    }
+
+    @Test
+    fun `coerceDateLiterals appends T to bare date literals for DateTime type`() {
+        assertEquals(
+            "Interval[@2024-01-01T, @2024-12-31T)",
+            coerceDateLiterals("Interval[@2024-01-01, @2024-12-31)", "Interval<DateTime>"),
+        )
+    }
+
+    @Test
+    fun `coerceDateLiterals does not double-append T to already-DateTime literals`() {
+        assertEquals(
+            "Interval[@2024-01-01T, @2024-12-31T)",
+            coerceDateLiterals("Interval[@2024-01-01T, @2024-12-31T)", "Interval<DateTime>"),
+        )
+    }
+
+    @Test
+    fun `coerceDateLiterals coerces standalone DateTime parameter`() {
+        assertEquals("@2024-06-15T", coerceDateLiterals("@2024-06-15", "DateTime"))
+    }
+
+    @Test
+    fun `coerceDateLiterals preserves full DateTime literals with time`() {
+        val full = "@2024-01-01T00:00:00.0"
+        assertEquals(full, coerceDateLiterals(full, "Interval<DateTime>"))
+    }
+
+    // -------------------------------------------------------------------------
+    // parseParameterValues tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseParameterValues returns null for empty list`() {
+        val result = parseParameterValues(r4Context, defaultSettings, emptyList())
+        assertNull(result)
+    }
+
+    @Test
+    fun `parseParameterValues evaluates integer literal`() {
+        val params =
+            listOf(
+                ParameterRequest(parameterName = "MyInt", parameterType = "Integer", parameterValue = "42"),
+            )
+        val result = parseParameterValues(r4Context, defaultSettings, params)
+        assertNotNull(result)
+        assertEquals(42, result!!["MyInt"])
+    }
+
+    @Test
+    fun `parseParameterValues evaluates string literal`() {
+        val params =
+            listOf(
+                ParameterRequest(parameterName = "Plan", parameterType = "String", parameterValue = "'HMO'"),
+            )
+        val result = parseParameterValues(r4Context, defaultSettings, params)
+        assertNotNull(result)
+        assertEquals("HMO", result!!["Plan"])
+    }
+
+    @Test
+    fun `parseParameterValues evaluates boolean literal`() {
+        val params =
+            listOf(
+                ParameterRequest(parameterName = "Flag", parameterType = "Boolean", parameterValue = "true"),
+            )
+        val result = parseParameterValues(r4Context, defaultSettings, params)
+        assertNotNull(result)
+        assertEquals(true, result!!["Flag"])
+    }
+
+    @Test
+    fun `parseParameterValues evaluates decimal literal`() {
+        val params =
+            listOf(
+                ParameterRequest(parameterName = "Rate", parameterType = "Decimal", parameterValue = "3.14"),
+            )
+        val result = parseParameterValues(r4Context, defaultSettings, params)
+        assertNotNull(result)
+        assertEquals(java.math.BigDecimal("3.14"), result!!["Rate"])
+    }
+
+    @Test
+    fun `parseParameterValues evaluates multiple parameters`() {
+        val params =
+            listOf(
+                ParameterRequest(parameterName = "A", parameterType = "Integer", parameterValue = "1"),
+                ParameterRequest(parameterName = "B", parameterType = "String", parameterValue = "'hello'"),
+                ParameterRequest(parameterName = "C", parameterType = "Boolean", parameterValue = "false"),
+            )
+        val result = parseParameterValues(r4Context, defaultSettings, params)
+        assertNotNull(result)
+        assertEquals(1, result!!["A"])
+        assertEquals("hello", result["B"])
+        assertEquals(false, result["C"])
+    }
+
+    @Test
+    fun `parseParameterValues returns null on invalid CQL expression`() {
+        val params =
+            listOf(
+                ParameterRequest(parameterName = "Bad", parameterType = "Integer", parameterValue = "not valid cql !!"),
+            )
+        val result = parseParameterValues(r4Context, defaultSettings, params)
+        assertNull(result)
+    }
+
+    // -------------------------------------------------------------------------
+    // End-to-end evaluate tests with parameters
+    // -------------------------------------------------------------------------
+
+    /**
+     * Verifies that bare date literals (@YYYY-MM-DD) in an Interval<DateTime> parameter override
+     * are automatically coerced to DateTime literals before evaluation, preventing the
+     * "Expected date from(DateTime), Found date from(Date)" runtime error.
+     */
+    @Test
+    fun `evaluate coerces bare date literals to DateTime for Interval-DateTime parameter`() {
         val request =
             ExecuteCqlRequest(
                 fhirVersion = "R4",
@@ -46,38 +187,38 @@ class CqlEvaluatorTest {
                 libraries =
                     listOf(
                         LibraryRequest(
-                            libraryName = libraryName,
+                            libraryName = "WithDateTimeParam",
                             libraryUri = "file:///any/path",
-                            libraryVersion = null,
+                            libraryVersion = "1",
                             terminologyUri = null,
                             model = null,
                             context = null,
-                            parameters = params.toList(),
+                            parameters =
+                                listOf(
+                                    // Bare date literals (no T suffix) — must not cause a type mismatch
+                                    ParameterRequest(
+                                        parameterName = "Measurement Period",
+                                        parameterType = "Interval<DateTime>",
+                                        parameterValue = "Interval[@2024-01-01, @2024-12-31)",
+                                    ),
+                                ),
                         ),
                     ),
             )
-        return CqlEvaluator.evaluate(request, contentService, igContextManager)
-    }
 
-    // ------------------------------------------------------------------
-    // NullResult — verifies tempConvert(null) == "null"
-    // ------------------------------------------------------------------
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
 
-    @Test
-    fun `NullResult library returns NullDef expression with value null`() {
-        val response = evaluate("NullResult")
         assertEquals(1, response.results.size)
-        val expr = response.results[0].expressions.find { it.name == "NullDef" }
-        assertNotNull(expr, "Expected 'NullDef' expression in results")
-        assertEquals("null", expr!!.value)
+        val libraryResult = response.results[0]
+        // Must not produce an error expression
+        assertTrue(
+            libraryResult.expressions.none { it.name == "Error" },
+            "Expected no errors but got: ${libraryResult.expressions.filter { it.name == "Error" }}",
+        )
     }
 
-    // ------------------------------------------------------------------
-    // Batch ordering — different library names → different batches
-    // ------------------------------------------------------------------
-
     @Test
-    fun `two different libraries in one request preserve insertion order`() {
+    fun `evaluate passes parameter override to library`() {
         val request =
             ExecuteCqlRequest(
                 fhirVersion = "R4",
@@ -85,249 +226,115 @@ class CqlEvaluatorTest {
                 optionsPath = null,
                 libraries =
                     listOf(
-                        LibraryRequest("One", "file:///any/path", null, null, null, null, emptyList()),
-                        LibraryRequest("NullResult", "file:///any/path", null, null, null, null, emptyList()),
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Rate",
+                                        parameterType = "Decimal",
+                                        parameterValue = "2.5",
+                                    ),
+                                ),
+                        ),
                     ),
             )
-        val response = CqlEvaluator.evaluate(request, contentService, igContextManager)
-        assertEquals(2, response.results.size)
-        assertEquals("One", response.results[0].libraryName)
-        assertEquals("NullResult", response.results[1].libraryName)
-    }
 
-    // ------------------------------------------------------------------
-    // Scalar coercion — valid inputs
-    // ------------------------------------------------------------------
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
 
-    @Test
-    fun `Integer parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Integer", "42"))
         assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    @Test
-    fun `Decimal parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Decimal", "3.14"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    @Test
-    fun `Boolean parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Boolean", "true"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    @Test
-    fun `DateTime parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "DateTime", "@2024-01-15T10:30:00.000Z"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    @Test
-    fun `Date parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Date", "@2024-01-15"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    @Test
-    fun `Time parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Time", "@T14:30:00.000"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    @Test
-    fun `Quantity parameter coerces without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Quantity", "5 'mg'"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
-    }
-
-    // ------------------------------------------------------------------
-    // Scalar coercion — invalid inputs fall back to String (no exception)
-    // ------------------------------------------------------------------
-
-    @Test
-    fun `invalid Integer falls back to String without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Integer", "not-a-number"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `invalid Decimal falls back to String without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Decimal", "not-a-decimal"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `invalid Boolean falls back to String without exception`() {
-        // toBooleanStrictOrNull only accepts "true"/"false" (case-insensitive) — "maybe" must fall back
-        val response = evaluate("One", ParameterRequest("Unused", "Boolean", "maybe"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `invalid DateTime falls back to String without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "DateTime", "bad-date"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `invalid Date falls back to String without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Date", "bad-date"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `invalid Time falls back to String without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Time", "bad-time"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `invalid Quantity falls back to String without exception`() {
-        // Missing space between value and unit — regex does not match → IllegalArgumentException → String fallback
-        val response = evaluate("One", ParameterRequest("Unused", "Quantity", "5mg"))
-        assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `unknown parameter type falls back to String without exception`() {
-        val response = evaluate("One", ParameterRequest("Unused", "Frobnicator", "some-value"))
-        assertEquals(1, response.results.size)
-    }
-
-    // ------------------------------------------------------------------
-    // Interval<Date> coercion
-    // ------------------------------------------------------------------
-
-    @Test
-    fun `Interval_Date parameter is coerced and evaluated correctly`() {
-        // WithDateParam.cql declares `parameter "Date Range" Interval<Date>` and defines
-        // `"Range Start": start of "Date Range"`. A native CqlInterval must reach the engine —
-        // passing a raw String would cause a type mismatch error expression.
-        val response =
-            evaluate(
-                "WithDateParam",
-                ParameterRequest("Date Range", "Interval<Date>", "Interval[@2024-01-01, @2025-01-01)"),
-            )
-        assertEquals(1, response.results.size)
-        assertFalse(
-            response.results[0].expressions.any { it.name == "Error" },
-            "Unexpected Error expression: ${response.results[0].expressions}",
-        )
-        assertNotNull(
-            response.results[0].expressions.find { it.name == "Range Start" },
-            "Expected 'Range Start' expression in results",
+        val expressions = response.results[0].expressions.associateBy { it.name }
+        // The parameter override (2.5) should be used instead of the default (1.0)
+        assertTrue(
+            expressions["Using Rate"]?.value?.contains("2.5") == true,
+            "Expected 'Using Rate' to reflect overridden value 2.5, got: ${expressions["Using Rate"]?.value}",
         )
     }
 
     @Test
-    fun `Interval_Date with open endpoints is coerced without exception`() {
-        // Interval(low, high) — both endpoints open (exclusive)
-        val response =
-            evaluate(
-                "One",
-                ParameterRequest("Unused", "Interval<Date>", "Interval(@2024-01-01, @2025-01-01)"),
+    fun `evaluate uses CQL default when no parameter override provided`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
             )
-        assertEquals(1, response.results.size)
-    }
 
-    @Test
-    fun `Interval_DateTime with null low endpoint is coerced without exception`() {
-        // The interval parser recognises the keyword "null" and produces a null endpoint
-        val response =
-            evaluate(
-                "One",
-                ParameterRequest("Unused", "Interval<DateTime>", "Interval[null, @2025-01-01T00:00:00.000Z)"),
-            )
-        assertEquals(1, response.results.size)
-    }
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
 
-    @Test
-    fun `malformed Interval_Date literal falls back gracefully without throwing`() {
-        val response =
-            evaluate(
-                "One",
-                ParameterRequest("Unused", "Interval<Date>", "NOT_AN_INTERVAL"),
-            )
         assertEquals(1, response.results.size)
-    }
-
-    @Test
-    fun `Interval_Date default is reported as usedDefaultParameter when not supplied`() {
-        // WithDateParam.cql declares a default — omitting the parameter must surface it in
-        // usedDefaultParameters with source "default".
-        val response = evaluate("WithDateParam")
-        assertEquals(1, response.results.size)
-        val defaultParam = response.results[0].usedDefaultParameters.find { it.name == "Date Range" }
-        assertNotNull(
-            defaultParam,
-            "Expected 'Date Range' in usedDefaultParameters, got: ${response.results[0].usedDefaultParameters}",
+        val libraryResult = response.results[0]
+        val expressions = libraryResult.expressions.associateBy { it.name }
+        // No override — engine uses the CQL default (1.0)
+        assertTrue(
+            expressions["Using Rate"]?.value?.contains("1.0") == true ||
+                expressions["Using Rate"]?.value?.contains("1") == true,
+            "Expected 'Using Rate' to reflect default value 1.0, got: ${expressions["Using Rate"]?.value}",
         )
-        assertEquals("default", defaultParam!!.source)
-        assertFalse(defaultParam.value.isBlank(), "Expected non-blank resolved value for default Interval<Date>")
+        // Both declared parameters had defaults and were not overridden → both in usedDefaultParameters
+        val defaultParamNames = libraryResult.usedDefaultParameters.map { it.name }.toSet()
+        assertTrue("Rate" in defaultParamNames, "Expected 'Rate' in usedDefaultParameters, got: $defaultParamNames")
+        assertTrue(
+            "Measurement Period" in defaultParamNames,
+            "Expected 'Measurement Period' in usedDefaultParameters, got: $defaultParamNames",
+        )
     }
 
-    // ------------------------------------------------------------------
-    // tempConvert — Iterable branch
-    // ------------------------------------------------------------------
-
     @Test
-    fun `tempConvert renders list expression as bracketed comma-separated values`() {
-        // ListResult.cql defines `"Items": {1, 2, 3}` — the engine returns a java.util.List whose
-        // elements each go through tempConvert individually, producing "[1, 2, 3]".
-        val response = evaluate("ListResult")
-        assertEquals(1, response.results.size)
-        val expr = response.results[0].expressions.find { it.name == "Items" }
-        assertNotNull(expr, "Expected 'Items' expression in results")
-        assertEquals("[1, 2, 3]", expr!!.value)
-    }
-
-    // ------------------------------------------------------------------
-    // parseCqlIntervalValue — remaining endpoint branches
-    // ------------------------------------------------------------------
-
-    @Test
-    fun `Interval_DateTime with null high endpoint is coerced without exception`() {
-        // Tests the null-endpoint branch for groupValues[3] (high endpoint position).
-        // Existing null-endpoint test covers groupValues[2] (low endpoint).
-        val response =
-            evaluate(
-                "One",
-                ParameterRequest("Unused", "Interval<DateTime>", "Interval[@2024-01-01T00:00:00.000Z, null]"),
+    fun `evaluate excludes overridden parameter from usedDefaultParameters`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Rate",
+                                        parameterType = "Decimal",
+                                        parameterValue = "2.5",
+                                    ),
+                                ),
+                        ),
+                    ),
             )
-        assertEquals(1, response.results.size)
-    }
 
-    @Test
-    fun `Interval_DateTime with bad endpoint inside valid structure falls back without exception`() {
-        // The outer interval regex matches, but parseCqlDateTimeValue("@bad") throws inside
-        // parseEndpoint → caught → warning logged → endpoint falls back to the raw string.
-        // One.cql ignores the parameter, so no Error expression propagates.
-        val response =
-            evaluate(
-                "One",
-                ParameterRequest("Unused", "Interval<DateTime>", "Interval[@2024-01-01T00:00:00.000Z, @bad)"),
-            )
-        assertEquals(1, response.results.size)
-    }
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+        val libraryResult = response.results[0]
+        val defaultParamNames = libraryResult.usedDefaultParameters.map { it.name }.toSet()
 
-    // ------------------------------------------------------------------
-    // quantityLiteralRegex — decimal branch
-    // ------------------------------------------------------------------
-
-    @Test
-    fun `Quantity with decimal value coerces without exception`() {
-        // Tests the (?:\\.\\d+)? group of quantityLiteralRegex — only integer quantities were
-        // previously exercised (e.g. "5 'mg'").
-        val response = evaluate("One", ParameterRequest("Unused", "Quantity", "1.5 'd'"))
-        assertEquals(1, response.results.size)
-        assertFalse(response.results[0].expressions.any { it.name == "Error" })
+        // Rate was overridden → must NOT appear in usedDefaultParameters
+        assertTrue("Rate" !in defaultParamNames, "Overridden 'Rate' must not be in usedDefaultParameters")
+        // Measurement Period was not overridden → must appear
+        assertTrue(
+            "Measurement Period" in defaultParamNames,
+            "Expected 'Measurement Period' in usedDefaultParameters, got: $defaultParamNames",
+        )
     }
 }

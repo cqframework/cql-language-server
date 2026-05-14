@@ -15,6 +15,7 @@ import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 
 class HoverProviderTest {
@@ -26,7 +27,7 @@ class HoverProviderTest {
         @JvmStatic
         fun beforeAll() {
             val cs = TestContentService()
-            compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             hoverProvider = HoverProvider(compilationManager)
         }
     }

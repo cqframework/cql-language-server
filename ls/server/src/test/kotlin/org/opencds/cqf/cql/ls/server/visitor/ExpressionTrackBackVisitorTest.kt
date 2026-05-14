@@ -14,6 +14,7 @@ import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 
 class ExpressionTrackBackVisitorTest {
@@ -25,7 +26,7 @@ class ExpressionTrackBackVisitorTest {
         fun beforeAll() {
             val cs = TestContentService()
             val cqlCompilationManager =
-                CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+                CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             library =
                 cqlCompilationManager
                     .compile(Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/visitor/ExpressionTrackBackVisitorTest.cql")!!)!!

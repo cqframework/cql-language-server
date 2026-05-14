@@ -23,6 +23,7 @@ import org.mockito.Mockito
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider
@@ -40,7 +41,7 @@ class LanguageServerTest {
         fun beforeAll() {
             val eventBus = EventBus.builder().logger(JavaLogger("eventBus")).build()
             val cs = TestContentService()
-            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             val languageClientFuture = CompletableFuture<LanguageClient>()
             val commandsFuture = CompletableFuture<List<CommandContribution>>()
             commandsFuture.complete(emptyList())
@@ -56,7 +57,7 @@ class LanguageServerTest {
         private fun buildServer(): CqlLanguageServer {
             val eventBus = EventBus.builder().build()
             val cs = TestContentService()
-            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             val clientFuture = CompletableFuture<LanguageClient>()
             val commandsFuture = CompletableFuture.completedFuture<List<CommandContribution>>(emptyList())
             return CqlLanguageServer(

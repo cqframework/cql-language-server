@@ -24,6 +24,7 @@ class CqlCompilationManager(
     private val contentService: ContentService,
     private val compilerOptionsManager: CompilerOptionsManager,
     private val igContextManager: IgContextManager,
+    private val libraryResolutionManager: LibraryResolutionManager,
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(CqlCompilationManager::class.java)
@@ -129,11 +130,15 @@ class CqlCompilationManager(
             ContentServiceModelInfoProvider(root, contentService),
         )
         val libraryManager = LibraryManager(modelManager, compilerOptionsManager.getOptions(root))
+        // Priority: local files (1) → npm packages (2) → bundled FHIRHelpers (3 — lowest)
         libraryManager.librarySourceLoader.registerProvider(
             ContentServiceSourceProvider(root, contentService),
         )
-        libraryManager.librarySourceLoader.registerProvider(FhirLibrarySourceProvider())
-        igContextManager.setupLibraryManager(root, libraryManager)
+        igContextManager.setupLibraryManager(root, libraryManager)         // registers npm (2)
+        // Register other workspace projects' namespaces AFTER npm so ensureNamespaceRegistered
+        // is a safe no-op if npm already registered the same namespace.
+        libraryResolutionManager.registerWorkspaceNamespaces(libraryManager)
+        libraryManager.librarySourceLoader.registerProvider(FhirLibrarySourceProvider()) // (3)
         return libraryManager
     }
 }

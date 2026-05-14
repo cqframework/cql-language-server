@@ -10,6 +10,7 @@ import org.junit.jupiter.api.assertThrows
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 import java.io.IOException
 import java.nio.file.Files
@@ -25,7 +26,7 @@ class ViewElmCommandContributionTest {
         fun beforeAll() {
             val cs = TestContentService()
             val cqlCompilationManager =
-                CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+                CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             viewElmCommandContribution = ViewElmCommandContribution(cqlCompilationManager)
         }
     }
