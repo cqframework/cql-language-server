@@ -157,7 +157,4 @@ class CqlWorkspaceService(
         return ImmutableList.copyOf(allCommands)
     }
 
-    fun stop() {
-        // Add shutdown logic here. For example, unsubscribe the EventBus
-    }
 }

@@ -43,7 +43,7 @@ class CqlLanguageServer(
     }
 
     override fun initialized(params: InitializedParams) {
-        // Nothing to do, currently.
+        workspaceService.initialized()
     }
 
     override fun setTrace(params: SetTraceParams) {

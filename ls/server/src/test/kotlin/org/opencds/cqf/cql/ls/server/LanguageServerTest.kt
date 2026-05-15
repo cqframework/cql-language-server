@@ -43,6 +43,8 @@ class LanguageServerTest {
             val cs = TestContentService()
             val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             val languageClientFuture = CompletableFuture<LanguageClient>()
+            // Complete with a mock so initialized() can call registerCapability/unregisterCapability.
+            languageClientFuture.complete(Mockito.mock(LanguageClient::class.java))
             val commandsFuture = CompletableFuture<List<CommandContribution>>()
             commandsFuture.complete(emptyList())
             server =

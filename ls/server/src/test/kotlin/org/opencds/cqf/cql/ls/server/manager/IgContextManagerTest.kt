@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.FileEvent
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -20,12 +21,25 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.InputStream
+import java.lang.reflect.Method
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.GZIPInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.cqframework.fhir.utilities.IGContext
+import org.junit.jupiter.api.Assumptions
+
+private open class ExposedIgContextManager(cs: ContentService) : IgContextManager(cs) {
+    public override fun findIgContext(uri: URI): IGContext? = super.findIgContext(uri)
+}
 
 class IgContextManagerTest {
     private lateinit var manager: IgContextManager
@@ -429,9 +443,286 @@ class IgContextManagerTest {
         assertEquals(root2ReadsBefore, root2Reads.size, "root2 cache should not be affected")
     }
 
+    // -----------------------------------------------------------------------
+    // findIgContext — with real ig.ini + IG resource on disk
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun findIgContext_happyPath_returnsIgContext(@TempDir tempDir: Path) {
+        createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
+        val cqlFile = createCqlFileInSubdir(tempDir)
+        val cs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+        }
+        val manager = ExposedIgContextManager(cs)
+        val igContext = manager.findIgContext(cqlFile.toUri())
+        assertNotNull(igContext)
+    }
+
+    @Test
+    fun findIgContext_happyPath_hasCorrectPackageId(@TempDir tempDir: Path) {
+        createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
+        val cqlFile = createCqlFileInSubdir(tempDir)
+        val cs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+        }
+        val manager = ExposedIgContextManager(cs)
+        val igContext = manager.findIgContext(cqlFile.toUri())
+        assertEquals("test.ig", igContext!!.packageId)
+    }
+
+    @Test
+    fun findIgContext_happyPath_hasCorrectCanonical(@TempDir tempDir: Path) {
+        createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
+        val cqlFile = createCqlFileInSubdir(tempDir)
+        val cs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+        }
+        val manager = ExposedIgContextManager(cs)
+        val igContext = manager.findIgContext(cqlFile.toUri())
+        assertTrue(igContext!!.canonicalBase!!.contains("test-ig.org"))
+    }
+
+    // -----------------------------------------------------------------------
+    // getContext — NpmProcessor construction succeeds when FHIR packages are
+    // available in the local cache.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getContext_happyPath_returnsNpmProcessor(@TempDir tempDir: Path) {
+        createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
+        val cqlFile = createCqlFileInSubdir(tempDir)
+
+        val r4CoreDir = File(File(System.getProperty("user.home"), ".fhir/packages"), "hl7.fhir.r4.core#4.0.1")
+        Assumptions.assumeTrue(r4CoreDir.exists()) {
+            "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
+        }
+
+        val cs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+        }
+        val manager = IgContextManager(cs)
+        val npmProcessor = manager.getContext(cqlFile.toUri())
+        assertNotNull(npmProcessor)
+    }
+
+    @Test
+    fun getContext_cachedResult_reusesNpmProcessor(@TempDir tempDir: Path) {
+        createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
+        val cqlFile = createCqlFileInSubdir(tempDir)
+
+        val r4CoreDir = File(File(System.getProperty("user.home"), ".fhir/packages"), "hl7.fhir.r4.core#4.0.1")
+        Assumptions.assumeTrue(r4CoreDir.exists()) {
+            "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
+        }
+
+        var readCount = 0
+        val countingCs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+            override fun read(uri: URI): InputStream? {
+                readCount++
+                return try { uri.toURL().openStream() } catch (_: Exception) { null }
+            }
+        }
+        val manager = IgContextManager(countingCs)
+
+        manager.getContext(cqlFile.toUri()) // populates cache
+        val readsAfterFirst = readCount
+        manager.getContext(cqlFile.toUri()) // should be cached
+
+        assertEquals(readsAfterFirst, readCount, "Second getContext() call should not re-read ig.ini from content service")
+    }
+
+    // -----------------------------------------------------------------------
+    // readContext — caches IGContext even when NpmProcessor construction fails
+    // so that setupLibraryManager fallback can use the partial context.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getContext_npmProcessorFails_cachedIgContextStillPopulated() {
+        val manager = object : IgContextManager(TestContentService()) {
+            override fun findIgContext(uri: URI): IGContext = IGContext()
+        }
+        val result = manager.getContext(TEST_URI)
+        assertNull(result, "getContext should return null when NpmProcessor construction fails")
+    }
+
+    // -----------------------------------------------------------------------
+    // setupLibraryManager — fallback path when NpmProcessor construction
+    // fails but findIgContext succeeded. Must not throw.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun setupLibraryManager_whenNpmProcessorFails_doesNotThrow() {
+        val manager = object : IgContextManager(TestContentService()) {
+            override fun findIgContext(uri: URI): IGContext = IGContext()
+        }
+        // Populate cache: getContext → readContext → findIgContext succeeds,
+        // NpmProcessor fails → cachedIgContext is populated.
+        assertNull(manager.getContext(TEST_URI))
+
+        val libraryManager = LibraryManager(ModelManager())
+        assertDoesNotThrow { manager.setupLibraryManager(TEST_URI, libraryManager) }
+    }
+
+    // -----------------------------------------------------------------------
+    // setupLibraryManager — NpmProcessor path with real packages (conditional)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun setupLibraryManager_withNpmProcessor_configuresManager(@TempDir tempDir: Path) {
+        createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
+        val cqlFile = createCqlFileInSubdir(tempDir)
+
+        val r4CoreDir = File(File(System.getProperty("user.home"), ".fhir/packages"), "hl7.fhir.r4.core#4.0.1")
+        Assumptions.assumeTrue(r4CoreDir.exists()) {
+            "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
+        }
+
+        val cs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+        }
+        val manager = IgContextManager(cs)
+        val libraryManager = LibraryManager(ModelManager())
+
+        assertDoesNotThrow { manager.setupLibraryManager(cqlFile.toUri(), libraryManager) }
+    }
+
+    // -----------------------------------------------------------------------
+    // buildMinimalPackageTgz — structural integrity of the generated TGZ
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun buildMinimalPackageTgz_outputIsValidGzipTar() {
+        val manager = IgContextManager(TestContentService())
+        val method: Method = IgContextManager::class.java.getDeclaredMethod(
+            "buildMinimalPackageTgz",
+            String::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        val tgz = method.invoke(manager, "test.pkg", "http://test.org/pkg", "4.0.1") as ByteArray
+
+        assertTrue(tgz.isNotEmpty(), "TGZ output must not be empty")
+
+        TarArchiveInputStream(GZIPInputStream(ByteArrayInputStream(tgz))).use { tar ->
+            var foundPackageJson = false
+            var entry: TarArchiveEntry? = tar.nextEntry
+            while (entry != null) {
+                if (entry.name == "package/package.json") {
+                    foundPackageJson = true
+                    val content = tar.readAllBytes().decodeToString()
+                    assertTrue(content.contains("\"name\": \"test.pkg\"")) { "package.json must contain the package name" }
+                    assertTrue(content.contains("\"canonical\": \"http://test.org/pkg\"")) { "package.json must contain the canonical" }
+                    assertTrue(content.contains("\"fhirVersions\": [\"4.0.1\"]")) { "package.json must contain the fhir version" }
+                }
+                entry = tar.nextEntry
+            }
+            assertTrue(foundPackageJson, "TGZ must contain package/package.json")
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // findLocalProject — discovers sibling projects with matching packageId
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun findLocalProject_matchingSibling_returnsIgContext(@TempDir tempDir: Path) {
+        // Create sibling directories: sibling1 (matches pkgA), sibling2 (mismatch), sibling3 (no ig.ini)
+        val sibling1 = tempDir.resolve("sibling1").also { it.toFile().mkdirs() }
+        createMinimalIg(sibling1, "pkgA", "http://example.org/pkgA", "4.0.1")
+        val sibling2 = tempDir.resolve("sibling2").also { it.toFile().mkdirs() }
+        createMinimalIg(sibling2, "pkgB", "http://example.org/pkgB", "4.0.1")
+        tempDir.resolve("sibling3").toFile().mkdirs() // no ig.ini
+
+        val manager = IgContextManager(TestContentService())
+        val method: Method = IgContextManager::class.java.getDeclaredMethod(
+            "findLocalProject",
+            Path::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        val project = method.invoke(manager, tempDir, "pkgA") as? IGContext
+
+        assertNotNull(project, "Should find project with matching packageId pkgA")
+        assertEquals("pkgA", project!!.packageId)
+    }
+
+    @Test
+    fun findLocalProject_nonMatchingSibling_returnsNull(@TempDir tempDir: Path) {
+        val sibling = tempDir.resolve("sibling").also { it.toFile().mkdirs() }
+        createMinimalIg(sibling, "otherPkg", "http://example.org/other", "4.0.1")
+
+        val manager = IgContextManager(TestContentService())
+        val method: Method = IgContextManager::class.java.getDeclaredMethod(
+            "findLocalProject",
+            Path::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        val project = method.invoke(manager, tempDir, "nonExistentPkg")
+
+        assertNull(project, "Should return null when no sibling has the requested packageId")
+    }
+
+    @Test
+    fun findLocalProject_noSiblings_returnsNull(@TempDir tempDir: Path) {
+        val manager = IgContextManager(TestContentService())
+        val method: Method = IgContextManager::class.java.getDeclaredMethod(
+            "findLocalProject",
+            Path::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        val project = method.invoke(manager, tempDir, "anyPkg")
+
+        assertNull(project, "Should return null when there are no sibling directories")
+    }
+
+    // -----------------------------------------------------------------------
+    // findIgContext — no ig.ini anywhere in ancestor chain
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun findIgContext_noIgIni_returnsNull(@TempDir tempDir: Path) {
+        val cqlFile = createCqlFileInSubdir(tempDir)
+        val cs = object : ContentService {
+            override fun locate(root: URI, identifier: VersionedIdentifier) = emptySet<URI>()
+        }
+        val manager = ExposedIgContextManager(cs)
+        val result = manager.findIgContext(cqlFile.toUri())
+        assertNull(result)
+    }
+
     companion object {
         // A URI whose parent dir is /org/opencds/cqf/cql/ls/server/ —
         // TestContentService returns null for the ig.ini probe, so NpmProcessor is never created.
         private val TEST_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
+
+        private fun createMinimalIg(dir: Path, packageId: String, canonical: String, fhirVersion: String) {
+            dir.resolve("ig.ini").toFile().writeText("[IG]\nig = ig.json\n")
+            dir.resolve("ig.json").toFile().writeText(
+                """
+                {
+                    "resourceType": "ImplementationGuide",
+                    "id": "${packageId}",
+                    "url": "${canonical}/ImplementationGuide/${packageId}",
+                    "version": "1.0.0",
+                    "name": "${packageId}",
+                    "packageId": "${packageId}",
+                    "fhirVersion": ["${fhirVersion}"]
+                }
+                """.trimIndent(),
+            )
+        }
+
+        private fun createCqlFileInSubdir(dir: Path): Path {
+            val cqlDir = dir.resolve("input/cql")
+            cqlDir.toFile().mkdirs()
+            val cqlFile = cqlDir.resolve("dummy.cql")
+            cqlFile.toFile().writeText("library Dummy version '1.0.0'")
+            return cqlFile
+        }
     }
 }

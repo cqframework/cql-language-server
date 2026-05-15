@@ -1,15 +1,37 @@
 package org.opencds.cqf.cql.ls.server.command
 
 import ca.uhn.fhir.context.FhirContext
+import ca.uhn.fhir.repository.IRepository
+import java.math.BigDecimal
+import java.nio.file.Files
+import java.nio.file.Path
+import org.hl7.fhir.r4.model.Patient
+import org.hl7.fhir.r4.model.StringType
+import org.hl7.fhir.r5.model.DateTimeType
+import org.hl7.fhir.r5.model.DateType
+import org.hl7.fhir.r5.model.Quantity
+import org.hl7.fhir.r5.model.TimeType
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertDoesNotThrow
+import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import org.cqframework.fhir.npm.NpmProcessor
+import org.hl7.elm.r1.VersionedIdentifier
+import org.hl7.fhir.r5.context.ILoggingService
+import org.opencds.cqf.fhir.cql.CqlOptions
 import org.opencds.cqf.fhir.cql.EvaluationSettings
+import org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings
+import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings
+import org.opencds.cqf.fhir.utility.repository.ProxyRepository
 
 class CqlEvaluatorTest {
     private val contentService = TestContentService()
@@ -37,6 +59,12 @@ class CqlEvaluatorTest {
         return method.invoke(CqlEvaluator, fhirContext, evaluationSettings, parameters) as MutableMap<String?, Any?>?
     }
 
+    private fun formatValue(value: Any?): String {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("formatValue", Any::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, value) as String
+    }
+
     private fun coerceDateLiterals(
         value: String,
         parameterType: String,
@@ -49,6 +77,52 @@ class CqlEvaluatorTest {
 
     private val r4Context: FhirContext = FhirContext.forR4Cached()
     private val defaultSettings: EvaluationSettings = EvaluationSettings.getDefault()
+
+    // -------------------------------------------------------------------------
+    // formatValue tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `formatValue returns null string for null input`() {
+        assertEquals("null", formatValue(null))
+    }
+
+    @Test
+    fun `formatValue returns toString for primitive types`() {
+        assertEquals("42", formatValue(42))
+        assertEquals("true", formatValue(true))
+        assertEquals("3.14", formatValue(3.14))
+    }
+
+    @Test
+    fun `formatValue formats non-empty Iterable as bracket-delimited list`() {
+        assertEquals("[1, 2, 3]", formatValue(listOf(1, 2, 3)))
+    }
+
+    @Test
+    fun `formatValue formats empty Iterable as empty brackets`() {
+        assertEquals("[]", formatValue(emptyList<Any>()))
+    }
+
+    @Test
+    fun `formatValue formats IBaseResource with id`() {
+        val patient = Patient()
+        patient.id = "abc"
+        assertEquals("Patient(id=abc)", formatValue(patient))
+    }
+
+    @Test
+    fun `formatValue formats IBaseResource without id`() {
+        assertEquals("Patient", formatValue(Patient()))
+    }
+
+    @Test
+    fun `formatValue formats IBaseDatatype via fhirType`() {
+        // StringType is IBaseDatatype but NOT IBaseResource — verifies the branch ordering fix
+        // (IBaseDatatype must be checked before IBase, otherwise IBase's branch matches first).
+        val s = StringType("hello")
+        assertEquals("string", formatValue(s))
+    }
 
     // -------------------------------------------------------------------------
     // coerceDateLiterals tests
@@ -329,12 +403,489 @@ class CqlEvaluatorTest {
         val libraryResult = response.results[0]
         val defaultParamNames = libraryResult.usedDefaultParameters.map { it.name }.toSet()
 
-        // Rate was overridden → must NOT appear in usedDefaultParameters
         assertTrue("Rate" !in defaultParamNames, "Overridden 'Rate' must not be in usedDefaultParameters")
-        // Measurement Period was not overridden → must appear
         assertTrue(
             "Measurement Period" in defaultParamNames,
             "Expected 'Measurement Period' in usedDefaultParameters, got: $defaultParamNames",
         )
     }
+
+    // -------------------------------------------------------------------------
+    // Reflection helpers for untested private methods
+    // -------------------------------------------------------------------------
+
+    private fun coerceParameters(parameters: List<ParameterRequest>): MutableMap<String, Any?> {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("coerceParameters", List::class.java)
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return method.invoke(CqlEvaluator, parameters) as MutableMap<String, Any?>
+    }
+
+    private fun parseCqlDateTimeValue(value: String): DateTimeType {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("parseCqlDateTimeValue", String::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, value) as DateTimeType
+    }
+
+    private fun parseCqlDateValue(value: String): DateType {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("parseCqlDateValue", String::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, value) as DateType
+    }
+
+    private fun parseCqlTimeValue(value: String): TimeType {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("parseCqlTimeValue", String::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, value) as TimeType
+    }
+
+    private fun parseCqlQuantityValue(value: String): Quantity {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("parseCqlQuantityValue", String::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, value) as Quantity
+    }
+
+    private fun createRepository(fhirContext: FhirContext, terminologyRepo: IRepository, modelPath: Path?): IRepository {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("createRepository", FhirContext::class.java, IRepository::class.java, Path::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, fhirContext, terminologyRepo, modelPath) as IRepository
+    }
+
+    private fun buildCqlOptions(optionsPath: String?): CqlOptions {
+        val method = CqlEvaluator::class.java.getDeclaredMethod("buildCqlOptions", String::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, optionsPath) as CqlOptions
+    }
+
+    private fun buildEvaluationSettings(
+        cqlOptions: CqlOptions,
+        npmProcessor: NpmProcessor?,
+    ): EvaluationSettings {
+        val method =
+            CqlEvaluator::class.java.getDeclaredMethod("buildEvaluationSettings", CqlOptions::class.java, NpmProcessor::class.java)
+        method.isAccessible = true
+        return method.invoke(CqlEvaluator, cqlOptions, npmProcessor) as EvaluationSettings
+    }
+
+    // -------------------------------------------------------------------------
+    // coerceParameters tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `coerceParameters coerces Integer`() {
+        val result = coerceParameters(listOf(ParameterRequest("MyInt", "Integer", "42")))
+        assertEquals(42, result["MyInt"])
+    }
+
+    @Test
+    fun `coerceParameters returns raw string on invalid Integer`() {
+        val result = coerceParameters(listOf(ParameterRequest("MyInt", "Integer", "not-a-number")))
+        assertEquals("not-a-number", result["MyInt"])
+    }
+
+    @Test
+    fun `coerceParameters coerces Decimal`() {
+        val result = coerceParameters(listOf(ParameterRequest("MyDec", "Decimal", "3.14")))
+        assertEquals(BigDecimal("3.14"), result["MyDec"])
+    }
+
+    @Test
+    fun `coerceParameters returns raw string on invalid Decimal`() {
+        val result = coerceParameters(listOf(ParameterRequest("MyDec", "Decimal", "bad")))
+        assertEquals("bad", result["MyDec"])
+    }
+
+    @Test
+    fun `coerceParameters coerces Boolean true`() {
+        val result = coerceParameters(listOf(ParameterRequest("Flag", "Boolean", "true")))
+        assertEquals(true, result["Flag"])
+    }
+
+    @Test
+    fun `coerceParameters coerces Boolean false`() {
+        val result = coerceParameters(listOf(ParameterRequest("Flag", "Boolean", "false")))
+        assertEquals(false, result["Flag"])
+    }
+
+    @Test
+    fun `coerceParameters returns raw string on invalid Boolean`() {
+        val result = coerceParameters(listOf(ParameterRequest("Flag", "Boolean", "notbool")))
+        assertEquals("notbool", result["Flag"])
+    }
+
+    @Test
+    fun `coerceParameters coerces DateTime`() {
+        val result = coerceParameters(listOf(ParameterRequest("Dt", "DateTime", "@2024-06-15T00:00:00.000Z")))
+        assertInstanceOf(DateTimeType::class.java, result["Dt"])
+    }
+
+    @Test
+    fun `coerceParameters returns raw string on invalid DateTime`() {
+        val result = coerceParameters(listOf(ParameterRequest("Dt", "DateTime", "bad-date")))
+        assertEquals("bad-date", result["Dt"])
+    }
+
+    @Test
+    fun `coerceParameters coerces Date`() {
+        val result = coerceParameters(listOf(ParameterRequest("Dt", "Date", "@2024-06-15")))
+        assertInstanceOf(DateType::class.java, result["Dt"])
+    }
+
+    @Test
+    fun `coerceParameters returns raw string on invalid Date`() {
+        val result = coerceParameters(listOf(ParameterRequest("Dt", "Date", "bad-date")))
+        assertEquals("bad-date", result["Dt"])
+    }
+
+    @Test
+    fun `coerceParameters coerces Time`() {
+        val result = coerceParameters(listOf(ParameterRequest("T", "Time", "@T12:00:00")))
+        assertInstanceOf(TimeType::class.java, result["T"])
+    }
+
+    @Test
+    fun `coerceParameters returns TimeType on unparseable Time string`() {
+        val result = coerceParameters(listOf(ParameterRequest("T", "Time", "bad-time")))
+        assertInstanceOf(TimeType::class.java, result["T"])
+    }
+
+    @Test
+    fun `coerceParameters coerces Quantity with unit`() {
+        val result = coerceParameters(listOf(ParameterRequest("Q", "Quantity", "5.4'mg'")))
+        assertInstanceOf(Quantity::class.java, result["Q"])
+        val q = result["Q"] as Quantity
+        assertEquals(BigDecimal("5.4"), q.value)
+        assertEquals("mg", q.unit)
+    }
+
+    @Test
+    fun `coerceParameters coerces Quantity without unit`() {
+        val result = coerceParameters(listOf(ParameterRequest("Q", "Quantity", "42")))
+        assertInstanceOf(Quantity::class.java, result["Q"])
+        val q = result["Q"] as Quantity
+        assertEquals(BigDecimal("42"), q.value)
+    }
+
+    @Test
+    fun `coerceParameters passes through Interval DateTime raw value`() {
+        val result = coerceParameters(listOf(ParameterRequest("P", "Interval<DateTime>", "Interval[@2024-01-01, @2024-12-31)")))
+        assertEquals("Interval[@2024-01-01, @2024-12-31)", result["P"])
+    }
+
+    @Test
+    fun `coerceParameters passes through Interval Date raw value`() {
+        val result = coerceParameters(listOf(ParameterRequest("P", "Interval<Date>", "Interval[@2024-01-01, @2024-12-31)")))
+        assertEquals("Interval[@2024-01-01, @2024-12-31)", result["P"])
+    }
+
+    @Test
+    fun `coerceParameters passes through String type`() {
+        val result = coerceParameters(listOf(ParameterRequest("S", "String", "hello")))
+        assertEquals("hello", result["S"])
+    }
+
+    @Test
+    fun `coerceParameters passes through unknown type`() {
+        val result = coerceParameters(listOf(ParameterRequest("S", "SomeCustomType", "hello")))
+        assertEquals("hello", result["S"])
+    }
+
+    @Test
+    fun `coerceParameters coerces multiple parameters of different types`() {
+        val result = coerceParameters(
+            listOf(
+                ParameterRequest("A", "Integer", "1"),
+                ParameterRequest("B", "String", "hi"),
+                ParameterRequest("C", "Boolean", "true"),
+                ParameterRequest("D", "Decimal", "2.5"),
+            ),
+        )
+        assertEquals(1, result["A"])
+        assertEquals("hi", result["B"])
+        assertEquals(true, result["C"])
+        assertEquals(BigDecimal("2.5"), result["D"])
+    }
+
+    // -------------------------------------------------------------------------
+    // parseCqlDateTimeValue tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseCqlDateTimeValue parses with at-prefix`() {
+        val dt = parseCqlDateTimeValue("@2024-06-15T00:00:00.000Z")
+        assertEquals("2024-06-15T00:00:00.000Z", dt.valueAsString)
+    }
+
+    @Test
+    fun `parseCqlDateTimeValue parses without at-prefix`() {
+        val dt = parseCqlDateTimeValue("2024-06-15T00:00:00.000Z")
+        assertEquals("2024-06-15T00:00:00.000Z", dt.valueAsString)
+    }
+
+    // -------------------------------------------------------------------------
+    // parseCqlDateValue tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseCqlDateValue parses with at-prefix`() {
+        val d = parseCqlDateValue("@2024-06-15")
+        assertEquals("2024-06-15", d.valueAsString)
+    }
+
+    @Test
+    fun `parseCqlDateValue parses without at-prefix`() {
+        val d = parseCqlDateValue("2024-06-15")
+        assertEquals("2024-06-15", d.valueAsString)
+    }
+
+    // -------------------------------------------------------------------------
+    // parseCqlTimeValue tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseCqlTimeValue parses with at-prefix`() {
+        val t = parseCqlTimeValue("@T12:00:00")
+        assertEquals("T12:00:00", t.valueAsString)
+    }
+
+    @Test
+    fun `parseCqlTimeValue parses without at-prefix`() {
+        val t = parseCqlTimeValue("T12:00:00")
+        assertEquals("T12:00:00", t.valueAsString)
+    }
+
+    // -------------------------------------------------------------------------
+    // parseCqlQuantityValue tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseCqlQuantityValue parses with unit`() {
+        val q = parseCqlQuantityValue("5.4'mg'")
+        assertEquals(BigDecimal("5.4"), q.value)
+        assertEquals("mg", q.unit)
+    }
+
+    @Test
+    fun `parseCqlQuantityValue parses without unit`() {
+        val q = parseCqlQuantityValue("42")
+        assertEquals(BigDecimal("42"), q.value)
+    }
+
+    @Test
+    fun `parseCqlQuantityValue handles invalid numeric part with unit`() {
+        val q = parseCqlQuantityValue("not-a-number'mg'")
+        assertEquals(BigDecimal.ZERO, q.value)
+    }
+
+    // -------------------------------------------------------------------------
+    // createRepository tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `createRepository with null modelPath returns ProxyRepository wrapping NoOpRepository`(@TempDir tempDir: Path) {
+        val repo = createRepository(r4Context, createNoOpRepo(), null)
+        assertInstanceOf(ProxyRepository::class.java, repo)
+    }
+
+    @Test
+    fun `createRepository with modelPath returns ProxyRepository`(@TempDir tempDir: Path) {
+        val dataDir = tempDir.resolve("data")
+        Files.createDirectories(dataDir)
+        val repo = createRepository(r4Context, createNoOpRepo(), dataDir)
+        assertFalse(repo is NoOpRepository, "Model-path repository should not be NoOpRepository")
+    }
+
+    // -------------------------------------------------------------------------
+    // buildCqlOptions tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `buildCqlOptions with null path returns defaults`() {
+        val opts = buildCqlOptions(null)
+        assertNotNull(opts)
+    }
+
+    @Test
+    fun `buildCqlOptions with options path loads from file`(@TempDir tempDir: Path) {
+        val optsFile = tempDir.resolve("cql-options.json")
+        optsFile.toFile().writeText("""{"cqlCompilerOptions": {"compatibilityLevel": "2.0"}}""")
+        assertDoesNotThrow { buildCqlOptions(optsFile.toUri().toString()) }
+    }
+
+    // -------------------------------------------------------------------------
+    // buildEvaluationSettings tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `buildEvaluationSettings returns non-null EvaluationSettings`() {
+        val result = buildEvaluationSettings(CqlOptions.defaultOptions(), null)
+        assertNotNull(result)
+    }
+
+    @Test
+    fun `buildEvaluationSettings preserves passed cqlOptions`() {
+        val opts = CqlOptions.defaultOptions()
+        val result = buildEvaluationSettings(opts, null)
+        assertSame(opts, result.cqlOptions)
+    }
+
+    @Test
+    fun `buildEvaluationSettings sets terminology settings`() {
+        val result = buildEvaluationSettings(CqlOptions.defaultOptions(), null)
+        assertNotNull(result.terminologySettings)
+    }
+
+    @Test
+    fun `buildEvaluationSettings sets retrieve settings`() {
+        val result = buildEvaluationSettings(CqlOptions.defaultOptions(), null)
+        assertNotNull(result.retrieveSettings)
+    }
+
+    @Test
+    fun `buildEvaluationSettings accepts null npmProcessor`() {
+        val result = buildEvaluationSettings(CqlOptions.defaultOptions(), null)
+        assertNull(result.npmProcessor)
+    }
+
+    @Test
+    fun `buildEvaluationSettings accepts non-null npmProcessor`() {
+        val npmProcessor = NpmProcessor(null)
+        val result = buildEvaluationSettings(CqlOptions.defaultOptions(), npmProcessor)
+        assertSame(npmProcessor, result.npmProcessor)
+    }
+
+    // -------------------------------------------------------------------------
+    // CqlSourceStringProvider inner class tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `CqlSourceStringProvider returns source when library id matches`() {
+        val innerClass = CqlEvaluator::class.java.declaredClasses.first { it.simpleName == "CqlSourceStringProvider" }
+        val ctor = innerClass.getDeclaredConstructor(String::class.java, String::class.java)
+        ctor.isAccessible = true
+        val provider = ctor.newInstance("testLib", "define X: 1")
+        val getLibSourceMethod = innerClass.getDeclaredMethod("getLibrarySource", VersionedIdentifier::class.java)
+        getLibSourceMethod.isAccessible = true
+        val result = getLibSourceMethod.invoke(provider, VersionedIdentifier().withId("testLib"))
+        assertNotNull(result)
+    }
+
+    @Test
+    fun `CqlSourceStringProvider returns null when library id does not match`() {
+        val innerClass = CqlEvaluator::class.java.declaredClasses.first { it.simpleName == "CqlSourceStringProvider" }
+        val ctor = innerClass.getDeclaredConstructor(String::class.java, String::class.java)
+        ctor.isAccessible = true
+        val provider = ctor.newInstance("testLib", "define X: 1")
+        val getLibSourceMethod = innerClass.getDeclaredMethod("getLibrarySource", VersionedIdentifier::class.java)
+        getLibSourceMethod.isAccessible = true
+        val result = getLibSourceMethod.invoke(provider, VersionedIdentifier().withId("otherLib"))
+        assertNull(result)
+    }
+
+    // -------------------------------------------------------------------------
+    // Logger inner class tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `Logger logMessage does not throw`() {
+        val innerClass = CqlEvaluator::class.java.declaredClasses.first { it.simpleName == "Logger" }
+        val ctor = innerClass.getDeclaredConstructor()
+        ctor.isAccessible = true
+        val logger = ctor.newInstance()
+        val logMessageMethod = innerClass.getDeclaredMethod("logMessage", String::class.java)
+        logMessageMethod.isAccessible = true
+        assertDoesNotThrow { logMessageMethod.invoke(logger, "test message") }
+    }
+
+    @Test
+    fun `Logger logDebugMessage does not throw`() {
+        val innerClass = CqlEvaluator::class.java.declaredClasses.first { it.simpleName == "Logger" }
+        val ctor = innerClass.getDeclaredConstructor()
+        ctor.isAccessible = true
+        val logger = ctor.newInstance()
+        val logDebugMethod = innerClass.getDeclaredMethod("logDebugMessage", ILoggingService.LogCategory::class.java, String::class.java)
+        logDebugMethod.isAccessible = true
+        assertDoesNotThrow { logDebugMethod.invoke(logger, ILoggingService.LogCategory.INIT, "debug msg") }
+    }
+
+    @Test
+    fun `Logger isDebugLogging returns Boolean`() {
+        val innerClass = CqlEvaluator::class.java.declaredClasses.first { it.simpleName == "Logger" }
+        val ctor = innerClass.getDeclaredConstructor()
+        ctor.isAccessible = true
+        val logger = ctor.newInstance()
+        val isDebugMethod = innerClass.getDeclaredMethod("isDebugLogging")
+        isDebugMethod.isAccessible = true
+        val result = isDebugMethod.invoke(logger)
+        assertInstanceOf(java.lang.Boolean::class.java, result)
+    }
+
+    // -------------------------------------------------------------------------
+    // evaluate — no results expression test
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluate returns Error expression when library evaluation fails`() {
+        val request = ExecuteCqlRequest(
+            fhirVersion = "R4",
+            rootDir = null,
+            optionsPath = null,
+            libraries = listOf(
+                LibraryRequest(
+                    libraryName = "NonExistentLib",
+                    libraryUri = "file:///nonexistent/path",
+                    libraryVersion = "1",
+                    terminologyUri = null,
+                    model = null,
+                    context = null,
+                    parameters = emptyList(),
+                ),
+            ),
+        )
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+        assertEquals(1, response.results.size)
+        val errorExpr = response.results[0].expressions.find { it.name == "Error" }
+        assertNotNull(errorExpr, "Expected an Error expression for a failed library evaluation")
+    }
+
+    // -------------------------------------------------------------------------
+    // evaluate — multiple libraries batching
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluate processes multiple libraries in same request`() {
+        val request = ExecuteCqlRequest(
+            fhirVersion = "R4",
+            rootDir = null,
+            optionsPath = null,
+            libraries = listOf(
+                LibraryRequest("WithParam", "file:///any/path", "1", null, null, null, emptyList()),
+                LibraryRequest("WithDateTimeParam", "file:///any/path", "1", null, null, null, emptyList()),
+            ),
+        )
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+        assertEquals(2, response.results.size)
+        assertTrue(response.results.all { it.expressions.none { e -> e.name == "Error" } })
+    }
+
+    // -------------------------------------------------------------------------
+    // evaluate — null rootDir path
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluate with null rootDir does not throw`() {
+        val request = ExecuteCqlRequest(
+            fhirVersion = "R4",
+            rootDir = null,
+            optionsPath = null,
+            libraries = listOf(
+                LibraryRequest("WithParam", "file:///any/path", "1", null, null, null, emptyList()),
+            ),
+        )
+        assertDoesNotThrow {
+            CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+        }
+    }
+
+    private fun createNoOpRepo(): IRepository = NoOpRepository(r4Context)
 }

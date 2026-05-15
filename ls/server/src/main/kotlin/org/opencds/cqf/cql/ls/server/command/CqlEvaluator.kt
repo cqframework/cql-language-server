@@ -328,19 +328,19 @@ object CqlEvaluator {
         return result
     }
 
-fun tempConvert(value: Any?): String {
+private fun formatValue(value: Any?): String {
         if (value == null) return "null"
 
         return when (value) {
             is Iterable<*> -> {
-                val items = value.joinToString(", ") { tempConvert(it) }
+                val items = value.joinToString(", ") { formatValue(it) }
                 "[$items]"
             }
             is IBaseResource ->
                 value.fhirType() +
                         if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
-            is IBase -> value.fhirType()
             is IBaseDatatype -> value.fhirType()
+            is IBase -> value.fhirType()
             else -> value.toString()
         }
     }
@@ -471,7 +471,7 @@ fun tempConvert(value: Any?): String {
                         ?: RuntimeException("No result or exception found for library ${identifier.id}"))
                 val expressions =
                     result.expressionResults.map { (key, value) ->
-                        ExpressionResult(key, tempConvert(value.value))
+                        ExpressionResult(key, formatValue(value.value))
                     }
 
                 val overriddenNames = libraryRequest.parameters.map { it.parameterName }.toSet()
@@ -489,7 +489,7 @@ fun tempConvert(value: Any?): String {
                             .mapNotNull { paramDef ->
                                 val name = paramDef.name ?: return@mapNotNull null
                                 val stateValue = engine.state.parameters["${identifier.id}.$name"]
-                                if (stateValue != null) DefaultParameterResult(name, tempConvert(stateValue))
+                                if (stateValue != null) DefaultParameterResult(name, formatValue(stateValue))
                                 else null
                             }
                     } else {
