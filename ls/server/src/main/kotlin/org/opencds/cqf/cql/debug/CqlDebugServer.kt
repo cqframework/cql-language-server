@@ -7,6 +7,8 @@ import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.ContinueResponse
 import org.eclipse.lsp4j.debug.DisconnectArguments
+import org.eclipse.lsp4j.debug.EvaluateArguments
+import org.eclipse.lsp4j.debug.EvaluateResponse
 import org.eclipse.lsp4j.debug.ExitedEventArguments
 import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.NextArguments
@@ -80,6 +82,7 @@ open class CqlDebugServer(
         checkState(ServerState.STARTED)
         val capabilities = Capabilities()
         capabilities.supportsConfigurationDoneRequest = true
+        capabilities.supportsEvaluateForHovers = true
 
         setState(ServerState.INITIALIZED)
         return CompletableFuture.completedFuture(capabilities)
@@ -246,6 +249,29 @@ open class CqlDebugServer(
             }
         }.toTypedArray()
         return CompletableFuture.completedFuture(VariablesResponse().also { it.variables = vars })
+    }
+
+    override fun evaluate(args: EvaluateArguments): CompletableFuture<EvaluateResponse> =
+        CompletableFuture.supplyAsync {
+            when (args.context) {
+                "hover" -> handleHoverEvaluate(args.expression, args.frameId)
+                else -> EvaluateResponse().also {
+                    it.result = "N/A"
+                    it.variablesReference = 0
+                }
+            }
+        }
+
+    private fun handleHoverEvaluate(expression: String, frameId: Int?): EvaluateResponse {
+        val snapshot = if (frameId != null && frameId in snapshots.indices) {
+            snapshots.subList(0, frameId + 1).lastOrNull { it.name == expression }
+        } else {
+            snapshots.lastOrNull { it.name == expression }
+        }
+        return EvaluateResponse().also {
+            it.result = snapshot?.value ?: "not available"
+            it.variablesReference = 0
+        }
     }
 
     override fun next(args: NextArguments): CompletableFuture<Void> =
