@@ -159,6 +159,10 @@ class FileContentService(
         // ── Unqualified include — tiered search ─────────────────────────────────
         val containingFolderUri = findContainingFolder(root) ?: return emptySet()
         val config = configProvider.getConfig(root)
+        log.debug(
+            "locate: '{}' version '{}' — root={}, crossProjectSearch={}, mode={}",
+            name, identifier.version, root, config.unqualifiedCrossProjectSearch, config.mode,
+        )
         val version = identifier.version
 
         val tier1File = toFile(root) ?: return emptySet()
@@ -237,7 +241,13 @@ class FileContentService(
         containingFolderUri: URI,
         config: LibraryResolutionConfig,
     ): List<URI> {
-        return namespaceManager.igProjects()
+        val igProjects = namespaceManager.igProjects()
+        log.debug(
+            "tier3FolderUris: containingFolder={}, igProjects=[{}]",
+            containingFolderUri,
+            igProjects.joinToString { "${it.name}(${it.uri})" },
+        )
+        val result = igProjects
             .filter { Uris.parseOrNull(it.uri) != containingFolderUri }
             .filter { it.name !in config.projectSearchExclude }
             .sortedWith(
@@ -250,6 +260,8 @@ class FileContentService(
                 ),
             )
             .mapNotNull { Uris.parseOrNull(it.uri) }
+        log.debug("tier3FolderUris: searching {} project(s): {}", result.size, result)
+        return result
     }
 
     /**

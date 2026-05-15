@@ -26,7 +26,8 @@ import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.cqframework.cql.cql2elm.model.CompiledLibrary
 import org.cqframework.fhir.utilities.IGContext
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
-import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider
+import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
+import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.fhir.cql.CqlOptions
 import org.opencds.cqf.cql.engine.execution.EvaluationResults
@@ -238,21 +239,13 @@ object CqlEvaluator {
 
     private fun createRepository(
         fhirContext: FhirContext,
-        terminologyPath: java.nio.file.Path?,
+        terminologyRepo: IRepository,
         modelPath: java.nio.file.Path?,
     ): IRepository {
-        if (terminologyPath == null && modelPath == null) {
-            return NoOpRepository(fhirContext)
-        }
-    
         val data: IRepository =
             if (modelPath != null) IgStandardRepository(fhirContext, modelPath) else NoOpRepository(fhirContext)
-        val terminology: IRepository =
-            if (terminologyPath != null) IgStandardRepository(fhirContext, terminologyPath) else NoOpRepository(fhirContext)
-        
-        // For now, return the data repository as the primary repository for the engine
-        // TODO: Consider combining data and terminology repositories if needed
-        return data
+        // ProxyRepository routes search(ValueSet/CodeSystem) → terminology, everything else → data.
+        return ProxyRepository(data, data, terminologyRepo)
     }
 
     private fun coerceParameters(parameters: List<ParameterRequest>): MutableMap<String, Any?> {
@@ -409,7 +402,6 @@ fun tempConvert(value: Any?): String {
                 val libraryKotlinPath = if (libraryUri != null) Path(Paths.get(libraryUri).toString()) else null
 
                 val modelPath = libraryRequest.model?.modelUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
-                val terminologyPath = libraryRequest.terminologyUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
 
                 // evaluationSettings is constructed once per evaluate() call above — its
                 // librarySourceProviders list is empty at this point.
@@ -418,7 +410,7 @@ fun tempConvert(value: Any?): String {
                 evaluationSettings.librarySourceProviders.clear()
                 if (libraryUri != null) {
                     evaluationSettings.librarySourceProviders.add(
-                        ContentServiceSourceProvider(libraryUri, contentService),
+                        FederatedLibrarySourceProvider(libraryUri, contentService, npmProcessor),
                     )
                 } else if (libraryKotlinPath != null) {
                     evaluationSettings.librarySourceProviders.add(
@@ -426,7 +418,7 @@ fun tempConvert(value: Any?): String {
                     )
                 }
 
-                val repository = createRepository(fhirContext, terminologyPath, modelPath)
+                val repository = createRepository(fhirContext, terminologyRepo, modelPath)
                 val engine = Engines.forRepository(repository, evaluationSettings)
 
                 // Set up npm packages on the engine's LibraryManager when NpmProcessor was not set
@@ -570,29 +562,26 @@ fun tempConvert(value: Any?): String {
             grouped.getOrPut(key) { mutableListOf() }.add(lib)
         }
 
-        // Shared across batches — created once per unique key for the lifetime of this request.
-        // terminologyRepos: the IgStandardRepository.typeResourceCache on a shared instance
-        //   means the ValueSet directory is scanned at most once per unique path.
+        // Build one federated terminology repository for the lifetime of this request.
+        // FederatedTerminologyRepo holds one IgStandardRepository per workspace project;
+        // each IgStandardRepository caches its directory scan, so ValueSet lookups are
+        // O(1) after the first search for each project.  This covers both the primary
+        // project's vocabulary and any helper-library projects' vocabulary directories.
+        val terminologyRepo: IRepository = run {
+            val inputPaths = libraryResolutionManager.getInputDirectories()
+            if (inputPaths.isEmpty()) NoOpRepository(fhirContext)
+            else FederatedTerminologyRepo(fhirContext, inputPaths)
+        }
+
         // libraryCaches: compiled ELM (FHIRHelpers, QICore, etc.) produced by one batch is
         //   reused by subsequent batches without recompilation. Safe because VersionedIdentifier
         //   includes the library's own namespace URI, so same name+version always means same ELM.
         //   Each batch gets its own fresh EvaluationSettings; only the libraryCache map is injected
         //   as shared so that valueSetCache, modelCache, etc. remain independent per batch.
-        val terminologyRepos = mutableMapOf<String?, IRepository>()
         val libraryCaches = mutableMapOf<String?, ConcurrentHashMap<VersionedIdentifier, CompiledLibrary>>()
 
         val allResults =
             grouped.values.flatMap { batch ->
-                val terminologyUri = batch.first().terminologyUri
-                val terminologyRepo =
-                    terminologyRepos.getOrPut(terminologyUri) {
-                        val path = terminologyUri?.let { Paths.get(Uris.parseOrNull(it)!!) }
-                        if (path != null) {
-                            IgStandardRepository(fhirContext, path)
-                        } else {
-                            NoOpRepository(fhirContext)
-                        }
-                    }
                 val sharedLibraryCache = libraryCaches.getOrPut(request.optionsPath) { ConcurrentHashMap() }
                 val evaluationSettings =
                     buildEvaluationSettings(

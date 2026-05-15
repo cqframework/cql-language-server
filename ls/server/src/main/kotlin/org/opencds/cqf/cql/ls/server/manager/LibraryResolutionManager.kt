@@ -46,6 +46,26 @@ open class LibraryResolutionManager(
         getOrBuildNamespaceIndex()[canonicalUrl]?.inputCqlUri
 
     /**
+     * Returns the `input/` directory path for each indexed workspace project.
+     * Used by [org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo]
+     * to search vocabulary across all workspace projects during Execute CQL.
+     *
+     * Derivation: each entry's [NamespaceEntry.inputCqlUri] points to `{project}/input/cql`.
+     * One [Uris.getHead] call yields `{project}/input/`, which is the correct root for
+     * [org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository] —
+     * it will resolve `{project}/input/vocabulary/` automatically via convention detection.
+     */
+    fun getInputDirectories(): List<java.nio.file.Path> =
+        getOrBuildNamespaceIndex().values.mapNotNull { entry ->
+            try {
+                Paths.get(Uris.getHead(entry.inputCqlUri))
+            } catch (e: Exception) {
+                log.warn("Could not derive input directory from {}: {}", entry.inputCqlUri, e.message)
+                null
+            }
+        }
+
+    /**
      * Registers the package-ID namespaces of all workspace projects that have ig.ini into the
      * given library manager. Must be called AFTER [IgContextManager.setupLibraryManager] so that
      * [org.hl7.cql.model.NamespaceManager.ensureNamespaceRegistered] is a safe no-op for any
@@ -54,7 +74,21 @@ open class LibraryResolutionManager(
     fun registerWorkspaceNamespaces(libraryManager: LibraryManager) {
         val namespaceManager = libraryManager.namespaceManager
         for ((_, entry) in getOrBuildNamespaceIndex()) {
-            namespaceManager.ensureNamespaceRegistered(entry.namespaceInfo)
+            try {
+                namespaceManager.ensureNamespaceRegistered(entry.namespaceInfo)
+            } catch (e: IllegalStateException) {
+                // Two workspace projects share the same canonical base URL but have different
+                // package IDs (e.g. both use https://example.org).  NamespaceManager.addNamespace
+                // throws when a URI is already registered under a different name.  Log and skip —
+                // the first registration wins; the second is a duplicate-URI project and its
+                // namespace-qualified includes will not resolve from this compilation context.
+                log.warn(
+                    "Skipping namespace '{}' (uri='{}') — URI already registered under a different name: {}",
+                    entry.namespaceInfo.name,
+                    entry.namespaceInfo.uri,
+                    e.message,
+                )
+            }
         }
     }
 
@@ -75,9 +109,11 @@ open class LibraryResolutionManager(
 
     private fun buildNamespaceIndex(): Map<String, NamespaceEntry> {
         val result = mutableMapOf<String, NamespaceEntry>()
+        log.debug("buildNamespaceIndex: scanning {} workspace folder(s)", workspaceFolders.size)
         for (w in workspaceFolders) {
             val folderUri = Uris.parseOrNull(w.uri) ?: continue
             val folderFile = try { Paths.get(folderUri).toFile() } catch (e: Exception) { continue }
+            log.debug("buildNamespaceIndex: folder '{}' → {}", w.name, folderFile)
 
             // Check both the workspace folder root and one level of subdirectories.
             // Multi-project workspaces (e.g. PAS-sample-structure-r4/{Common,Policy2,...})
@@ -109,12 +145,17 @@ open class LibraryResolutionManager(
                     val inputCqlUri = Uris.addPath(dirUri, "input")
                         ?.let { Uris.addPath(it, "cql") }
                         ?: continue
+                    log.debug(
+                        "buildNamespaceIndex: indexed '{}' (canonical='{}', inputCql={})",
+                        packageId, canonicalBase, inputCqlUri,
+                    )
                     result[nsInfo.uri] = NamespaceEntry(nsInfo, inputCqlUri, effectiveFolder)
                 } catch (e: Exception) {
                     log.warn("Failed to read ig context from {}: {}", igIniFile.path, e.message)
                 }
             }
         }
+        log.debug("buildNamespaceIndex: total {} namespace(s) indexed", result.size)
         return result
     }
 }

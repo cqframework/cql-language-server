@@ -1,5 +1,7 @@
 package org.opencds.cqf.cql.ls.server.manager
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.cqframework.cql.cql2elm.LibraryManager
 import org.cqframework.fhir.npm.ILibraryReader
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider
@@ -10,18 +12,24 @@ import org.cqframework.fhir.utilities.LoggerAdapter
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.hl7.cql.model.NamespaceInfo
+import org.hl7.fhir.utilities.npm.FilesystemPackageCacheManager
 import org.hl7.fhir.utilities.npm.NpmPackage
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.GZIPOutputStream
 
-class IgContextManager(private val contentService: ContentService) {
+open class IgContextManager(private val contentService: ContentService) {
     companion object {
         private val log = LoggerFactory.getLogger(IgContextManager::class.java)
         private val FHIR_CACHE_DIR = File(System.getProperty("user.home"), ".fhir/packages")
@@ -48,14 +56,19 @@ class IgContextManager(private val contentService: ContentService) {
         val igContext = findIgContext(rootUri) ?: return Optional.empty()
         cachedIgContext[rootUri] = Optional.of(igContext)
         return try {
+            val fspcm = FilesystemPackageCacheManager.Builder().build()
+            prewarmLocalDependencies(igContext, fspcm)
             Optional.of(NpmProcessor(igContext))
         } catch (e: Exception) {
             // Truncate before the '{...}' build-server map that the underlying library appends —
             // it can be thousands of characters and adds no actionable information.
             val shortMsg = e.message?.substringBefore(" {")?.substringBefore(" (") ?: e.javaClass.simpleName
-            log.warn("Failed to initialize NpmProcessor for {}: {}. " +
-                "Declared dependencies not in ~/.fhir/packages/ will be skipped; cached packages will still be used.",
-                rootUri, shortMsg)
+            log.warn(
+                "Failed to initialize NpmProcessor for {}: {}. " +
+                    "Declared dependencies not in ~/.fhir/packages/ will be skipped; cached packages will still be used.",
+                rootUri,
+                shortMsg,
+            )
             Optional.empty()
         }
     }
@@ -77,16 +90,19 @@ class IgContextManager(private val contentService: ContentService) {
         }
     }
 
-    private fun setupWithNpmProcessor(npmProcessor: NpmProcessor, libraryManager: LibraryManager) {
+    private fun setupWithNpmProcessor(
+        npmProcessor: NpmProcessor,
+        libraryManager: LibraryManager,
+    ) {
         val namespaceManager = libraryManager.namespaceManager
         npmProcessor.igNamespace?.let { namespaceManager.ensureNamespaceRegistered(it) }
         val fhirVersion = npmProcessor.igContext?.fhirVersion ?: return
         val reader: ILibraryReader = org.cqframework.fhir.npm.LibraryLoader(fhirVersion)
         val adapter = LoggerAdapter(log)
         val npmList = npmProcessor.getPackageManager().npmList
-        libraryManager.librarySourceLoader.registerProvider(
-            NpmLibrarySourceProvider(npmList, reader, adapter),
-        )
+        // NpmLibrarySourceProvider is intentionally NOT registered here — FederatedLibrarySourceProvider
+        // (registered in CqlCompilationManager) handles library source lookup for the NPM tier.
+        // Registering it here too would cause duplicate resolution and unpredictable ordering.
         libraryManager.modelManager.modelInfoLoader.registerModelInfoProvider(
             NpmModelInfoProvider(npmList, reader, adapter),
         )
@@ -102,14 +118,19 @@ class IgContextManager(private val contentService: ContentService) {
         }
     }
 
-    private fun setupWithAvailablePackages(igContext: IGContext, libraryManager: LibraryManager) {
+    private fun setupWithAvailablePackages(
+        igContext: IGContext,
+        libraryManager: LibraryManager,
+    ) {
         val deps = igContext.sourceIg?.dependsOn ?: return
         val availablePackages = mutableListOf<NpmPackage>()
 
         for (dep in deps) {
             val packageId = dep.packageId?.takeIf { it.isNotEmpty() } ?: continue
             val version = dep.version?.takeIf { it.isNotEmpty() } ?: continue
-            val packageDir = File(FHIR_CACHE_DIR, "$packageId#$version")
+            // For "dev" dependencies, the pre-warm installed them as "current" in the cache.
+            val cacheVersion = if (version == "dev") "current" else version
+            val packageDir = File(FHIR_CACHE_DIR, "$packageId#$cacheVersion")
             if (!packageDir.exists()) {
                 log.debug("Skipping dependency {} version {} — not in local FHIR package cache", packageId, version)
                 continue
@@ -143,26 +164,107 @@ class IgContextManager(private val contentService: ContentService) {
         }
     }
 
-    protected fun findIgContext(uri: URI): IGContext? {
+    protected open fun findIgContext(uri: URI): IGContext? {
         log.info("Searching for ini file in {}", uri)
         var current = uri
-        for (i in 0 until 2) {
+        while (true) {
             val parent = Uris.getHead(current)
-            if (parent != current) {
-                current = parent
-                val igIniPath = Uris.addPath(parent, "/ig.ini") ?: continue
-                log.info("Attempting to read ini from path {}", igIniPath)
-                val input = contentService.read(igIniPath)
-                if (input != null) {
-                    log.info("Initializing ig from ini...")
-                    val igContext = IGContext(LoggerAdapter(log))
-                    igContext.initializeFromIni(Paths.get(igIniPath).toString())
-                    log.info("IGContext Initialized.")
-                    return igContext
-                }
+            if (parent == current) break
+            current = parent
+            val igIniPath = Uris.addPath(parent, "/ig.ini") ?: continue
+            log.info("Attempting to read ini from path {}", igIniPath)
+            val input = contentService.read(igIniPath)
+            if (input != null) {
+                log.info("Initializing ig from ini...")
+                val igContext = IGContext(LoggerAdapter(log))
+                igContext.initializeFromIni(Paths.get(igIniPath).toString())
+                log.info("IGContext Initialized.")
+                return igContext
             }
         }
         return null
+    }
+
+    private fun prewarmLocalDependencies(
+        igContext: IGContext,
+        fspcm: FilesystemPackageCacheManager,
+    ) {
+        val ig = igContext.sourceIg ?: return
+        val rootDir = igContext.rootDir ?: return
+        val workspaceRoot = Paths.get(rootDir).parent ?: return
+
+        for (dep in ig.dependsOn) {
+            if (!dep.hasPackageId() || dep.version != "dev") continue
+            val depPackageId = dep.packageId
+
+            val localIgContext = findLocalProject(workspaceRoot, depPackageId) ?: continue
+            val canonical = localIgContext.canonicalBase ?: continue
+            val fhirVersion = localIgContext.fhirVersion ?: "4.0.1"
+
+            log.info(
+                "Pre-warming cache for local package {} (FHIR {}) from {}",
+                depPackageId,
+                fhirVersion,
+                localIgContext.rootDir,
+            )
+            try {
+                val tgz = buildMinimalPackageTgz(depPackageId, canonical, fhirVersion)
+                fspcm.addPackageToCache(depPackageId, "current", tgz.inputStream(), "local workspace")
+            } catch (e: Exception) {
+                log.warn("Failed to pre-warm cache for {}: {}", depPackageId, e.message)
+                // Non-fatal — NpmPackageManager will fall through to setupWithAvailablePackages
+            }
+        }
+    }
+
+    private fun findLocalProject(workspaceRoot: Path, packageId: String): IGContext? {
+        val dirs =
+            try {
+                Files.list(workspaceRoot).filter { Files.isDirectory(it) }.toList()
+            } catch (e: IOException) {
+                return null
+            }
+        for (dir in dirs) {
+            val igIniPath = dir.resolve("ig.ini")
+            if (!igIniPath.toFile().exists()) continue
+            try {
+                val candidate = IGContext(LoggerAdapter(log))
+                candidate.initializeFromIni(igIniPath.toString())
+                if (candidate.packageId == packageId) return candidate
+            } catch (e: Exception) {
+                // malformed ig.ini in a sibling project — skip
+            }
+        }
+        return null
+    }
+
+    private fun buildMinimalPackageTgz(
+        packageId: String,
+        canonical: String,
+        fhirVersion: String,
+    ): ByteArray {
+        val packageJson =
+            """
+            {
+              "name": "$packageId",
+              "version": "current",
+              "canonical": "$canonical",
+              "fhirVersions": ["$fhirVersion"]
+            }
+            """.trimIndent().toByteArray(Charsets.UTF_8)
+
+        val baos = ByteArrayOutputStream()
+        GZIPOutputStream(baos).use { gzip ->
+            TarArchiveOutputStream(gzip).use { tar ->
+                tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU)
+                val entry = TarArchiveEntry("package/package.json")
+                entry.size = packageJson.size.toLong()
+                tar.putArchiveEntry(entry)
+                tar.write(packageJson)
+                tar.closeArchiveEntry()
+            }
+        }
+        return baos.toByteArray()
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC)

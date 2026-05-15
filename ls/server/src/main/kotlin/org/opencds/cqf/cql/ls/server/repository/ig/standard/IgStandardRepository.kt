@@ -322,8 +322,15 @@ open class IgStandardRepository : IRepository {
                     .map { it!! }
                     .forEach { r ->
                         if (r.fhirType() != resourceClass.simpleName) return@forEach
-                        val validated = validateResource(resourceClass, r, r.idElement)
-                        resources[r.idElement.toUnqualifiedVersionless()] = validated
+                        if (!r.idElement.hasIdPart()) {
+                            log.warn(
+                                "Skipping {} resource with no id at path: {}",
+                                r.fhirType(),
+                                r.getUserData(SOURCE_PATH_TAG),
+                            )
+                            return@forEach
+                        }
+                        resources[r.idElement.toUnqualifiedVersionless()] = resourceClass.cast(r)
                     }
             }
         } catch (e: IOException) {

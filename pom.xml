@@ -172,6 +172,19 @@
                 <version>3.3.1</version>
             </dependency>
 
+            <!--
+                Pin commons-compress to 1.27.1: fhir-utilities:6.7.9 (from HAPI FHIR) is
+                compiled against 1.27.1 (its parent BOM) and calls TarArchiveInputStream
+                .getNextEntry() expecting a TarArchiveEntry covariant return that only
+                exists in 1.27.1+. Without this pin, cqf-fhir-npm:4.8.0 drags in 1.24.0,
+                which is missing that method signature and causes NoSuchMethodError.
+            -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>1.27.1</version>
+            </dependency>
+
             <dependency>
                 <groupId>jakarta.xml.bind</groupId>
                 <artifactId>jakarta.xml.bind-api</artifactId>

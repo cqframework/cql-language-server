@@ -13,7 +13,7 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
-import org.opencds.cqf.cql.ls.server.provider.ContentServiceSourceProvider
+import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.slf4j.LoggerFactory
 import java.io.InputStream
 import java.net.URI
@@ -57,8 +57,16 @@ class CqlCompilationManager(
     private val indexLock = ReentrantReadWriteLock()
 
     fun compile(uri: URI): CqlCompiler? {
-        compilationCache[uri]?.let { return it }
-        val input = contentService.read(uri) ?: return null
+        compilationCache[uri]?.let {
+            log.debug("compile: cache hit for {}", uri)
+            return it
+        }
+        val input = contentService.read(uri)
+        if (input == null) {
+            log.debug("compile: contentService.read() returned null for {}", uri)
+            return null
+        }
+        log.debug("compile: starting fresh compilation for {}", uri)
         return compile(uri, input)
     }
 
@@ -70,6 +78,12 @@ class CqlCompilationManager(
         val libraryManager = createLibraryManager(Uris.getHead(uri), modelManager)
         val compiler = CqlCompiler(null, null, libraryManager)
         compiler.run(Converters.inputStreamToString(stream))
+        log.debug(
+            "compile: finished for {}; library={}, exceptions={}",
+            uri,
+            compiler.library?.identifier?.id,
+            compiler.exceptions?.size,
+        )
         compilationCache[uri] = compiler
         updateIndex(uri, compiler)
         return compiler
@@ -132,7 +146,7 @@ class CqlCompilationManager(
         val libraryManager = LibraryManager(modelManager, compilerOptionsManager.getOptions(root))
         // Priority: local files (1) → npm packages (2) → bundled FHIRHelpers (3 — lowest)
         libraryManager.librarySourceLoader.registerProvider(
-            ContentServiceSourceProvider(root, contentService),
+            FederatedLibrarySourceProvider(root, contentService, igContextManager.getContext(root)),
         )
         igContextManager.setupLibraryManager(root, libraryManager)         // registers npm (2)
         // Register other workspace projects' namespaces AFTER npm so ensureNamespaceRegistered

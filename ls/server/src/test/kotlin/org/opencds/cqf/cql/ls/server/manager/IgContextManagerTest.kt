@@ -312,19 +312,39 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
-    // findIgContext depth limit — only searches 2 parent levels
+    // readContext — NpmProcessor construction failure → null, not exception
     // -----------------------------------------------------------------------
 
     @Test
-    fun getContext_igIniOnlyAtThirdParentLevel_returnsNull() {
-        // For URI file:///workspace/a/b/c/d.cql:
-        //   root passed to findIgContext = file:///workspace/a/b/c
-        //   i=0: parent = file:///workspace/a/b → probes file:///workspace/a/b/ig.ini
-        //   i=1: parent = file:///workspace/a   → probes file:///workspace/a/ig.ini
-        //   NOT probed: file:///workspace/ig.ini  (would require a 3rd iteration)
+    fun getContext_npmProcessorConstructionFails_returnsNull() {
+        // An uninitialized IGContext has sourceIg == null.
+        // NpmProcessor's init block calls `NpmPackageManager(igContext.sourceIg!!)`, which
+        // throws NullPointerException.  The fix in readContext must catch this and return
+        // Optional.empty() so that getContext() returns null instead of propagating the exception.
+        val manager =
+            object : IgContextManager(TestContentService()) {
+                override fun findIgContext(uri: URI): org.cqframework.fhir.utilities.IGContext =
+                    org.cqframework.fhir.utilities.IGContext()
+            }
+        val result = manager.getContext(TEST_URI)
+        assertNull(result, "getContext should return null when NpmProcessor construction fails")
+    }
+
+    // -----------------------------------------------------------------------
+    // findIgContext — unbounded upward search, no fixed depth limit
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getContext_igIniAtArbitraryDepth_isProbed() {
+        // Verify the search walks all ancestor directories rather than stopping at a fixed depth.
+        // ContentService always returns null so findIgContext returns null and NpmProcessor
+        // is never constructed — but the recorded probe list reveals how far the search went.
         //
-        // Providing non-null only for file:///workspace/ig.ini should yield null.
-        val tooDeepIgIni = Uris.parseOrNull("file:///workspace/ig.ini")!!
+        // For URI file:///workspace/a/b/c/d/e.cql:
+        //   root = file:///workspace/a/b/c/d
+        //   loop probes: .../c/ig.ini, .../b/ig.ini, .../a/ig.ini, workspace/ig.ini
+        //   loop terminates when getHead stops making progress (filesystem root)
+        val probed = mutableListOf<URI>()
         val cs =
             object : ContentService {
                 override fun locate(
@@ -332,11 +352,19 @@ class IgContextManagerTest {
                     identifier: VersionedIdentifier,
                 ) = emptySet<URI>()
 
-                override fun read(uri: URI): InputStream? = if (uri == tooDeepIgIni) "content".byteInputStream() else null
+                override fun read(uri: URI): InputStream? {
+                    probed.add(uri)
+                    return null
+                }
             }
         val localManager = IgContextManager(cs)
-        val result = localManager.getContext(Uris.parseOrNull("file:///workspace/a/b/c/d.cql")!!)
-        assertNull(result, "ig.ini beyond the 2-level search depth should not be found")
+        localManager.getContext(Uris.parseOrNull("file:///workspace/a/b/c/d/e.cql")!!)
+
+        val probedStrings = probed.map { it.toString() }
+        assertTrue(
+            probedStrings.any { it.contains("workspace/ig.ini") },
+            "Search should probe up to the workspace root regardless of nesting depth. Probed: $probed",
+        )
     }
 
     // -----------------------------------------------------------------------
