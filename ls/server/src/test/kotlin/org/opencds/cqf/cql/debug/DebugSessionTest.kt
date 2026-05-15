@@ -1,4 +1,4 @@
-package org.opencds.cqf.cql.ls.plugin.debug.session
+package org.opencds.cqf.cql.debug
 
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
 import org.eclipse.lsp4j.debug.DisconnectArguments
@@ -8,18 +8,30 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
-import org.opencds.cqf.cql.ls.plugin.debug.client.TestDebugClient
+import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.debug.TestDebugClient
 import java.net.Socket
 
 class DebugSessionTest {
-    // This test starts a Debug session on a background thread
-    // which listens at a random socket. It creates a dummy client to
-    // connect to that socket.
     @Test
     fun simpleSessionTest() {
-        val session = DebugSession()
+        val cs =
+            object : ContentService {
+                override fun locate(
+                    root: java.net.URI,
+                    identifier: org.hl7.elm.r1.VersionedIdentifier,
+                ) = emptySet<java.net.URI>()
 
-        // This starts a debug session on another thread
+                override fun read(uri: java.net.URI): java.io.InputStream? = null
+            }
+        val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+        val debugServer = CqlDebugServer(cm, cs, IgContextManager(cs), LibraryResolutionManager(emptyList()))
+        val session = DebugSession(debugServer)
+
         val port: Int = session.start().join()
         val client = TestDebugClient()
 

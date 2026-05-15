@@ -1,17 +1,22 @@
-package org.opencds.cqf.cql.ls.plugin.debug
+package org.opencds.cqf.cql.debug
 
 import org.eclipse.lsp4j.ExecuteCommandParams
-import org.opencds.cqf.cql.ls.plugin.debug.session.DebugSession
+import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
 import org.opencds.cqf.cql.ls.server.utility.Futures
 import java.util.concurrent.CompletableFuture
 
 class DebugCommandContribution(
-    private val cqlCompilationManager: CqlCompilationManager,
+    private val compilationManager: CqlCompilationManager,
+    private val contentService: ContentService,
+    private val igContextManager: IgContextManager,
+    private val libraryResolutionManager: LibraryResolutionManager,
 ) : CommandContribution {
     companion object {
-        const val START_DEBUG_COMMAND = "org.opencds.cqf.cql.ls.plugin.debug.startDebugSession"
+        const val START_DEBUG_COMMAND = "org.opencds.cqf.cql.debug.startDebugSession"
     }
 
     private var debugSession: DebugSession? = null
@@ -24,7 +29,9 @@ class DebugCommandContribution(
         if (START_DEBUG_COMMAND == params.command) {
             val session = debugSession
             if (session == null || !session.isActive()) {
-                val newSession = DebugSession()
+                val newSession = DebugSession(
+                    CqlDebugServer(compilationManager, contentService, igContextManager, libraryResolutionManager),
+                )
                 debugSession = newSession
                 return try {
                     CompletableFuture.completedFuture(newSession.start().get())

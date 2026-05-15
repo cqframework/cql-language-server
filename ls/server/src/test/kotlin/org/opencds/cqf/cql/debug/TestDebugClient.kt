@@ -1,4 +1,4 @@
-package org.opencds.cqf.cql.ls.plugin.debug.client
+package org.opencds.cqf.cql.debug
 
 import org.eclipse.lsp4j.debug.ExitedEventArguments
 import org.eclipse.lsp4j.debug.OutputEventArguments
@@ -17,7 +17,6 @@ class TestDebugClient : IDebugProtocolClient {
     override fun initialized() {}
 
     override fun output(args: OutputEventArguments) {
-        // this.serverOutput = args.output
     }
 
     override fun exited(args: ExitedEventArguments) {

@@ -1,7 +1,6 @@
-package org.opencds.cqf.cql.ls.plugin.debug.session
+package org.opencds.cqf.cql.debug
 
 import org.eclipse.lsp4j.debug.launch.DSPLauncher
-import org.opencds.cqf.cql.debug.CqlDebugServer
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.ServerSocket
@@ -10,13 +9,13 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class DebugSession {
+class DebugSession(
+    private val debugServer: CqlDebugServer,
+) {
     companion object {
         private val log = LoggerFactory.getLogger(DebugSession::class.java)
         private val threadService: ExecutorService = Executors.newCachedThreadPool()
     }
-
-    private val debugServer: CqlDebugServer = CqlDebugServer()
 
     @Volatile
     private var isActiveFlag: Boolean = false
@@ -29,10 +28,6 @@ class DebugSession {
         }
         startListening()
         return this.port
-    }
-
-    fun getDebugServer(): CqlDebugServer {
-        return this.debugServer
     }
 
     fun isActive(): Boolean {
@@ -48,15 +43,14 @@ class DebugSession {
                     val s = serverSocket.accept()
                     val launcher =
                         DSPLauncher.createServerLauncher(
-                            this.getDebugServer(),
+                            this.debugServer,
                             s.getInputStream(),
                             s.getOutputStream(),
                         )
-                    this.getDebugServer().connect(launcher.remoteProxy)
+                    this.debugServer.connect(launcher.remoteProxy)
 
-                    // We'll exit the server when the client disconnects.
                     val serverThread = launcher.startListening()
-                    this.getDebugServer().exited().get()
+                    this.debugServer.exited().get()
                     serverThread.cancel(true)
                 }
             } catch (e: IOException) {

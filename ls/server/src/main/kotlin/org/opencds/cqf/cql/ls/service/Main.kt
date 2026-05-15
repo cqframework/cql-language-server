@@ -16,6 +16,7 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.JsonLibraryResolutionConfigProvider
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
+import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
 import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
@@ -83,6 +84,9 @@ fun main(args: Array<String>) {
     val contributions = mutableListOf<CommandContribution>()
     contributions.add(ViewElmCommandContribution(compilationManager))
     contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
+    contributions.add(
+        DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
+    )
     commandsFuture.complete(contributions)
 
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService)
