@@ -16,6 +16,7 @@ import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import java.io.File
+import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicInteger
 
 class LibraryResolutionManagerTest {
@@ -113,6 +114,38 @@ class LibraryResolutionManagerTest {
     }
 
     // -----------------------------------------------------------------------
+    // igProjects — ig.ini nested more than one level deep is NOT discovered.
+    // buildNamespaceIndex scans only root + immediate subdirectories.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun igProjects_igIniInGrandchild_notDiscovered(@TempDir tempDir: File) {
+        val child = File(tempDir, "child").also { it.mkdirs() }
+        val grandchild = File(child, "grandchild").also { it.mkdirs() }
+        File(grandchild, "ig.ini").writeText("")
+        val m = manager(
+            tempDir,
+            infoByDir = mapOf(grandchild.absolutePath to ("pkg" to "https://example.org")),
+        )
+
+        assertTrue(m.igProjects().isEmpty(), "ig.ini nested more than one level deep should not be discovered")
+    }
+
+    // -----------------------------------------------------------------------
+    // igProjects — malformed workspace folder URI is silently skipped
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun igProjects_malformedWorkspaceFolderUri_skipsFolder() {
+        val m = object : LibraryResolutionManager(listOf(WorkspaceFolder("not a valid URI !!!", "bad"))) {
+            override fun readIgContextInfo(igIniFile: File): Pair<String, String>? = null
+        }
+
+        assertDoesNotThrow { m.igProjects() }
+        assertTrue(m.igProjects().isEmpty())
+    }
+
+    // -----------------------------------------------------------------------
     // igProjects — ig.ini at root AND in a subdirectory → both returned
     // -----------------------------------------------------------------------
 
@@ -146,8 +179,7 @@ class LibraryResolutionManagerTest {
 
         val resolved = m.resolveCanonicalUrl("https://example.org/ig")
         assertNotNull(resolved)
-        assertTrue(resolved.toString().endsWith("input/cql/") || resolved.toString().endsWith("input/cql"))
-        assertTrue(resolved.toString().contains(tempDir.name))
+        assertEquals(tempDir.toPath().resolve("input/cql"), Paths.get(resolved!!))
     }
 
     // -----------------------------------------------------------------------
@@ -163,6 +195,58 @@ class LibraryResolutionManagerTest {
         )
 
         assertNull(m.resolveCanonicalUrl("https://different.org/other"))
+    }
+
+    // -----------------------------------------------------------------------
+    // getInputDirectories — empty workspace returns empty list
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getInputDirectories_emptyWorkspace_returnsEmptyList() {
+        assertTrue(manager().getInputDirectories().isEmpty())
+    }
+
+    // -----------------------------------------------------------------------
+    // getInputDirectories — one project returns its input/ path
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getInputDirectories_oneProject_returnsInputPath(@TempDir tempDir: File) {
+        File(tempDir, "ig.ini").writeText("")
+        val m = manager(
+            tempDir,
+            infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
+        )
+
+        val dirs = m.getInputDirectories()
+        assertEquals(1, dirs.size)
+        assertEquals(tempDir.toPath().resolve("input"), dirs[0])
+    }
+
+    // -----------------------------------------------------------------------
+    // getInputDirectories — two projects return two distinct input/ paths
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getInputDirectories_twoProjects_returnsTwoPaths(
+        @TempDir dir1: File,
+        @TempDir dir2: File,
+    ) {
+        File(dir1, "ig.ini").writeText("")
+        File(dir2, "ig.ini").writeText("")
+        val m = manager(
+            dir1,
+            dir2,
+            infoByDir = mapOf(
+                dir1.absolutePath to ("pkg.one" to "https://one.example.org"),
+                dir2.absolutePath to ("pkg.two" to "https://two.example.org"),
+            ),
+        )
+
+        val dirs = m.getInputDirectories()
+        assertEquals(2, dirs.size)
+        assertTrue(dirs.contains(dir1.toPath().resolve("input")))
+        assertTrue(dirs.contains(dir2.toPath().resolve("input")))
     }
 
     // -----------------------------------------------------------------------
