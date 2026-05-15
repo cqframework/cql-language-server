@@ -16,8 +16,11 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.JsonLibraryResolutionConfigProvider
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
+import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
+import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider
+import org.opencds.cqf.cql.ls.server.provider.ReferencesProvider
 import org.opencds.cqf.cql.ls.server.service.ActiveContentService
 import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService
 import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService
@@ -63,9 +66,12 @@ fun main(args: Array<String>) {
     val textDocumentService =
         CqlTextDocumentService(
             languageClientFuture,
-            HoverProvider(compilationManager),
+            HoverProvider(compilationManager, federatedContentService),
             FormattingProvider(federatedContentService),
             eventBus,
+            DefinitionProvider(compilationManager, federatedContentService),
+            DocumentSymbolProvider(compilationManager),
+            ReferencesProvider(compilationManager, federatedContentService),
         )
 
     val contributions = mutableListOf<CommandContribution>()

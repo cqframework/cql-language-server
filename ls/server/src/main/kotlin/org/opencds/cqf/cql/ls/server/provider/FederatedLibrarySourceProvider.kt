@@ -41,22 +41,17 @@ class FederatedLibrarySourceProvider(
     private val npmProvider: NpmLibrarySourceProvider? =
         if (npmProcessor?.igContext != null) {
             val fhirVersion = npmProcessor.igContext!!.fhirVersion
-            if (fhirVersion != null) {
-                val reader: ILibraryReader = LibraryLoader(fhirVersion)
-                NpmLibrarySourceProvider(npmProcessor.getPackageManager().npmList, reader, LoggerAdapter(log))
-            } else {
-                log.warn("igContext.fhirVersion is null for {}; NPM resolution disabled", root)
-                null
-            }
+            val reader: ILibraryReader = LibraryLoader(fhirVersion)
+            NpmLibrarySourceProvider(npmProcessor.getPackageManager().npmList, reader, LoggerAdapter(log))
         } else {
             null
         }
 
-    override fun getLibrarySource(identifier: VersionedIdentifier): Source? =
+    override fun getLibrarySource(libraryIdentifier: VersionedIdentifier): Source? =
         // Tiers 1 + 2: same-project then cross-project (FileContentService.locate() decides scope)
-        contentServiceSource(identifier)
+        contentServiceSource(libraryIdentifier)
         // Tier 3: NPM packages
-        ?: npmProvider?.getLibrarySource(identifier)
+        ?: npmProvider?.getLibrarySource(libraryIdentifier)
 
     private fun contentServiceSource(identifier: VersionedIdentifier): Source? {
         // Use locate() + read(uri) rather than read(root, identifier) to handle the case where

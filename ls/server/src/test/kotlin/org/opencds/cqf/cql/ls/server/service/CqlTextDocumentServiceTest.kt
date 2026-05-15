@@ -29,8 +29,11 @@ import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
+import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
 import org.opencds.cqf.cql.ls.server.provider.HoverProvider
+import org.opencds.cqf.cql.ls.server.provider.ReferencesProvider
 import java.util.concurrent.CompletableFuture
 
 class CqlTextDocumentServiceTest {
@@ -46,9 +49,12 @@ class CqlTextDocumentServiceTest {
         val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         return CqlTextDocumentService(
             clientFuture,
-            HoverProvider(compilationManager),
+            HoverProvider(compilationManager, cs),
             FormattingProvider(cs),
             bus,
+            DefinitionProvider(compilationManager, cs),
+            DocumentSymbolProvider(compilationManager),
+            ReferencesProvider(compilationManager, cs),
         )
     }
 
@@ -193,7 +199,7 @@ class CqlTextDocumentServiceTest {
         val svc = buildService(EventBus.builder().build())
         val capabilities = ServerCapabilities()
         svc.initialize(InitializeParams(), capabilities)
-        assertEquals(false, capabilities.hoverProvider.left)
+        assertEquals(true, capabilities.hoverProvider.left)
     }
 
     // -------------------------------------------------------------------------
