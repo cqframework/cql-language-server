@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.debug
 
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.hl7.elm.r1.VersionedIdentifier
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -32,6 +33,13 @@ class DebugCommandContributionTest {
             }
         val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         contribution = DebugCommandContribution(cm, cs, IgContextManager(cs), LibraryResolutionManager(emptyList()))
+    }
+
+    @AfterEach
+    fun tearDown() {
+        // Release the ServerSocket.accept() that START_DEBUG_COMMAND leaves blocked
+        // on a background thread; without this it would log noise 10s later.
+        contribution.stop()
     }
 
     @Test

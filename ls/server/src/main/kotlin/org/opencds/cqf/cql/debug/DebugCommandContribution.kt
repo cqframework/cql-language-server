@@ -25,6 +25,10 @@ class DebugCommandContribution(
         return setOf(START_DEBUG_COMMAND)
     }
 
+    fun stop() {
+        debugSession?.stop()
+    }
+
     override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
         if (START_DEBUG_COMMAND == params.command) {
             val session = debugSession

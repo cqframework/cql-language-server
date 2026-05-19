@@ -6,7 +6,9 @@ import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.launch.DSPLauncher
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
@@ -17,8 +19,7 @@ import org.opencds.cqf.cql.debug.TestDebugClient
 import java.net.Socket
 
 class DebugSessionTest {
-    @Test
-    fun simpleSessionTest() {
+    private fun makeSession(): DebugSession {
         val cs =
             object : ContentService {
                 override fun locate(
@@ -30,7 +31,12 @@ class DebugSessionTest {
             }
         val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         val debugServer = CqlDebugServer(cm, cs, IgContextManager(cs), LibraryResolutionManager(emptyList()))
-        val session = DebugSession(debugServer)
+        return DebugSession(debugServer)
+    }
+
+    @Test
+    fun simpleSessionTest() {
+        val session = makeSession()
 
         val port: Int = session.start().join()
         val client = TestDebugClient()
@@ -57,5 +63,30 @@ class DebugSessionTest {
 
         assertNotNull(client.getServerOutput())
         assertEquals("got exited", client.getServerOutput())
+    }
+
+    @Test
+    fun `stop releases an unconnected accept and clears isActive`() {
+        val session = makeSession()
+        session.start().join()
+        assertTrue(session.isActive())
+
+        session.stop()
+
+        // Wait briefly for the listener thread to exit its catch block
+        // and clear isActiveFlag. accept() unblocks immediately on close.
+        val deadline = System.currentTimeMillis() + 2000
+        while (session.isActive() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+        }
+        assertFalse(session.isActive(), "session should be inactive after stop()")
+    }
+
+    @Test
+    fun `stop is idempotent and safe before start`() {
+        val session = makeSession()
+        session.stop() // before start — must not throw
+        session.stop() // double stop — must not throw
+        assertFalse(session.isActive())
     }
 }

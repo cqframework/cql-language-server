@@ -28,6 +28,10 @@ import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.fhir.cql.CqlOptions
+import org.opencds.cqf.cql.engine.execution.EvaluationResults
+import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
+import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
+import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
 import org.opencds.cqf.fhir.cql.Engines
 import org.opencds.cqf.fhir.cql.EvaluationSettings
 import org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings
@@ -389,8 +393,11 @@ object CqlEvaluator {
         cqlRootUri: java.net.URI?,
         igContextManager: IgContextManager,
         libraryResolutionManager: LibraryResolutionManager,
-    ): List<LibraryResult> {
+        detailedTracing: Boolean = false,
+        defineOrderOut: MutableList<String>? = null,
+    ): Pair<List<LibraryResult>, List<DetailedExpressionResult>> {
         val libraryResults = mutableListOf<LibraryResult>()
+        val detailedResults = mutableListOf<DetailedExpressionResult>()
 
         for (libraryRequest in batch) {
             try {
@@ -415,6 +422,9 @@ object CqlEvaluator {
                 }
 
                 val repository = createRepository(fhirContext, terminologyRepo, modelPath)
+                if (detailedTracing) {
+                    evaluationSettings.cqlOptions.cqlEngineOptions.setDetailedTracingEnabled(true)
+                }
                 val engine = Engines.forRepository(repository, evaluationSettings)
 
                 // Set up npm packages on the engine's LibraryManager when NpmProcessor was not set
@@ -475,6 +485,18 @@ object CqlEvaluator {
                         ExpressionResult(key, formatValue(value.value))
                     }
 
+                if (detailedTracing && result.trace != null) {
+                    for (frame in result.trace!!.frames) {
+                        if (frame is ExpressionDefTraceFrame) {
+                            val defineName = frame.element.name ?: continue
+                            collectSubExpressions(frame.subframes, defineName, detailedResults)
+                        }
+                    }
+                    if (defineOrderOut != null) {
+                        collectDefineOrder(result.trace!!.frames, mutableSetOf(), defineOrderOut)
+                    }
+                }
+
                 val overriddenNames = libraryRequest.parameters.map { it.parameterName }.toSet()
                 val compiledLib =
                     engine.environment.libraryManager!!
@@ -512,7 +534,125 @@ object CqlEvaluator {
             }
         }
 
-        return libraryResults
+        return libraryResults to detailedResults
+    }
+
+    internal fun collectDefineOrder(
+        frames: List<TraceFrame>,
+        seen: MutableSet<String>,
+        result: MutableList<String>,
+    ) {
+        for (frame in frames) {
+            if (frame is ExpressionDefTraceFrame) {
+                val name = frame.element.name ?: continue
+                collectDefineOrder(frame.subframes, seen, result)
+                if (seen.add(name)) result.add(name)
+            } else if (frame is SubExpressionTraceFrame) {
+                collectDefineOrder(frame.subframes, seen, result)
+            }
+        }
+    }
+
+    private fun collectSubExpressions(
+        frames: List<TraceFrame>,
+        parentDefine: String,
+        results: MutableList<DetailedExpressionResult>,
+    ) {
+        for (frame in frames) {
+            if (frame is SubExpressionTraceFrame) {
+                val locator = frame.element.locator
+                if (locator != null) {
+                    results.add(
+                        DetailedExpressionResult(null, formatValue(frame.result), locator, parentDefine),
+                    )
+                }
+                log.debug(
+                    "sub-expr define={} locator={} type={} value={}",
+                    parentDefine, locator,
+                    frame.result?.javaClass?.simpleName, frame.result,
+                )
+                collectSubExpressions(frame.subframes, parentDefine, results)
+            } else if (frame is ExpressionDefTraceFrame) {
+                // Nested defines (e.g. function calls) — recurse with their own name
+                collectSubExpressions(frame.subframes, frame.element.name ?: parentDefine, results)
+            }
+        }
+    }
+
+    /**
+     * Common implementation for [evaluate] and [evaluateDetailed].
+     * When [detailedTracing] is true, the engine records sub-expression results
+     * via [org.opencds.cqf.cql.engine.execution.CqlEngine.Options.EnableDetailedTracing]
+     * and they are returned alongside the top-level expression results.
+     */
+    private fun evaluateInternal(
+        request: ExecuteCqlRequest,
+        contentService: ContentService,
+        igContextManager: IgContextManager,
+        libraryResolutionManager: LibraryResolutionManager,
+        detailedTracing: Boolean = false,
+    ): DetailedEvaluationResult {
+        log.debug(
+            "{}: fhirVersion={} libraries={} rootDir={}",
+            if (detailedTracing) "evaluateDetailed" else "evaluate",
+            request.fhirVersion, request.libraries.size, request.rootDir,
+        )
+        val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
+
+        var igContext: IGContext? = null
+        var npmProcessor: NpmProcessor? = null
+        val rootDir = request.rootDir
+        val cqlRootUri =
+            rootDir?.let { Uris.addPath(Uris.addPath(Uris.parseOrNull(it)!!, "input")!!, "cql") }
+        if (rootDir != null) {
+            npmProcessor =
+                igContextManager.getContext(
+                    Uris.addPath(Uris.addPath(Uris.parseOrNull(rootDir)!!, "input")!!, "cql")!!,
+                )
+            if (npmProcessor != null) {
+                igContext = npmProcessor.igContext
+            }
+        }
+
+        if (npmProcessor == null) {
+            npmProcessor = NpmProcessor(igContext)
+        }
+
+        val grouped = LinkedHashMap<String, MutableList<LibraryRequest>>()
+        for (lib in request.libraries) {
+            val key = "${lib.libraryName}|${lib.libraryUri}|${lib.terminologyUri}|${request.optionsPath}"
+            grouped.getOrPut(key) { mutableListOf() }.add(lib)
+        }
+
+        val terminologyRepo: IRepository = run {
+            val inputPaths = libraryResolutionManager.getInputDirectories()
+            if (inputPaths.isEmpty()) NoOpRepository(fhirContext)
+            else FederatedTerminologyRepo(fhirContext, inputPaths)
+        }
+
+        val libraryCaches = mutableMapOf<String?, ConcurrentHashMap<VersionedIdentifier, CompiledLibrary>>()
+        val allDetailed = mutableListOf<DetailedExpressionResult>()
+        val allDefineOrder = mutableListOf<String>()
+
+        val allResults =
+            grouped.values.flatMap { batch ->
+                val sharedLibraryCache = libraryCaches.getOrPut(request.optionsPath) { ConcurrentHashMap() }
+                val evaluationSettings =
+                    buildEvaluationSettings(
+                        buildCqlOptions(request.optionsPath),
+                        NpmProcessor(igContext),
+                    ).withLibraryCache(sharedLibraryCache)
+                val (results, detailed) = evaluateBatch(
+                    batch, fhirContext, npmProcessor, contentService, terminologyRepo,
+                    evaluationSettings, sharedLibraryCache, cqlRootUri, igContextManager,
+                    libraryResolutionManager, detailedTracing = detailedTracing,
+                    defineOrderOut = if (detailedTracing) allDefineOrder else null,
+                )
+                allDetailed.addAll(detailed)
+                results
+            }
+
+        return DetailedEvaluationResult(ExecuteCqlResponse(allResults, emptyList()), allDetailed, allDefineOrder)
     }
 
     /**
@@ -536,69 +676,35 @@ object CqlEvaluator {
         igContextManager: IgContextManager,
         libraryResolutionManager: LibraryResolutionManager,
     ): ExecuteCqlResponse {
-        log.debug("evaluate: fhirVersion={} libraries={} rootDir={}", request.fhirVersion, request.libraries.size, request.rootDir)
-        val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
+        return evaluateInternal(
+            request, contentService, igContextManager, libraryResolutionManager,
+            detailedTracing = false,
+        ).response
+    }
 
-        var igContext: IGContext? = null
-        var npmProcessor: NpmProcessor? = null
-        val rootDir = request.rootDir
-        val cqlRootUri =
-            rootDir?.let { Uris.addPath(Uris.addPath(Uris.parseOrNull(it)!!, "input")!!, "cql") }
-        if (rootDir != null) {
-            npmProcessor =
-                igContextManager.getContext(
-                    Uris.addPath(Uris.addPath(Uris.parseOrNull(rootDir)!!, "input")!!, "cql")!!,
-                )
-            if (npmProcessor != null) {
-                igContext = npmProcessor.igContext
-            }
-        }
-
-        if (npmProcessor == null) {
-            npmProcessor = NpmProcessor(igContext)
-        }
-
-        // Group by batch key — preserves insertion order via LinkedHashMap so results come
-        // back in the same order they were sent.
-        val grouped = LinkedHashMap<String, MutableList<LibraryRequest>>()
-        for (lib in request.libraries) {
-            val key = "${lib.libraryName}|${lib.libraryUri}|${lib.terminologyUri}|${request.optionsPath}"
-            grouped.getOrPut(key) { mutableListOf() }.add(lib)
-        }
-
-        // Build one federated terminology repository for the lifetime of this request.
-        // FederatedTerminologyRepo holds one IgStandardRepository per workspace project;
-        // each IgStandardRepository caches its directory scan, so ValueSet lookups are
-        // O(1) after the first search for each project.  This covers both the primary
-        // project's vocabulary and any helper-library projects' vocabulary directories.
-        val terminologyRepo: IRepository =
-            run {
-                val inputPaths = libraryResolutionManager.getInputDirectories()
-                if (inputPaths.isEmpty()) {
-                    NoOpRepository(fhirContext)
-                } else {
-                    FederatedTerminologyRepo(fhirContext, inputPaths)
-                }
-            }
-
-        // libraryCaches: compiled ELM (FHIRHelpers, QICore, etc.) produced by one batch is
-        //   reused by subsequent batches without recompilation. Safe because VersionedIdentifier
-        //   includes the library's own namespace URI, so same name+version always means same ELM.
-        //   Each batch gets its own fresh EvaluationSettings; only the libraryCache map is injected
-        //   as shared so that valueSetCache, modelCache, etc. remain independent per batch.
-        val libraryCaches = mutableMapOf<String?, ConcurrentHashMap<VersionedIdentifier, CompiledLibrary>>()
-
-        val allResults =
-            grouped.values.flatMap { batch ->
-                val sharedLibraryCache = libraryCaches.getOrPut(request.optionsPath) { ConcurrentHashMap() }
-                val evaluationSettings =
-                    buildEvaluationSettings(
-                        buildCqlOptions(request.optionsPath),
-                        NpmProcessor(igContext),
-                    ).withLibraryCache(sharedLibraryCache)
-                evaluateBatch(batch, fhirContext, npmProcessor, contentService, terminologyRepo, evaluationSettings, sharedLibraryCache, cqlRootUri, igContextManager, libraryResolutionManager)
-            }
-
-        return ExecuteCqlResponse(allResults, emptyList())
+    /**
+     * Evaluates all libraries with detailed tracing enabled. Returns both the top-level
+     * expression results and the sub-expression trace results.
+     *
+     * Sub-expression results are captured via [org.opencds.cqf.cql.engine.execution.CqlEngine.Options.EnableDetailedTracing],
+     * which records the runtime value of every non-trivial ELM node. Each sub-expression
+     * result includes its source locator (e.g. `"10:12-10:24"`) and the parent define name.
+     *
+     * The returned [DetailedEvaluationResult.defineOrder] lists define names in
+     * dependency-first evaluation order, suitable for sorting debugger snapshots.
+     *
+     * Use these detailed results in [CqlDebugServer] to support position-based hover
+     * evaluation during debugging.
+     */
+    fun evaluateDetailed(
+        request: ExecuteCqlRequest,
+        contentService: ContentService,
+        igContextManager: IgContextManager,
+        libraryResolutionManager: LibraryResolutionManager,
+    ): DetailedEvaluationResult {
+        return evaluateInternal(
+            request, contentService, igContextManager, libraryResolutionManager,
+            detailedTracing = true,
+        )
     }
 }

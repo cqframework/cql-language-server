@@ -4,6 +4,7 @@ import org.eclipse.lsp4j.debug.launch.DSPLauncher
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.ServerSocket
+import java.net.SocketTimeoutException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
@@ -20,6 +21,12 @@ class DebugSession(
     @Volatile
     private var isActiveFlag: Boolean = false
 
+    @Volatile
+    private var serverSocket: ServerSocket? = null
+
+    @Volatile
+    private var stopped: Boolean = false
+
     private val port: CompletableFuture<Int> = CompletableFuture()
 
     fun start(): CompletableFuture<Int> {
@@ -34,13 +41,23 @@ class DebugSession(
         return this.isActiveFlag
     }
 
+    fun stop() {
+        stopped = true
+        try {
+            serverSocket?.close()
+        } catch (_: IOException) {
+            // already closed or never opened — nothing to do
+        }
+    }
+
     private fun startListening() {
         threadService.submit {
             try {
-                ServerSocket(0).use { serverSocket ->
-                    serverSocket.soTimeout = 10000
-                    this.port.complete(serverSocket.localPort)
-                    val s = serverSocket.accept()
+                ServerSocket(0).use { socket ->
+                    this.serverSocket = socket
+                    socket.soTimeout = 10000
+                    this.port.complete(socket.localPort)
+                    val s = socket.accept()
                     val launcher =
                         DSPLauncher.createServerLauncher(
                             this.debugServer,
@@ -53,9 +70,16 @@ class DebugSession(
                     this.debugServer.exited().get()
                     serverThread.cancel(true)
                 }
-            } catch (e: IOException) {
-                log.error("failed to launch debug server for debug session", e)
+            } catch (e: SocketTimeoutException) {
+                log.debug("debug session accept timed out (no client connected within {}ms)", 10000)
                 this.port.completeExceptionally(e)
+            } catch (e: IOException) {
+                if (stopped) {
+                    log.debug("debug session stopped before client connected")
+                } else {
+                    log.error("failed to launch debug server for debug session", e)
+                    this.port.completeExceptionally(e)
+                }
             } catch (e: CancellationException) {
                 log.debug("debug session cancelled", e)
             } catch (e: InterruptedException) {

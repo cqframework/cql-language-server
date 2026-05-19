@@ -33,4 +33,17 @@ data class LibraryResult(
 
 data class ExpressionResult(val name: String, val value: String)
 
+data class DetailedExpressionResult(
+    val name: String?,
+    val value: String,
+    val locator: String,
+    val parent: String?,
+)
+
 data class DefaultParameterResult(val name: String, val value: String)
+
+data class DetailedEvaluationResult(
+    val response: ExecuteCqlResponse,
+    val subExpressions: List<DetailedExpressionResult>,
+    val defineOrder: List<String>,
+)

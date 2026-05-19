@@ -38,6 +38,8 @@ import org.hl7.elm.r1.FunctionDef
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.command.CqlEvaluator
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
+import org.opencds.cqf.cql.ls.server.command.DetailedEvaluationResult
+import org.opencds.cqf.cql.ls.server.command.DetailedExpressionResult
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlRequest
 import org.opencds.cqf.cql.ls.server.command.LibraryRequest
 import org.opencds.cqf.cql.ls.server.command.ModelRequest
@@ -71,6 +73,7 @@ open class CqlDebugServer(
     protected val client: CompletableFuture<IDebugProtocolClient> = CompletableFuture()
 
     protected var snapshots: List<ExpressionSnapshot> = emptyList()
+    protected var subExpressionSnapshots: List<SubExpressionSnapshot> = emptyList()
     protected var currentIndex: Int = -1
     protected val breakpointLines = mutableSetOf<Int>()
 
@@ -132,8 +135,8 @@ open class CqlDebugServer(
         val libraryUri = URI.create(args.libraryUri)
 
         val request = buildExecuteCqlRequest(args)
-        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
-        val expressions = response.results.firstOrNull()?.expressions ?: emptyList()
+        val detailedResult = CqlEvaluator.evaluateDetailed(request, contentService, igContextManager, libraryResolutionManager)
+        val expressions = detailedResult.response.results.firstOrNull()?.expressions ?: emptyList()
 
         val compiler = compilationManager.compile(libraryUri)
         val locatorMap: Map<String, String?> = compiler?.compiledLibrary?.library
@@ -143,9 +146,16 @@ open class CqlDebugServer(
             ?.associate { it.name!! to it.locator }
             ?: emptyMap()
 
+        val orderIndex = detailedResult.defineOrder.withIndex().associate { (i, name) -> name to i }
+        // Sort by dependency-first evaluation order (from trace), not source order.
+        // Defines not present in the trace sort to the end.
         snapshots = expressions.mapNotNull { expr ->
             parseLocator(locatorMap[expr.name] ?: return@mapNotNull null, expr.name, expr.value, args.libraryUri)
-        }.sortedBy { it.startLine }
+        }.sortedBy { orderIndex[it.name] ?: Int.MAX_VALUE }
+
+        subExpressionSnapshots = detailedResult.subExpressions.mapNotNull { detail ->
+            parseSubExpressionLocator(detail)
+        }
 
         currentIndex = -1
         stepToNext("entry")
@@ -245,6 +255,7 @@ open class CqlDebugServer(
             Variable().also {
                 it.name = snap.name
                 it.value = snap.value
+                it.evaluateName = snap.name
                 it.variablesReference = 0
             }
         }.toTypedArray()
@@ -255,23 +266,101 @@ open class CqlDebugServer(
         CompletableFuture.supplyAsync {
             when (args.context) {
                 "hover" -> handleHoverEvaluate(args.expression, args.frameId)
-                else -> EvaluateResponse().also {
-                    it.result = "N/A"
+                else -> lookupByName(args.expression, args.frameId)
+            }
+        }
+
+    private fun lookupByName(expression: String, frameId: Int?): EvaluateResponse {
+        val candidates = if (frameId != null && frameId in snapshots.indices) {
+            snapshots.subList(0, frameId + 1)
+        } else {
+            snapshots.take(currentIndex + 1)
+        }
+        return candidates.lastOrNull { nameMatches(it.name, expression) }
+            ?.let { snap -> EvaluateResponse().also { it.result = snap.value; it.variablesReference = 0 } }
+            ?: notAvailable()
+    }
+
+    private fun handleHoverEvaluate(expression: String, frameId: Int?): EvaluateResponse {
+        // 1. Name-based define match
+        val candidates = if (frameId != null && frameId in snapshots.indices) {
+            snapshots.subList(0, frameId + 1)
+        } else {
+            snapshots
+        }
+        val defineSnapshot = candidates.lastOrNull { snap ->
+            nameMatches(snap.name, expression)
+        }
+        if (defineSnapshot != null) {
+            return EvaluateResponse().also {
+                it.result = defineSnapshot.value
+                it.variablesReference = 0
+            }
+        }
+
+        // 2. Position-based sub-expression match
+        if (expression.startsWith("@") && frameId != null && frameId in snapshots.indices) {
+            val pos = parseHoverPosition(expression) ?: return notAvailable()
+            val currentDefine = snapshots[frameId].name
+
+            val match = subExpressionSnapshots
+                .filter { snap ->
+                    snap.parentDefine == currentDefine && snap.contains(pos.first, pos.second)
+                }
+                .minByOrNull {
+                    (it.endLine - it.startLine) * 10_000 + (it.endChar - it.startChar)
+                }
+
+            if (match != null) {
+                return EvaluateResponse().also {
+                    it.result = match.value
                     it.variablesReference = 0
                 }
             }
         }
 
-    private fun handleHoverEvaluate(expression: String, frameId: Int?): EvaluateResponse {
-        val snapshot = if (frameId != null && frameId in snapshots.indices) {
-            snapshots.subList(0, frameId + 1).lastOrNull { it.name == expression }
-        } else {
-            snapshots.lastOrNull { it.name == expression }
-        }
-        return EvaluateResponse().also {
-            it.result = snapshot?.value ?: "not available"
-            it.variablesReference = 0
-        }
+        return notAvailable()
+    }
+
+    private fun nameMatches(snapshotName: String, expression: String): Boolean {
+        if (snapshotName == expression) return true
+        val stripped = expression.trim('"')
+        if (snapshotName == stripped) return true
+        val words = snapshotName.split(" ").toSet()
+        if (expression in words) return true
+        if (stripped in words) return true
+        return false
+    }
+
+    private fun parseHoverPosition(expression: String): Pair<Int, Int>? {
+        val raw = expression.removePrefix("@")
+        val parts = raw.split(":").mapNotNull { it.toIntOrNull() }
+        return if (parts.size == 2) parts[0] to parts[1] else null
+    }
+
+    private fun notAvailable(): EvaluateResponse = EvaluateResponse().also {
+        it.result = "not available"
+        it.variablesReference = 0
+    }
+
+    /**
+     * Parses a locator from a [DetailedExpressionResult] (1-indexed TrackBack format) into
+     * a [SubExpressionSnapshot] with 0-indexed LSP line/char bounds.
+     */
+    private fun parseSubExpressionLocator(detail: DetailedExpressionResult): SubExpressionSnapshot? {
+        val locator = detail.locator
+        val (start, end) = locator.split("-").takeIf { it.size == 2 } ?: return null
+        val (sl, sc) = start.split(":").takeIf { it.size == 2 }?.map { it.toIntOrNull() } ?: return null
+        val (el, ec) = end.split(":").takeIf { it.size == 2 }?.map { it.toIntOrNull() } ?: return null
+        if (sl == null || sc == null || el == null || ec == null) return null
+        return SubExpressionSnapshot(
+            value = detail.value,
+            parentDefine = detail.parent ?: return null,
+            startLine = sl - 1,
+            startChar = sc - 1,
+            endLine = el - 1,
+            endChar = ec,
+        )
     }
 
     override fun next(args: NextArguments): CompletableFuture<Void> =
