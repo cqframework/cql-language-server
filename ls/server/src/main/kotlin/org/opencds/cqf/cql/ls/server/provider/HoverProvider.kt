@@ -114,13 +114,27 @@ class HoverProvider(
         var current: ParserRuleContext? = cursorCtx
         while (current != null) {
             when (current) {
-                is cqlParser.SourceClauseContext,
+                is cqlParser.SourceClauseContext -> {
+                    // sourceClause may omit 'from' keyword — only suppress when
+                    // the cursor falls on the keyword token itself, not on the
+                    // aliasedQuerySource expression.
+                    val kw = current.start ?: return false
+                    if (kw.text != "from") return false
+                    return isOnToken(kw, position)
+                }
                 is cqlParser.WhereClauseContext,
                 is cqlParser.ReturnClauseContext,
                 is cqlParser.LetClauseContext,
                 is cqlParser.SortClauseContext,
                 is cqlParser.AggregateClauseContext -> {
-                    return cursorCtx == current
+                    // Only suppress when cursor is on the clause's keyword token.
+                    // ANTLR child contexts inside clause expressions may have null
+                    // `stop` tokens (ANTLR Kotlin runtime), causing
+                    // findDeepestContext to return the clause context instead of the
+                    // expression child.  Checking the keyword token directly avoids
+                    // false suppression of all positions within the clause expression.
+                    val kw = current.start ?: return false
+                    return isOnToken(kw, position)
                 }
                 is cqlParser.WithClauseContext,
                 is cqlParser.WithoutClauseContext -> {
@@ -130,6 +144,20 @@ class HoverProvider(
             current = current.getParent() as? ParserRuleContext
         }
         return false
+    }
+
+    /**
+     * Returns true when [position] falls within the source range of the given ANTLR [Token]
+     * (1-indexed line, 0-indexed charPositionInLine → LSP 0-indexed Position).
+     */
+    private fun isOnToken(
+        token: org.antlr.v4.kotlinruntime.Token,
+        position: Position,
+    ): Boolean {
+        val line = token.line - 1
+        val start = token.charPositionInLine
+        val end = start + (token.text?.length ?: 0)
+        return position.line == line && position.character >= start && position.character < end
     }
 
     /**

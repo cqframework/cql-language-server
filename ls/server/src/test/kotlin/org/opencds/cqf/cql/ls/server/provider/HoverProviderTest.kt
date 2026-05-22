@@ -20,6 +20,7 @@ import org.hl7.elm.r1.With
 import org.hl7.elm.r1.Without
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -993,6 +994,48 @@ class HoverProviderTest {
         assertNotNull(hover, "Expected hover on where-clause expression, got null")
         val value = hover!!.contents.right.value
         assertTrue(value.contains("N:"), "Expected alias reference in where-clause hover: $value")
+    }
+
+    @Test
+    fun hover_onWhereClauseExpression_notSuppressedByAntlrKeywordCheck() {
+        // Regression guard: the ANTLR keyword suppression must NOT fire on
+        // positions that are actually inside the clause expression, even when
+        // findDeepestContext returns the clause context (which can happen when
+        // ANTLR child contexts have null `stop` tokens).
+        //
+        // 1. Keyword position → deepest=WhereClauseContext, hover null
+        // 2. Expression position → deepest=NOT WhereClauseContext, hover non-null
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Where Clause Test" }
+        val query = def.expression as Query
+
+        // Position 1: on the "where" keyword → WhereClauseContext → null hover
+        val keywordPos = Position(6, 4)
+        val parseTree = compilationManager.getParseTree(uri)!!
+        val kwCtx = CqlParseTreeVisitor.findDeepestContext(parseTree, keywordPos)
+        assertEquals("WhereClauseContext", kwCtx?.javaClass?.simpleName,
+            "At keyword position")
+        assertNull(
+            hoverProvider.hover(HoverParams(
+                TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), keywordPos)),
+            "Keyword position should produce null"
+        )
+
+        // Position 2: on "N" inside `where N > 1` → deeper context → non-null hover
+        val whereExpr = query.where ?: fail("Expected where expression")
+        val greater = whereExpr as? org.hl7.elm.r1.Greater ?: fail("Expected Greater")
+        val aliasRefLoc = greater.operand[0].locator!!
+        val exprRange = TrackBacks.toRange(aliasRefLoc)!!
+        val exprPos = Position(exprRange.start.line, exprRange.start.character)
+        val exprCtx = CqlParseTreeVisitor.findDeepestContext(parseTree, exprPos)
+        assertNotEquals("WhereClauseContext", exprCtx?.javaClass?.simpleName,
+            "At expression position")
+        assertNotNull(
+            hoverProvider.hover(HoverParams(
+                TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), exprPos)),
+            "Expression position should produce non-null hover"
+        )
     }
 
     @Test
