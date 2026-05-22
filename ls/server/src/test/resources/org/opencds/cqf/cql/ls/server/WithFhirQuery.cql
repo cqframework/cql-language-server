@@ -21,3 +21,9 @@ define "In Progress Encounters":
 
 define "Ambulatory Encounters":
   ["Encounter": "Ambulatory Encounter"]
+
+define "Most Recent Encounter":
+  Last([Encounter])
+
+define "Source Based Period":
+  "Most Recent Encounter".period
