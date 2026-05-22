@@ -60,13 +60,13 @@ class CqlTextDocumentService(
         serverCapabilities.setReferencesProvider(true)
     }
 
-    override fun hover(position: HoverParams): CompletableFuture<Hover> {
-        val result =
-            CompletableFuture.supplyAsync { hoverProvider.hover(position) }
-                .exceptionally { notifyClient(it) }
-        @Suppress("UNCHECKED_CAST")
-        return result as CompletableFuture<Hover>
-    }
+    // LSP4J declares CompletableFuture<Hover>, but hoverProvider returns Hover?.
+    // The cast through Hover? is safe: at runtime both types erase to the same raw
+    // CompletableFuture, and null is a valid LSP hover response.
+    @Suppress("UNCHECKED_CAST")
+    override fun hover(params: HoverParams): CompletableFuture<Hover> =
+        CompletableFuture.supplyAsync<Hover?> { hoverProvider.hover(params) }
+            .exceptionally { notifyClient(it) } as CompletableFuture<Hover>
 
     override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {
         return CompletableFuture.supplyAsync<List<TextEdit>> {
