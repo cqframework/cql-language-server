@@ -121,16 +121,17 @@ class CqlCompilationManagerTest {
     @Test
     fun compile_stream_returnsNonNull() {
         val stream = cs.read(ONE_URI)!!
-        val compiler = manager.compile(ONE_URI, stream)
-        assertNotNull(compiler)
+        val result = manager.compile(ONE_URI, stream)
+        assertNotNull(result)
+        assertNotNull(result.compiler)
     }
 
     @Test
     fun compile_stream_validCql_hasNoErrors() {
         val stream = cs.read(ONE_URI)!!
-        val compiler = manager.compile(ONE_URI, stream)
+        val result = manager.compile(ONE_URI, stream)
         val errors =
-            compiler.exceptions.filter {
+            result.compiler.exceptions.filter {
                 it.severity == CqlCompilerException.ErrorSeverity.Error
             }
         assertTrue(errors.isEmpty(), "Expected no errors when compiling One.cql from stream")
@@ -182,7 +183,7 @@ class CqlCompilationManagerTest {
         val stream = cs.read(ONE_URI)!!
         val fromStream = localManager.compile(ONE_URI, stream)
         val fromCache = localManager.compile(ONE_URI)
-        assertSame(fromStream, fromCache, "compile(uri) should return the instance cached by compile(uri, stream)")
+        assertSame(fromStream.compiler, fromCache, "compile(uri) should return the instance cached by compile(uri, stream)")
     }
 
     @Test
@@ -192,6 +193,27 @@ class CqlCompilationManagerTest {
         localManager.invalidate(ONE_URI)
         // Cache miss → fresh compile
         assertNotNull(localManager.compile(ONE_URI))
+    }
+
+    // -----------------------------------------------------------------------
+    // getParseTree — ANTLR parse tree accessible post-compilation
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getParseTree_returnsNonNull_forValidCql() {
+        manager.compile(ONE_URI)
+        val tree = manager.getParseTree(ONE_URI)
+        assertNotNull(tree, "Expected non-null ANTLR parse tree after compilation")
+    }
+
+    @Test
+    fun getParseTree_parseTreeStructure_hasExpectedRoot() {
+        manager.compile(ONE_URI)
+        val tree = manager.getParseTree(ONE_URI)!!
+        // The root should be a LibraryContext with the library identifier
+        val libDef = tree.libraryDefinition()
+        assertNotNull(libDef, "Expected library definition in parse tree")
+        assertNotNull(libDef!!.qualifiedIdentifier(), "Expected library identifier in parse tree")
     }
 
     @Test

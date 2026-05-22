@@ -16,6 +16,7 @@ import org.hl7.elm.r1.Retrieve
 import org.hl7.elm.r1.ReturnClause
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
+import org.hl7.elm.r1.Without
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -829,5 +830,66 @@ class HoverProviderTest {
         // Should be a single code block line (no newlines inside the type)
         val cqlBlock = value.substringAfter("```cql\n").substringBefore("\n```")
         assertFalse(cqlBlock.contains("\n"), "Expected no newlines inside short type block: $cqlBlock")
+    }
+
+    @Test
+    fun hover_onWithoutKeyword_returnsNull() {
+        // WithoutQuery.cql: `without "Items" Extra such that Extra > Item`
+        // Cursor on the "without" keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Without Clause Test" }
+        val query = def.expression as Query
+        val withoutClause = query.relationship.filterIsInstance<Without>().first()
+        val withoutRange = TrackBacks.toRange(withoutClause.locator!!)!!
+        val pos = Position(withoutRange.start.line, withoutRange.start.character)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'without' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onWithoutSuchThatKeyword_returnsNull() {
+        // WithoutQuery.cql: `without "Items" Extra such that Extra > Item`
+        // Cursor on the "such that" keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Without Clause Test" }
+        val query = def.expression as Query
+        val withoutClause = query.relationship.filterIsInstance<Without>().first()
+        val stRange = TrackBacks.toRange(withoutClause.suchThat!!.locator!!)!!
+        val pos = Position(stRange.start.line, stRange.start.character - 10)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'such that' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onWithoutClauseAlias_returnsItemType() {
+        // WithoutQuery.cql: "Without Clause Test" has `without "Items" Extra such that Extra > Item`
+        // Hovering over "Extra" (the alias) should return the item type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Without Clause Test" }
+        val query = def.expression as Query
+        val withoutClause = query.relationship.filterIsInstance<Without>().first()
+        // Position just after the source expression ends — where the alias name starts.
+        val sourceEnd = TrackBacks.toRange(withoutClause.expression!!.locator!!)!!.end
+        val pos = Position(sourceEnd.line, sourceEnd.character + 2)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
+        )
+
+        assertNotNull(hover, "Expected hover on without-clause alias, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) Extra:"), "Expected '(alias)' prefix and alias name in without-clause hover: $value")
+        assertTrue(value.contains("Integer"), "Expected item type Integer for without-alias hover: $value")
     }
 }

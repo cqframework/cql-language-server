@@ -1,10 +1,14 @@
 package org.opencds.cqf.cql.ls.server.manager
 
+import org.antlr.v4.kotlinruntime.CharStreams
+import org.antlr.v4.kotlinruntime.CommonTokenStream
 import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.LibraryManager
 import org.cqframework.cql.cql2elm.ModelManager
 import org.cqframework.cql.cql2elm.model.Model
 import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider
+import org.cqframework.cql.gen.cqlLexer
+import org.cqframework.cql.gen.cqlParser
 import org.fhir.ucum.UcumEssenceService
 import org.fhir.ucum.UcumService
 import org.hl7.cql.model.ModelIdentifier
@@ -19,6 +23,11 @@ import java.io.InputStream
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
+
+data class CompilationResult(
+    val compiler: CqlCompiler,
+    val parseTree: cqlParser.LibraryContext,
+)
 
 class CqlCompilationManager(
     private val contentService: ContentService,
@@ -44,8 +53,8 @@ class CqlCompilationManager(
 
     private val globalCache = HashMap<ModelIdentifier, Model>()
 
-    // Cache: compiled result per source URI
-    private val compilationCache = ConcurrentHashMap<URI, CqlCompiler>()
+    // Cache: compiled result + ANTLR parse tree per source URI
+    private val compilationCache = ConcurrentHashMap<URI, CompilationResult>()
 
     // Forward index: URI → what library identifier it compiled to
     private val uriToIdentifier = ConcurrentHashMap<URI, VersionedIdentifier>()
@@ -59,7 +68,7 @@ class CqlCompilationManager(
     fun compile(uri: URI): CqlCompiler? {
         compilationCache[uri]?.let {
             log.debug("compile: cache hit for {}", uri)
-            return it
+            return it.compiler
         }
         val input = contentService.read(uri)
         if (input == null) {
@@ -67,26 +76,44 @@ class CqlCompilationManager(
             return null
         }
         log.debug("compile: starting fresh compilation for {}", uri)
-        return compile(uri, input)
+        return compile(uri, input).compiler
     }
 
     fun compile(
         uri: URI,
         stream: InputStream,
-    ): CqlCompiler {
+    ): CompilationResult {
+        val cqlText = Converters.inputStreamToString(stream)
+
+        // Phase: ANTLR parse tree (for position resolution)
+        val parseTree = parseCql(cqlText)
+
+        // Phase: CQL → ELM compilation
         val modelManager = createModelManager()
         val libraryManager = createLibraryManager(Uris.getHead(uri), modelManager)
         val compiler = CqlCompiler(null, null, libraryManager)
-        compiler.run(Converters.inputStreamToString(stream))
+        compiler.run(cqlText)
         log.debug(
             "compile: finished for {}; library={}, exceptions={}",
             uri,
             compiler.library?.identifier?.id,
             compiler.exceptions?.size,
         )
-        compilationCache[uri] = compiler
+        val result = CompilationResult(compiler, parseTree)
+        compilationCache[uri] = result
         updateIndex(uri, compiler)
-        return compiler
+        return result
+    }
+
+    fun getParseTree(uri: URI): cqlParser.LibraryContext? {
+        return compilationCache[uri]?.parseTree ?: compile(uri)?.let { getParseTree(uri) }
+    }
+
+    private fun parseCql(cqlText: String): cqlParser.LibraryContext {
+        val lexer = cqlLexer(CharStreams.fromString(cqlText))
+        val tokens = CommonTokenStream(lexer)
+        val parser = cqlParser(tokens)
+        return parser.library()
     }
 
     fun invalidate(uri: URI) {
