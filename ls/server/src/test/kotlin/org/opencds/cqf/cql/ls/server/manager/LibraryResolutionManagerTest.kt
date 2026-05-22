@@ -71,7 +71,9 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun igProjects_folderWithNoIgIni_returnsEmpty(@TempDir tempDir: File) {
+    fun igProjects_folderWithNoIgIni_returnsEmpty(
+        @TempDir tempDir: File,
+    ) {
         val m = manager(tempDir)
         assertTrue(m.igProjects().isEmpty())
     }
@@ -81,12 +83,15 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun igProjects_igIniAtFolderRoot_returnsThatFolder(@TempDir tempDir: File) {
+    fun igProjects_igIniAtFolderRoot_returnsThatFolder(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org")),
+            )
 
         val projects = m.igProjects()
         assertEquals(1, projects.size)
@@ -99,13 +104,16 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun igProjects_igIniInSubdirOnly_returnsSubdir(@TempDir tempDir: File) {
+    fun igProjects_igIniInSubdirOnly_returnsSubdir(
+        @TempDir tempDir: File,
+    ) {
         val sub = File(tempDir, "CommonLibs").also { it.mkdirs() }
         File(sub, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(sub.absolutePath to ("common.pkg" to "https://common.example.org")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(sub.absolutePath to ("common.pkg" to "https://common.example.org")),
+            )
 
         val projects = m.igProjects()
         assertEquals(1, projects.size)
@@ -119,14 +127,17 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun igProjects_igIniInGrandchild_notDiscovered(@TempDir tempDir: File) {
+    fun igProjects_igIniInGrandchild_notDiscovered(
+        @TempDir tempDir: File,
+    ) {
         val child = File(tempDir, "child").also { it.mkdirs() }
         val grandchild = File(child, "grandchild").also { it.mkdirs() }
         File(grandchild, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(grandchild.absolutePath to ("pkg" to "https://example.org")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(grandchild.absolutePath to ("pkg" to "https://example.org")),
+            )
 
         assertTrue(m.igProjects().isEmpty(), "ig.ini nested more than one level deep should not be discovered")
     }
@@ -137,9 +148,10 @@ class LibraryResolutionManagerTest {
 
     @Test
     fun igProjects_malformedWorkspaceFolderUri_skipsFolder() {
-        val m = object : LibraryResolutionManager(listOf(WorkspaceFolder("not a valid URI !!!", "bad"))) {
-            override fun readIgContextInfo(igIniFile: File): Pair<String, String>? = null
-        }
+        val m =
+            object : LibraryResolutionManager(listOf(WorkspaceFolder("not a valid URI !!!", "bad"))) {
+                override fun readIgContextInfo(igIniFile: File): Pair<String, String>? = null
+            }
 
         assertDoesNotThrow { m.igProjects() }
         assertTrue(m.igProjects().isEmpty())
@@ -150,17 +162,21 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun igProjects_igIniAtRootAndSubdir_returnsBoth(@TempDir tempDir: File) {
+    fun igProjects_igIniAtRootAndSubdir_returnsBoth(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
         val sub = File(tempDir, "shared").also { it.mkdirs() }
         File(sub, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(
-                tempDir.absolutePath to ("root.pkg" to "https://root.example.org"),
-                sub.absolutePath to ("shared.pkg" to "https://shared.example.org"),
-            ),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir =
+                    mapOf(
+                        tempDir.absolutePath to ("root.pkg" to "https://root.example.org"),
+                        sub.absolutePath to ("shared.pkg" to "https://shared.example.org"),
+                    ),
+            )
 
         assertEquals(2, m.igProjects().size)
     }
@@ -170,12 +186,15 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun resolveCanonicalUrl_matchingCanonical_returnsInputCqlUri(@TempDir tempDir: File) {
+    fun resolveCanonicalUrl_matchingCanonical_returnsInputCqlUri(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
+            )
 
         val resolved = m.resolveCanonicalUrl("https://example.org/ig")
         assertNotNull(resolved)
@@ -187,12 +206,15 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun resolveCanonicalUrl_noMatch_returnsNull(@TempDir tempDir: File) {
+    fun resolveCanonicalUrl_noMatch_returnsNull(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
+            )
 
         assertNull(m.resolveCanonicalUrl("https://different.org/other"))
     }
@@ -211,12 +233,15 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun getInputDirectories_oneProject_returnsInputPath(@TempDir tempDir: File) {
+    fun getInputDirectories_oneProject_returnsInputPath(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(tempDir.absolutePath to ("test.pkg" to "https://example.org/ig")),
+            )
 
         val dirs = m.getInputDirectories()
         assertEquals(1, dirs.size)
@@ -234,14 +259,16 @@ class LibraryResolutionManagerTest {
     ) {
         File(dir1, "ig.ini").writeText("")
         File(dir2, "ig.ini").writeText("")
-        val m = manager(
-            dir1,
-            dir2,
-            infoByDir = mapOf(
-                dir1.absolutePath to ("pkg.one" to "https://one.example.org"),
-                dir2.absolutePath to ("pkg.two" to "https://two.example.org"),
-            ),
-        )
+        val m =
+            manager(
+                dir1,
+                dir2,
+                infoByDir =
+                    mapOf(
+                        dir1.absolutePath to ("pkg.one" to "https://one.example.org"),
+                        dir2.absolutePath to ("pkg.two" to "https://two.example.org"),
+                    ),
+            )
 
         val dirs = m.getInputDirectories()
         assertEquals(2, dirs.size)
@@ -254,12 +281,15 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun registerWorkspaceNamespaces_singleEntry_registersNamespace(@TempDir tempDir: File) {
+    fun registerWorkspaceNamespaces_singleEntry_registersNamespace(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(tempDir.absolutePath to ("my.package" to "https://my.org/ig")),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(tempDir.absolutePath to ("my.package" to "https://my.org/ig")),
+            )
         val libraryManager = LibraryManager(ModelManager())
 
         m.registerWorkspaceNamespaces(libraryManager)
@@ -283,13 +313,16 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun registerWorkspaceNamespaces_uriCollision_doesNotThrow(@TempDir tempDir: File) {
+    fun registerWorkspaceNamespaces_uriCollision_doesNotThrow(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
-        val m = manager(
-            tempDir,
-            // workspace project "pkgB" claims the same canonical URL already held by "pkgA"
-            infoByDir = mapOf(tempDir.absolutePath to ("pkgB" to "https://example.org")),
-        )
+        val m =
+            manager(
+                tempDir,
+                // workspace project "pkgB" claims the same canonical URL already held by "pkgA"
+                infoByDir = mapOf(tempDir.absolutePath to ("pkgB" to "https://example.org")),
+            )
 
         // Pre-register pkgA → https://example.org (simulates npm setup having run first)
         val libraryManager = LibraryManager(ModelManager())
@@ -317,15 +350,18 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun onMessageEvent_igIniChanged_rebuildsIndexOnNextCall(@TempDir tempDir: File) {
+    fun onMessageEvent_igIniChanged_rebuildsIndexOnNextCall(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
         val callCount = AtomicInteger(0)
-        val m = object : LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), "root"))) {
-            override fun readIgContextInfo(igIniFile: File): Pair<String, String> {
-                callCount.incrementAndGet()
-                return "pkg" to "https://example.org"
+        val m =
+            object : LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), "root"))) {
+                override fun readIgContextInfo(igIniFile: File): Pair<String, String> {
+                    callCount.incrementAndGet()
+                    return "pkg" to "https://example.org"
+                }
             }
-        }
 
         m.igProjects() // builds index
         val after1 = callCount.get()
@@ -350,15 +386,18 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun onMessageEvent_unrelatedFileChanged_doesNotInvalidateIndex(@TempDir tempDir: File) {
+    fun onMessageEvent_unrelatedFileChanged_doesNotInvalidateIndex(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
         val callCount = AtomicInteger(0)
-        val m = object : LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), "root"))) {
-            override fun readIgContextInfo(igIniFile: File): Pair<String, String> {
-                callCount.incrementAndGet()
-                return "pkg" to "https://example.org"
+        val m =
+            object : LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), "root"))) {
+                override fun readIgContextInfo(igIniFile: File): Pair<String, String> {
+                    callCount.incrementAndGet()
+                    return "pkg" to "https://example.org"
+                }
             }
-        }
 
         m.igProjects() // builds index
         val after1 = callCount.get()
@@ -381,16 +420,27 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun buildNamespaceIndex_readIgContextInfoThrows_skipsFolder(@TempDir tempDir: File) {
-        val bad = File(tempDir, "bad").also { it.mkdirs(); File(it, "ig.ini").writeText("") }
-        val good = File(tempDir, "good").also { it.mkdirs(); File(it, "ig.ini").writeText("") }
+    fun buildNamespaceIndex_readIgContextInfoThrows_skipsFolder(
+        @TempDir tempDir: File,
+    ) {
+        val bad =
+            File(tempDir, "bad").also {
+                it.mkdirs()
+                File(it, "ig.ini").writeText("")
+            }
+        val good =
+            File(tempDir, "good").also {
+                it.mkdirs()
+                File(it, "ig.ini").writeText("")
+            }
 
         // Use a workspace folder that contains both subdirs
-        val m = manager(
-            tempDir,
-            infoByDir = mapOf(good.absolutePath to ("good.pkg" to "https://good.example.org")),
-            shouldThrow = setOf(bad.absolutePath),
-        )
+        val m =
+            manager(
+                tempDir,
+                infoByDir = mapOf(good.absolutePath to ("good.pkg" to "https://good.example.org")),
+                shouldThrow = setOf(bad.absolutePath),
+            )
 
         val projects = m.igProjects()
         assertEquals(1, projects.size, "Only the non-throwing folder should be indexed")
@@ -403,7 +453,9 @@ class LibraryResolutionManagerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun buildNamespaceIndex_readIgContextInfoReturnsNull_skipsFolder(@TempDir tempDir: File) {
+    fun buildNamespaceIndex_readIgContextInfoReturnsNull_skipsFolder(
+        @TempDir tempDir: File,
+    ) {
         File(tempDir, "ig.ini").writeText("")
         // infoByDir is empty → readIgContextInfo returns null for every dir
         val m = manager(tempDir)
@@ -422,14 +474,16 @@ class LibraryResolutionManagerTest {
     ) {
         File(dir1, "ig.ini").writeText("")
         File(dir2, "ig.ini").writeText("")
-        val m = manager(
-            dir1,
-            dir2,
-            infoByDir = mapOf(
-                dir1.absolutePath to ("pkg.one" to "https://one.example.org"),
-                dir2.absolutePath to ("pkg.two" to "https://two.example.org"),
-            ),
-        )
+        val m =
+            manager(
+                dir1,
+                dir2,
+                infoByDir =
+                    mapOf(
+                        dir1.absolutePath to ("pkg.one" to "https://one.example.org"),
+                        dir2.absolutePath to ("pkg.two" to "https://two.example.org"),
+                    ),
+            )
 
         assertEquals(2, m.igProjects().size)
         assertNotNull(m.resolveCanonicalUrl("https://one.example.org"))

@@ -54,8 +54,15 @@ class LanguageServerTest {
                 CqlLanguageServer(
                     languageClientFuture,
                     CqlWorkspaceService(languageClientFuture, commandsFuture, mutableListOf(), eventBus),
-                    CqlTextDocumentService(languageClientFuture, HoverProvider(compilationManager, cs), FormattingProvider(cs), eventBus,
-                    DefinitionProvider(compilationManager, cs), DocumentSymbolProvider(compilationManager), ReferencesProvider(compilationManager, cs)),
+                    CqlTextDocumentService(
+                        languageClientFuture,
+                        HoverProvider(compilationManager, cs),
+                        FormattingProvider(cs),
+                        eventBus,
+                        DefinitionProvider(compilationManager, cs),
+                        DocumentSymbolProvider(compilationManager),
+                        ReferencesProvider(compilationManager, cs),
+                    ),
                 )
         }
 
@@ -69,8 +76,15 @@ class LanguageServerTest {
             return CqlLanguageServer(
                 clientFuture,
                 CqlWorkspaceService(clientFuture, commandsFuture, mutableListOf(), eventBus),
-                CqlTextDocumentService(clientFuture, HoverProvider(compilationManager, cs), FormattingProvider(cs), eventBus,
-                    DefinitionProvider(compilationManager, cs), DocumentSymbolProvider(compilationManager), ReferencesProvider(compilationManager, cs)),
+                CqlTextDocumentService(
+                    clientFuture,
+                    HoverProvider(compilationManager, cs),
+                    FormattingProvider(cs),
+                    eventBus,
+                    DefinitionProvider(compilationManager, cs),
+                    DocumentSymbolProvider(compilationManager),
+                    ReferencesProvider(compilationManager, cs),
+                ),
             )
         }
     }

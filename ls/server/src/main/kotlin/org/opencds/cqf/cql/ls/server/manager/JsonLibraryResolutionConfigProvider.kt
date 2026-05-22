@@ -50,21 +50,24 @@ class JsonLibraryResolutionConfigProvider(
     }
 
     private fun readConfig(folderUri: URI): LibraryResolutionConfig {
-        val testsUri = Uris.addPath(folderUri, "input")?.let { Uris.addPath(it, "tests") }
-            ?: return LibraryResolutionConfig()
-        val configUri = listOf("config.jsonc", "config.json")
-            .mapNotNull { Uris.addPath(testsUri, it) }
-            .firstOrNull { runCatching { Paths.get(it).toFile().exists() }.getOrDefault(false) }
-            ?: return LibraryResolutionConfig()
+        val testsUri =
+            Uris.addPath(folderUri, "input")?.let { Uris.addPath(it, "tests") }
+                ?: return LibraryResolutionConfig()
+        val configUri =
+            listOf("config.jsonc", "config.json")
+                .mapNotNull { Uris.addPath(testsUri, it) }
+                .firstOrNull { runCatching { Paths.get(it).toFile().exists() }.getOrDefault(false) }
+                ?: return LibraryResolutionConfig()
 
         return try {
             Paths.get(configUri).toFile().inputStream().use { input ->
                 val node = jsonMapper.readTree(input)
                 LibraryResolutionConfig(
-                    mode = when (node.get("libraryResolution")?.asText()) {
-                        "strict" -> LibraryResolutionMode.STRICT
-                        else -> LibraryResolutionMode.PATCH_FLEXIBLE
-                    },
+                    mode =
+                        when (node.get("libraryResolution")?.asText()) {
+                            "strict" -> LibraryResolutionMode.STRICT
+                            else -> LibraryResolutionMode.PATCH_FLEXIBLE
+                        },
                     unqualifiedCrossProjectSearch =
                         node.get("unqualifiedCrossProjectSearch")?.asBoolean() ?: false,
                     projectSearchOrder =

@@ -2,11 +2,11 @@ package org.opencds.cqf.cql.ls.server.command
 
 import ca.uhn.fhir.context.FhirContext
 import ca.uhn.fhir.repository.IRepository
-import java.math.BigDecimal
-import java.nio.file.Files
-import java.nio.file.Path
+import org.cqframework.fhir.npm.NpmProcessor
+import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.r4.model.Patient
 import org.hl7.fhir.r4.model.StringType
+import org.hl7.fhir.r5.context.ILoggingService
 import org.hl7.fhir.r5.model.DateTimeType
 import org.hl7.fhir.r5.model.DateType
 import org.hl7.fhir.r5.model.Quantity
@@ -24,14 +24,12 @@ import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
-import org.cqframework.fhir.npm.NpmProcessor
-import org.hl7.elm.r1.VersionedIdentifier
-import org.hl7.fhir.r5.context.ILoggingService
 import org.opencds.cqf.fhir.cql.CqlOptions
 import org.opencds.cqf.fhir.cql.EvaluationSettings
-import org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings
-import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository
+import java.math.BigDecimal
+import java.nio.file.Files
+import java.nio.file.Path
 
 class CqlEvaluatorTest {
     private val contentService = TestContentService()
@@ -445,7 +443,11 @@ class CqlEvaluatorTest {
         return method.invoke(CqlEvaluator, value) as Quantity
     }
 
-    private fun createRepository(fhirContext: FhirContext, terminologyRepo: IRepository, modelPath: Path?): IRepository {
+    private fun createRepository(
+        fhirContext: FhirContext,
+        terminologyRepo: IRepository,
+        modelPath: Path?,
+    ): IRepository {
         val method = CqlEvaluator::class.java.getDeclaredMethod("createRepository", FhirContext::class.java, IRepository::class.java, Path::class.java)
         method.isAccessible = true
         return method.invoke(CqlEvaluator, fhirContext, terminologyRepo, modelPath) as IRepository
@@ -592,14 +594,15 @@ class CqlEvaluatorTest {
 
     @Test
     fun `coerceParameters coerces multiple parameters of different types`() {
-        val result = coerceParameters(
-            listOf(
-                ParameterRequest("A", "Integer", "1"),
-                ParameterRequest("B", "String", "hi"),
-                ParameterRequest("C", "Boolean", "true"),
-                ParameterRequest("D", "Decimal", "2.5"),
-            ),
-        )
+        val result =
+            coerceParameters(
+                listOf(
+                    ParameterRequest("A", "Integer", "1"),
+                    ParameterRequest("B", "String", "hi"),
+                    ParameterRequest("C", "Boolean", "true"),
+                    ParameterRequest("D", "Decimal", "2.5"),
+                ),
+            )
         assertEquals(1, result["A"])
         assertEquals("hi", result["B"])
         assertEquals(true, result["C"])
@@ -682,13 +685,17 @@ class CqlEvaluatorTest {
     // -------------------------------------------------------------------------
 
     @Test
-    fun `createRepository with null modelPath returns ProxyRepository wrapping NoOpRepository`(@TempDir tempDir: Path) {
+    fun `createRepository with null modelPath returns ProxyRepository wrapping NoOpRepository`(
+        @TempDir tempDir: Path,
+    ) {
         val repo = createRepository(r4Context, createNoOpRepo(), null)
         assertInstanceOf(ProxyRepository::class.java, repo)
     }
 
     @Test
-    fun `createRepository with modelPath returns ProxyRepository`(@TempDir tempDir: Path) {
+    fun `createRepository with modelPath returns ProxyRepository`(
+        @TempDir tempDir: Path,
+    ) {
         val dataDir = tempDir.resolve("data")
         Files.createDirectories(dataDir)
         val repo = createRepository(r4Context, createNoOpRepo(), dataDir)
@@ -706,7 +713,9 @@ class CqlEvaluatorTest {
     }
 
     @Test
-    fun `buildCqlOptions with options path loads from file`(@TempDir tempDir: Path) {
+    fun `buildCqlOptions with options path loads from file`(
+        @TempDir tempDir: Path,
+    ) {
         val optsFile = tempDir.resolve("cql-options.json")
         optsFile.toFile().writeText("""{"cqlCompilerOptions": {"compatibilityLevel": "2.0"}}""")
         assertDoesNotThrow { buildCqlOptions(optsFile.toUri().toString()) }
@@ -826,22 +835,24 @@ class CqlEvaluatorTest {
 
     @Test
     fun `evaluate returns Error expression when library evaluation fails`() {
-        val request = ExecuteCqlRequest(
-            fhirVersion = "R4",
-            rootDir = null,
-            optionsPath = null,
-            libraries = listOf(
-                LibraryRequest(
-                    libraryName = "NonExistentLib",
-                    libraryUri = "file:///nonexistent/path",
-                    libraryVersion = "1",
-                    terminologyUri = null,
-                    model = null,
-                    context = null,
-                    parameters = emptyList(),
-                ),
-            ),
-        )
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "NonExistentLib",
+                            libraryUri = "file:///nonexistent/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
         val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
         assertEquals(1, response.results.size)
         val errorExpr = response.results[0].expressions.find { it.name == "Error" }
@@ -854,15 +865,17 @@ class CqlEvaluatorTest {
 
     @Test
     fun `evaluate processes multiple libraries in same request`() {
-        val request = ExecuteCqlRequest(
-            fhirVersion = "R4",
-            rootDir = null,
-            optionsPath = null,
-            libraries = listOf(
-                LibraryRequest("WithParam", "file:///any/path", "1", null, null, null, emptyList()),
-                LibraryRequest("WithDateTimeParam", "file:///any/path", "1", null, null, null, emptyList()),
-            ),
-        )
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest("WithParam", "file:///any/path", "1", null, null, null, emptyList()),
+                        LibraryRequest("WithDateTimeParam", "file:///any/path", "1", null, null, null, emptyList()),
+                    ),
+            )
         val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
         assertEquals(2, response.results.size)
         assertTrue(response.results.all { it.expressions.none { e -> e.name == "Error" } })
@@ -874,14 +887,16 @@ class CqlEvaluatorTest {
 
     @Test
     fun `evaluate with null rootDir does not throw`() {
-        val request = ExecuteCqlRequest(
-            fhirVersion = "R4",
-            rootDir = null,
-            optionsPath = null,
-            libraries = listOf(
-                LibraryRequest("WithParam", "file:///any/path", "1", null, null, null, emptyList()),
-            ),
-        )
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest("WithParam", "file:///any/path", "1", null, null, null, emptyList()),
+                    ),
+            )
         assertDoesNotThrow {
             CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
         }

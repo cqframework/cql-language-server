@@ -18,7 +18,11 @@ class JsonLibraryResolutionConfigProviderTest {
     private fun provider(vararg dirs: File): JsonLibraryResolutionConfigProvider =
         JsonLibraryResolutionConfigProvider(dirs.map { folder(it) })
 
-    private fun writeConfig(dir: File, content: String, filename: String = "config.json"): File {
+    private fun writeConfig(
+        dir: File,
+        content: String,
+        filename: String = "config.json",
+    ): File {
         val configDir = File(dir, "input/tests").also { it.mkdirs() }
         return File(configDir, filename).also { it.writeText(content) }
     }

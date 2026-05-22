@@ -22,12 +22,16 @@ class FileContentServiceTest {
     // ── Test helpers ────────────────────────────────────────────────────────
 
     /** Returns defaults for every root — no disk access needed for most tests. */
-    private val noOpConfigProvider = object : LibraryResolutionConfigProvider {
-        override fun getConfig(root: URI) = LibraryResolutionConfig()
-    }
+    private val noOpConfigProvider =
+        object : LibraryResolutionConfigProvider {
+            override fun getConfig(root: URI) = LibraryResolutionConfig()
+        }
 
     private fun folder(dir: File): WorkspaceFolder =
-        WorkspaceFolder().also { it.uri = dir.toURI().toString(); it.name = dir.name }
+        WorkspaceFolder().also {
+            it.uri = dir.toURI().toString()
+            it.name = dir.name
+        }
 
     private fun manager(vararg dirs: File): LibraryResolutionManager =
         LibraryResolutionManager(dirs.map { folder(it) })
@@ -59,6 +63,7 @@ class FileContentServiceTest {
         object : LibraryResolutionManager(dirs.map { folder(it) }) {
             override fun resolveCanonicalUrl(url: String): URI? =
                 if (url == canonicalUrl) inputCqlDir.toURI() else null
+
             override fun igProjects(): List<WorkspaceFolder> = dirs.map { folder(it) }
         }
 
@@ -362,9 +367,10 @@ class FileContentServiceTest {
         File(configDir, "config.json").writeText("""{ "unqualifiedCrossProjectSearch": true }""")
         val configProvider = JsonLibraryResolutionConfigProvider(listOf(folder(projectA), folder(projectB)))
 
-        val m = object : LibraryResolutionManager(listOf(folder(projectA), folder(projectB))) {
-            override fun igProjects(): List<WorkspaceFolder> = listOf(folder(projectA), folder(projectB))
-        }
+        val m =
+            object : LibraryResolutionManager(listOf(folder(projectA), folder(projectB))) {
+                override fun igProjects(): List<WorkspaceFolder> = listOf(folder(projectA), folder(projectB))
+            }
         val svc = FileContentService(listOf(folder(projectA), folder(projectB)), configProvider, m)
 
         val result = svc.locate(projectAInput.toURI(), id("SharedLib", "1.0.0"))
@@ -386,9 +392,10 @@ class FileContentServiceTest {
         )
         val configProvider = JsonLibraryResolutionConfigProvider(listOf(folder(projectA), folder(projectB)))
 
-        val m = object : LibraryResolutionManager(listOf(folder(projectA), folder(projectB))) {
-            override fun igProjects(): List<WorkspaceFolder> = listOf(folder(projectA), folder(projectB))
-        }
+        val m =
+            object : LibraryResolutionManager(listOf(folder(projectA), folder(projectB))) {
+                override fun igProjects(): List<WorkspaceFolder> = listOf(folder(projectA), folder(projectB))
+            }
         val svc = FileContentService(listOf(folder(projectA), folder(projectB)), configProvider, m)
 
         val result = svc.locate(projectAInput.toURI(), id("SharedLib", "1.0.0"))
@@ -415,9 +422,10 @@ class FileContentServiceTest {
         val folders = listOf(folder(projectA), folder(projectB), folder(projectC))
         val configProvider = JsonLibraryResolutionConfigProvider(folders)
 
-        val m = object : LibraryResolutionManager(folders) {
-            override fun igProjects(): List<WorkspaceFolder> = folders
-        }
+        val m =
+            object : LibraryResolutionManager(folders) {
+                override fun igProjects(): List<WorkspaceFolder> = folders
+            }
         val svc = FileContentService(folders, configProvider, m)
 
         val result = svc.locate(projectAInput.toURI(), id("SharedLib", "1.0.0"))

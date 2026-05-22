@@ -24,7 +24,6 @@ import java.nio.file.Path
  * so tests run entirely on the local filesystem without needing classpath fixtures.
  */
 class FederatedTerminologyRepoTest {
-
     private val fhirContext: FhirContext = FhirContext.forR4Cached()
 
     @TempDir
@@ -44,7 +43,11 @@ class FederatedTerminologyRepoTest {
     // -----------------------------------------------------------------------
 
     /** Creates `{projectRoot}/vocabulary/valueset/{id}.json` with a minimal ValueSet. */
-    private fun writeValueSet(projectRoot: Path, id: String, url: String = "http://example.org/$id") {
+    private fun writeValueSet(
+        projectRoot: Path,
+        id: String,
+        url: String = "http://example.org/$id",
+    ) {
         val vsDir = projectRoot.resolve("vocabulary/valueset")
         Files.createDirectories(vsDir)
         vsDir.resolve("$id.json").toFile().writeText(
@@ -52,7 +55,10 @@ class FederatedTerminologyRepoTest {
         )
     }
 
-    private fun searchById(repo: FederatedTerminologyRepo, id: String): List<ValueSet> {
+    private fun searchById(
+        repo: FederatedTerminologyRepo,
+        id: String,
+    ): List<ValueSet> {
         val result = repo.search(Bundle::class.java, ValueSet::class.java, Searches.byId(id), null)
         @Suppress("UNCHECKED_CAST")
         return BundleUtil.toListOfResources(fhirContext, result) as List<ValueSet>
@@ -163,7 +169,7 @@ class FederatedTerminologyRepoTest {
 
     @Test
     fun constructor_createsDelegateForEachValidPath() {
-        writeValueSet(projectA, "dummy")  // ensure vocabulary dir exists for convention detection
+        writeValueSet(projectA, "dummy") // ensure vocabulary dir exists for convention detection
         writeValueSet(projectB, "dummy")
 
         val repo = FederatedTerminologyRepo(fhirContext, listOf(projectA, projectB))

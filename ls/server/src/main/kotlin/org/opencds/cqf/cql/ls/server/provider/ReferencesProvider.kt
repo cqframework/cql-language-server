@@ -53,8 +53,8 @@ class ReferencesProvider(
 
     private fun nameOf(elm: Element): String? =
         when (elm) {
-            is ExpressionDef -> elm.name  // also covers FunctionDef
-            is ExpressionRef -> elm.name  // also covers FunctionRef
+            is ExpressionDef -> elm.name // also covers FunctionDef
+            is ExpressionRef -> elm.name // also covers FunctionRef
             is ValueSetRef -> elm.name
             is CodeRef -> elm.name
             is ConceptRef -> elm.name

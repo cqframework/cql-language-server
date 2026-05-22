@@ -148,7 +148,7 @@ class CqlCompilationManager(
         libraryManager.librarySourceLoader.registerProvider(
             FederatedLibrarySourceProvider(root, contentService, igContextManager.getContext(root)),
         )
-        igContextManager.setupLibraryManager(root, libraryManager)         // registers npm (2)
+        igContextManager.setupLibraryManager(root, libraryManager) // registers npm (2)
         // Register other workspace projects' namespaces AFTER npm so ensureNamespaceRegistered
         // is a safe no-op if npm already registered the same namespace.
         libraryResolutionManager.registerWorkspaceNamespaces(libraryManager)

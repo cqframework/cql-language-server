@@ -146,13 +146,15 @@ class FileContentService(
         // (e.g. `include com.example.helper100` → system="https://example.com/fhir")
         val identifierSystem = identifier.system
         if (identifierSystem != null) {
-            val inputCqlUri = namespaceManager.resolveCanonicalUrl(identifierSystem)
-                ?: return emptySet()  // unknown namespace — resolution error, not a crash
+            val inputCqlUri =
+                namespaceManager.resolveCanonicalUrl(identifierSystem)
+                    ?: return emptySet() // unknown namespace — resolution error, not a crash
             val rootFile = toFile(inputCqlUri) ?: return emptySet()
             val version = identifier.version
-            val file = (if (version != null) bfsExact(rootFile, name, version) else null)
-                ?: bfsCompatible(rootFile, name, version, LibraryResolutionMode.PATCH_FLEXIBLE)
-                ?: return emptySet()
+            val file =
+                (if (version != null) bfsExact(rootFile, name, version) else null)
+                    ?: bfsCompatible(rootFile, name, version, LibraryResolutionMode.PATCH_FLEXIBLE)
+                    ?: return emptySet()
             return setOf(file.toURI())
         }
 
@@ -161,7 +163,11 @@ class FileContentService(
         val config = configProvider.getConfig(root)
         log.debug(
             "locate: '{}' version '{}' — root={}, crossProjectSearch={}, mode={}",
-            name, identifier.version, root, config.unqualifiedCrossProjectSearch, config.mode,
+            name,
+            identifier.version,
+            root,
+            config.unqualifiedCrossProjectSearch,
+            config.mode,
         )
         val version = identifier.version
 
@@ -247,19 +253,20 @@ class FileContentService(
             containingFolderUri,
             igProjects.joinToString { "${it.name}(${it.uri})" },
         )
-        val result = igProjects
-            .filter { Uris.parseOrNull(it.uri) != containingFolderUri }
-            .filter { it.name !in config.projectSearchExclude }
-            .sortedWith(
-                compareBy(
-                    { w ->
-                        val idx = config.projectSearchOrder.indexOf(w.name)
-                        if (idx < 0) Int.MAX_VALUE else idx
-                    },
-                    { it.name },
-                ),
-            )
-            .mapNotNull { Uris.parseOrNull(it.uri) }
+        val result =
+            igProjects
+                .filter { Uris.parseOrNull(it.uri) != containingFolderUri }
+                .filter { it.name !in config.projectSearchExclude }
+                .sortedWith(
+                    compareBy(
+                        { w ->
+                            val idx = config.projectSearchOrder.indexOf(w.name)
+                            if (idx < 0) Int.MAX_VALUE else idx
+                        },
+                        { it.name },
+                    ),
+                )
+                .mapNotNull { Uris.parseOrNull(it.uri) }
         log.debug("tier3FolderUris: searching {} project(s): {}", result.size, result)
         return result
     }
@@ -362,8 +369,8 @@ class FileContentService(
         requested: Version?,
         mode: LibraryResolutionMode,
     ): Boolean {
-        if (requested == null) return true  // no version specified → any version acceptable
-        if (found == null) return true      // unversioned file: no version to match against, accept in all modes (including STRICT)
+        if (requested == null) return true // no version specified → any version acceptable
+        if (found == null) return true // unversioned file: no version to match against, accept in all modes (including STRICT)
         return when (mode) {
             LibraryResolutionMode.STRICT -> false
             LibraryResolutionMode.PATCH_FLEXIBLE ->
@@ -377,8 +384,8 @@ class FileContentService(
         candidate: Version?,
         current: Version?,
     ): Boolean {
-        if (current == null) return true          // any file beats nothing
-        if (candidate == null) return false       // versioned beats unversioned
+        if (current == null) return true // any file beats nothing
+        if (candidate == null) return false // versioned beats unversioned
         return candidate.compareTo(current) > 0
     }
 

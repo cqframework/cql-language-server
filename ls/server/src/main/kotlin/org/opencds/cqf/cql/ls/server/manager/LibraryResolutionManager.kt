@@ -126,24 +126,34 @@ open class LibraryResolutionManager(
         log.debug("buildNamespaceIndex: scanning {} workspace folder(s)", workspaceFolders.size)
         for (w in workspaceFolders) {
             val folderUri = Uris.parseOrNull(w.uri) ?: continue
-            val folderFile = try { Paths.get(folderUri).toFile() } catch (e: Exception) { continue }
+            val folderFile =
+                try {
+                    Paths.get(folderUri).toFile()
+                } catch (e: Exception) {
+                    continue
+                }
             log.debug("buildNamespaceIndex: folder '{}' → {}", w.name, folderFile)
 
             // Check both the workspace folder root and one level of subdirectories.
             // Multi-project workspaces (e.g. PAS-sample-structure-r4/{Common,Policy2,...})
             // keep each IG project in a subdirectory; the workspace folder itself has no ig.ini.
-            val dirsToScan = buildList {
-                add(folderFile)
-                folderFile.listFiles()?.filter { it.isDirectory }?.let { addAll(it) }
-            }
+            val dirsToScan =
+                buildList {
+                    add(folderFile)
+                    folderFile.listFiles()?.filter { it.isDirectory }?.let { addAll(it) }
+                }
 
             for (dir in dirsToScan) {
                 val igIniFile = File(dir, "ig.ini")
                 if (!igIniFile.exists()) continue
                 // For a subdirectory project, synthesize a WorkspaceFolder so igProjects() and
                 // tier-3 search resolve the correct input/cql path and folder name.
-                val effectiveFolder = if (dir == folderFile) w
-                    else WorkspaceFolder(dir.toURI().toString(), dir.name)
+                val effectiveFolder =
+                    if (dir == folderFile) {
+                        w
+                    } else {
+                        WorkspaceFolder(dir.toURI().toString(), dir.name)
+                    }
                 val dirUri = dir.toURI()
                 try {
                     // igNamespace is just NamespaceInfo(packageId, canonicalBase) — read directly
@@ -153,12 +163,15 @@ open class LibraryResolutionManager(
                     // break namespace-qualified includes that point to local workspace libraries.
                     val (packageId, canonicalBase) = readIgContextInfo(igIniFile) ?: continue
                     val nsInfo = NamespaceInfo(packageId, canonicalBase)
-                    val inputCqlUri = Uris.addPath(dirUri, "input")
-                        ?.let { Uris.addPath(it, "cql") }
-                        ?: continue
+                    val inputCqlUri =
+                        Uris.addPath(dirUri, "input")
+                            ?.let { Uris.addPath(it, "cql") }
+                            ?: continue
                     log.debug(
                         "buildNamespaceIndex: indexed '{}' (canonical='{}', inputCql={})",
-                        packageId, canonicalBase, inputCqlUri,
+                        packageId,
+                        canonicalBase,
+                        inputCqlUri,
                     )
                     result[nsInfo.uri] = NamespaceEntry(nsInfo, inputCqlUri, effectiveFolder)
                 } catch (e: Exception) {

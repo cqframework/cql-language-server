@@ -217,7 +217,10 @@ open class IgContextManager(private val contentService: ContentService) {
         }
     }
 
-    private fun findLocalProject(workspaceRoot: Path, packageId: String): IGContext? {
+    private fun findLocalProject(
+        workspaceRoot: Path,
+        packageId: String,
+    ): IGContext? {
         val dirs =
             try {
                 Files.list(workspaceRoot).filter { Files.isDirectory(it) }.toList()

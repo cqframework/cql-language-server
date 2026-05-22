@@ -34,19 +34,19 @@ class FederatedTerminologyRepo(
     private val fhirContext: FhirContext,
     inputPaths: List<Path>,
 ) : IRepository {
-
     companion object {
         private val log = LoggerFactory.getLogger(FederatedTerminologyRepo::class.java)
     }
 
-    internal val delegates: List<IRepository> = inputPaths.mapNotNull { path ->
-        try {
-            IgStandardRepository(fhirContext, path)
-        } catch (e: Exception) {
-            log.warn("Could not create terminology repository for {}: {}", path, e.message)
-            null
+    internal val delegates: List<IRepository> =
+        inputPaths.mapNotNull { path ->
+            try {
+                IgStandardRepository(fhirContext, path)
+            } catch (e: Exception) {
+                log.warn("Could not create terminology repository for {}: {}", path, e.message)
+                null
+            }
         }
-    }
 
     override fun fhirContext(): FhirContext = fhirContext
 
@@ -94,10 +94,16 @@ class FederatedTerminologyRepo(
     }
 
     // Write operations are not supported for a read-only terminology federation.
-    override fun <T : IBaseResource> create(resource: T, headers: Map<String, String>?): MethodOutcome =
+    override fun <T : IBaseResource> create(
+        resource: T,
+        headers: Map<String, String>?,
+    ): MethodOutcome =
         throw UnsupportedOperationException("FederatedTerminologyRepo is read-only")
 
-    override fun <T : IBaseResource> update(resource: T, headers: Map<String, String>?): MethodOutcome =
+    override fun <T : IBaseResource> update(
+        resource: T,
+        headers: Map<String, String>?,
+    ): MethodOutcome =
         throw UnsupportedOperationException("FederatedTerminologyRepo is read-only")
 
     override fun <T : IBaseResource, I : IIdType> delete(

@@ -46,18 +46,24 @@ fun main(args: Array<String>) {
     val workspaceFolders = mutableListOf<WorkspaceFolder>()
 
     val activeContentService = ActiveContentService().also { eventBus.register(it) }
-    val libraryResolutionManager = LibraryResolutionManager(workspaceFolders)
-        .also { eventBus.register(it) }
-    val configProvider = JsonLibraryResolutionConfigProvider(workspaceFolders)
-        .also { eventBus.register(it) }
+    val libraryResolutionManager =
+        LibraryResolutionManager(workspaceFolders)
+            .also { eventBus.register(it) }
+    val configProvider =
+        JsonLibraryResolutionConfigProvider(workspaceFolders)
+            .also { eventBus.register(it) }
     val fileContentService = FileContentService(workspaceFolders, configProvider, libraryResolutionManager)
     val federatedContentService = FederatedContentService(activeContentService, fileContentService)
 
     val compilerOptionsManager = CompilerOptionsManager(federatedContentService).also { eventBus.register(it) }
     val igContextManager = IgContextManager(federatedContentService).also { eventBus.register(it) }
-    val compilationManager = CqlCompilationManager(
-        federatedContentService, compilerOptionsManager, igContextManager, libraryResolutionManager,
-    )
+    val compilationManager =
+        CqlCompilationManager(
+            federatedContentService,
+            compilerOptionsManager,
+            igContextManager,
+            libraryResolutionManager,
+        )
 
     val languageClientFuture = CompletableFuture<LanguageClient>()
     val commandsFuture = CompletableFuture<List<CommandContribution>>()

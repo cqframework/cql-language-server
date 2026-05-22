@@ -31,7 +31,6 @@ class FederatedLibrarySourceProvider(
     private val contentService: ContentService,
     npmProcessor: NpmProcessor?,
 ) : LibrarySourceProvider {
-
     companion object {
         private val log = LoggerFactory.getLogger(FederatedLibrarySourceProvider::class.java)
     }
@@ -50,8 +49,8 @@ class FederatedLibrarySourceProvider(
     override fun getLibrarySource(libraryIdentifier: VersionedIdentifier): Source? =
         // Tiers 1 + 2: same-project then cross-project (FileContentService.locate() decides scope)
         contentServiceSource(libraryIdentifier)
-        // Tier 3: NPM packages
-        ?: npmProvider?.getLibrarySource(libraryIdentifier)
+            // Tier 3: NPM packages
+            ?: npmProvider?.getLibrarySource(libraryIdentifier)
 
     private fun contentServiceSource(identifier: VersionedIdentifier): Source? {
         // Use locate() + read(uri) rather than read(root, identifier) to handle the case where

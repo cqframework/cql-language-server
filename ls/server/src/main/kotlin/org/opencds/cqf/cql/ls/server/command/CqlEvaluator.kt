@@ -5,14 +5,14 @@ import ca.uhn.fhir.context.FhirVersionEnum
 import ca.uhn.fhir.repository.IRepository
 import kotlinx.io.Source
 import kotlinx.io.files.Path
-import java.util.concurrent.ConcurrentHashMap
-import java.util.LinkedHashMap
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider
 import org.cqframework.cql.cql2elm.LibrarySourceProvider
+import org.cqframework.cql.cql2elm.model.CompiledLibrary
 import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider
 import org.cqframework.fhir.npm.NpmProcessor
+import org.cqframework.fhir.utilities.IGContext
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseDatatype
@@ -23,14 +23,11 @@ import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
-import org.cqframework.cql.cql2elm.model.CompiledLibrary
-import org.cqframework.fhir.utilities.IGContext
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.fhir.cql.CqlOptions
-import org.opencds.cqf.cql.engine.execution.EvaluationResults
 import org.opencds.cqf.fhir.cql.Engines
 import org.opencds.cqf.fhir.cql.EvaluationSettings
 import org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings
@@ -44,17 +41,10 @@ import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_
 import org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings.VALUESET_PRE_EXPANSION_MODE
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository
 import org.slf4j.LoggerFactory
-import java.nio.file.Paths
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import java.math.BigDecimal
-import java.util.regex.Pattern
-import kotlin.text.buildString
+import java.nio.file.Paths
+import java.util.LinkedHashMap
+import java.util.concurrent.ConcurrentHashMap
 
 object CqlEvaluator {
     private val log = LoggerFactory.getLogger(CqlEvaluator::class.java)
@@ -85,7 +75,7 @@ object CqlEvaluator {
     ): String {
         if (!parameterType.contains("DateTime")) return value
         // Append 'T' to any @YYYY-MM-DD literal not already followed by 'T'
-         return value.replace(Regex("@(\\d{4}-\\d{2}-\\d{2})(?!T)")) { match -> "@${match.groupValues[1]}T" }
+        return value.replace(Regex("@(\\d{4}-\\d{2}-\\d{2})(?!T)")) { match -> "@${match.groupValues[1]}T" }
     }
 
     /**
@@ -125,10 +115,10 @@ object CqlEvaluator {
     private fun parseCqlQuantityValue(value: String): org.hl7.fhir.r5.model.Quantity {
         val quantity = org.hl7.fhir.r5.model.Quantity()
         // Simple parsing - in a real implementation, this would be more robust
-            val parts = value.trim().split("'".toRegex(), limit = 2)
-         if (parts.size == 2) {
-             val numericPart = parts[0].trim()
-             val unitPart = parts[1].trim().removeSuffix("'")
+        val parts = value.trim().split("'".toRegex(), limit = 2)
+        if (parts.size == 2) {
+            val numericPart = parts[0].trim()
+            val unitPart = parts[1].trim().removeSuffix("'")
             try {
                 quantity.value = numericPart.toBigDecimal()
                 quantity.unit = unitPart
@@ -161,7 +151,7 @@ object CqlEvaluator {
     private fun parseCqlIntervalValue(
         parameterName: String,
         parameterValue: String,
-        pointType: String
+        pointType: String,
     ): Any {
         // This is a simplified implementation - a full implementation would parse the interval properly
         // For now, we'll return the raw value and let the engine handle parsing
@@ -199,23 +189,27 @@ object CqlEvaluator {
             CqlSourceStringProvider(PARAM_EVAL_LIBRARY_ID, cqlSource),
         )
 
-          val identifier = VersionedIdentifier().withId(PARAM_EVAL_LIBRARY_ID).withVersion("1")
-          return try {
-              val evalResults = paramEngine.evaluate {
-                  library(identifier)
-              }
-              val libResult = evalResults.getResultFor(identifier)
-                  ?: throw (evalResults.getExceptionFor(identifier)
-                      ?: RuntimeException("No result or exception found for library ${identifier.id}"))
-              parameters.mapIndexed { i, p ->
-                  (p.parameterName as String?) to libResult.expressionResults["__v${i}__"]?.value
-              }.toMap().toMutableMap()
-          } catch (e: Exception) {
-             log.warn(
-                 "Failed to evaluate parameter values for [${parameters.joinToString { it.parameterName }}]: ${e.message}",
-             )
-             null
-         }
+        val identifier = VersionedIdentifier().withId(PARAM_EVAL_LIBRARY_ID).withVersion("1")
+        return try {
+            val evalResults =
+                paramEngine.evaluate {
+                    library(identifier)
+                }
+            val libResult =
+                evalResults.getResultFor(identifier)
+                    ?: throw (
+                        evalResults.getExceptionFor(identifier)
+                            ?: RuntimeException("No result or exception found for library ${identifier.id}")
+                    )
+            parameters.mapIndexed { i, p ->
+                (p.parameterName as String?) to libResult.expressionResults["__v${i}__"]?.value
+            }.toMap().toMutableMap()
+        } catch (e: Exception) {
+            log.warn(
+                "Failed to evaluate parameter values for [${parameters.joinToString { it.parameterName }}]: ${e.message}",
+            )
+            null
+        }
     }
 
     @Suppress("removal") // TODO: Missed a spot upstream in the CQL library
@@ -328,7 +322,7 @@ object CqlEvaluator {
         return result
     }
 
-private fun formatValue(value: Any?): String {
+    private fun formatValue(value: Any?): String {
         if (value == null) return "null"
 
         return when (value) {
@@ -338,7 +332,7 @@ private fun formatValue(value: Any?): String {
             }
             is IBaseResource ->
                 value.fhirType() +
-                        if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
+                    if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
             is IBaseDatatype -> value.fhirType()
             is IBase -> value.fhirType()
             else -> value.toString()
@@ -357,7 +351,7 @@ private fun formatValue(value: Any?): String {
 
     private fun buildEvaluationSettings(
         cqlOptions: CqlOptions,
-        npmProcessor: NpmProcessor?
+        npmProcessor: NpmProcessor?,
     ): EvaluationSettings {
         val terminologySettings =
             TerminologySettings().apply {
@@ -456,19 +450,24 @@ private fun formatValue(value: Any?): String {
                 val identifier = VersionedIdentifier().withId(libraryRequest.libraryName)
 
                 val parameters = params?.filterKeys { it != null }?.mapKeys { it.key!! }
-                val evaluationResults = engine.evaluate {
-                    if (!parameters.isNullOrEmpty()) this.parameters = parameters
-                    if (libraryRequest.context != null) {
-                        contextParameter = Pair(
-                            libraryRequest.context.contextName,
-                            libraryRequest.context.contextValue as Any,
-                        )
+                val evaluationResults =
+                    engine.evaluate {
+                        if (!parameters.isNullOrEmpty()) this.parameters = parameters
+                        if (libraryRequest.context != null) {
+                            contextParameter =
+                                Pair(
+                                    libraryRequest.context.contextName,
+                                    libraryRequest.context.contextValue as Any,
+                                )
+                        }
+                        library(identifier)
                     }
-                    library(identifier)
-                }
-                val result = evaluationResults.getResultFor(identifier)
-                    ?: throw (evaluationResults.getExceptionFor(identifier)
-                        ?: RuntimeException("No result or exception found for library ${identifier.id}"))
+                val result =
+                    evaluationResults.getResultFor(identifier)
+                        ?: throw (
+                            evaluationResults.getExceptionFor(identifier)
+                                ?: RuntimeException("No result or exception found for library ${identifier.id}")
+                        )
                 val expressions =
                     result.expressionResults.map { (key, value) ->
                         ExpressionResult(key, formatValue(value.value))
@@ -489,8 +488,11 @@ private fun formatValue(value: Any?): String {
                             .mapNotNull { paramDef ->
                                 val name = paramDef.name ?: return@mapNotNull null
                                 val stateValue = engine.state.parameters["${identifier.id}.$name"]
-                                if (stateValue != null) DefaultParameterResult(name, formatValue(stateValue))
-                                else null
+                                if (stateValue != null) {
+                                    DefaultParameterResult(name, formatValue(stateValue))
+                                } else {
+                                    null
+                                }
                             }
                     } else {
                         emptyList()
@@ -567,11 +569,15 @@ private fun formatValue(value: Any?): String {
         // each IgStandardRepository caches its directory scan, so ValueSet lookups are
         // O(1) after the first search for each project.  This covers both the primary
         // project's vocabulary and any helper-library projects' vocabulary directories.
-        val terminologyRepo: IRepository = run {
-            val inputPaths = libraryResolutionManager.getInputDirectories()
-            if (inputPaths.isEmpty()) NoOpRepository(fhirContext)
-            else FederatedTerminologyRepo(fhirContext, inputPaths)
-        }
+        val terminologyRepo: IRepository =
+            run {
+                val inputPaths = libraryResolutionManager.getInputDirectories()
+                if (inputPaths.isEmpty()) {
+                    NoOpRepository(fhirContext)
+                } else {
+                    FederatedTerminologyRepo(fhirContext, inputPaths)
+                }
+            }
 
         // libraryCaches: compiled ELM (FHIRHelpers, QICore, etc.) produced by one batch is
         //   reused by subsequent batches without recompilation. Safe because VersionedIdentifier

@@ -156,5 +156,4 @@ class CqlWorkspaceService(
             ?.let { (cmd, _) -> throw IllegalArgumentException("The command $cmd was contributed multiple times") }
         return ImmutableList.copyOf(allCommands)
     }
-
 }
