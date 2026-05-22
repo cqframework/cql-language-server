@@ -9,6 +9,9 @@ import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionRef
 import org.hl7.elm.r1.IncludeDef
+import org.hl7.elm.r1.Literal
+import org.hl7.elm.r1.OperandRef
+import org.hl7.elm.r1.ParameterRef
 import org.hl7.elm.r1.ValueSetRef
 import org.opencds.cqf.cql.ls.server.utility.Elements
 
@@ -42,7 +45,16 @@ class DefinitionTrackBackVisitor : BaseElmLibraryVisitor<Element?, Position>() {
     override fun visitFunctionRef(
         elm: FunctionRef,
         context: Position,
-    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+    ): Element? {
+        // Recurse into operands so that arguments (Literal, ExpressionRef, etc.) under the
+        // cursor are returned instead of the outer function call. Without recursion, "Go to
+        // Definition" on a function argument jumps to the function itself.
+        val childResult = super.visitFunctionRef(elm, context)
+        return aggregateResult(
+            if (Elements.containsPosition(elm, context)) elm else null,
+            childResult,
+        )
+    }
 
     override fun visitValueSetRef(
         elm: ValueSetRef,
@@ -66,6 +78,21 @@ class DefinitionTrackBackVisitor : BaseElmLibraryVisitor<Element?, Position>() {
 
     override fun visitIncludeDef(
         elm: IncludeDef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitOperandRef(
+        elm: OperandRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitParameterRef(
+        elm: ParameterRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitLiteral(
+        elm: Literal,
         context: Position,
     ): Element? = if (Elements.containsPosition(elm, context)) elm else null
 }

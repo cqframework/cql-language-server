@@ -127,6 +127,52 @@ class DefinitionProviderTest {
     }
 
     // -------------------------------------------------------------------------
+    // Literal argument in function call — should return empty
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_literalArgument_returnsEmpty() {
+        // FunctionBody.cql line 11 (0-indexed): "    \"Identity\"('Hello')"
+        // Position(11, 15) lands on 'H' inside 'Hello' — a Literal argument.
+        // "Go to Definition" should return nothing for a literal.
+        val locations =
+            provider.definition(
+                DefinitionParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FunctionBody.cql"),
+                    Position(11, 15),
+                ),
+            )
+
+        assertTrue(locations.isEmpty(), "Expected empty locations for Literal argument, got ${locations.size}")
+    }
+
+    // -------------------------------------------------------------------------
+    // OperandRef in function body — should navigate to the OperandDef
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_operandRef_navigatesToOperandDef() {
+        // FunctionBody.cql line 6 (0-indexed): "    if boolean"
+        // Position(6, 7) lands on 'b' of "boolean" (OperandRef inside Denied Reason body).
+        // "Go to Definition" should navigate to the OperandDef "boolean" in the signature.
+        val locations =
+            provider.definition(
+                DefinitionParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FunctionBody.cql"),
+                    Position(6, 7),
+                ),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for OperandRef")
+        val loc = locations.first()
+        assertTrue(
+            loc.targetUri.contains("FunctionBody"),
+            "Expected definition in FunctionBody, got: ${loc.targetUri}",
+        )
+        assertNotNull(loc.originSelectionRange, "Expected originSelectionRange to be set")
+    }
+
+    // -------------------------------------------------------------------------
     // Outside any navigable element — should return empty list
     // -------------------------------------------------------------------------
 
