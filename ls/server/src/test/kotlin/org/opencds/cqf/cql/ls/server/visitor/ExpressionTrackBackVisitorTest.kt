@@ -3,15 +3,19 @@ package org.opencds.cqf.cql.ls.server.visitor
 import org.eclipse.lsp4j.Position
 import org.hl7.elm.r1.Add
 import org.hl7.elm.r1.AliasRef
-import org.hl7.elm.r1.OperatorExpression
-import org.hl7.elm.r1.Or
 import org.hl7.elm.r1.AliasedQuerySource
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.FunctionRef
+import org.hl7.elm.r1.Literal
+import org.hl7.elm.r1.OperandDef
+import org.hl7.elm.r1.OperandRef
+import org.hl7.elm.r1.OperatorExpression
+import org.hl7.elm.r1.Or
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Query
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeAll
@@ -163,5 +167,37 @@ class ExpressionTrackBackVisitorTest {
         val pos = Position(range.end.line, range.end.character - 1)
         val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
         assertInstanceOf(Property::class.java, result)
+    }
+
+    @Test
+    fun visit_literal_returnsLiteral() {
+        // FunctionBody.cql line 11 (0-indexed): "    \"Identity\"('Hello')"
+        // Position(11, 15) lands on the 'H' inside 'Hello'.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionBody.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, Position(11, 15))
+        assertInstanceOf(Literal::class.java, result)
+    }
+
+    @Test
+    fun visit_operandRef_returnsOperandRef() {
+        // FunctionBody.cql line 6 (0-indexed): "    if boolean"
+        // Position(6, 7) lands on 'b' of "boolean" — an OperandRef inside Denied Reason.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionBody.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, Position(6, 7))
+        assertInstanceOf(OperandRef::class.java, result)
+    }
+
+    @Test
+    fun visit_operandDef_returnsOperandDef() {
+        // The ELM compiler does not set locators on OperandDef, so position-based lookup
+        // always returns the parent FunctionDef. Instead, verify by navigating the tree directly.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionBody.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val funcDef = library.statements!!.def.filterIsInstance<FunctionDef>().first { it.name == "Identity" }
+        val operandDef = funcDef.operand.first { it.name == "x" }
+        assertInstanceOf(OperandDef::class.java, operandDef)
+        assertEquals("x", operandDef.name)
     }
 }

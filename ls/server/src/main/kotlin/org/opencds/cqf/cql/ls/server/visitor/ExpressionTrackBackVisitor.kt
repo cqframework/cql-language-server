@@ -4,13 +4,20 @@ import org.cqframework.cql.elm.visiting.BaseElmLibraryVisitor
 import org.eclipse.lsp4j.Position
 import org.hl7.elm.r1.AliasRef
 import org.hl7.elm.r1.AliasedQuerySource
+import org.hl7.elm.r1.CodeRef
 import org.hl7.elm.r1.CodeSystemRef
+import org.hl7.elm.r1.ConceptRef
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.FunctionRef
+import org.hl7.elm.r1.Literal
+import org.hl7.elm.r1.OperandDef
+import org.hl7.elm.r1.OperandRef
 import org.hl7.elm.r1.OperatorExpression
+import org.hl7.elm.r1.ParameterDef
+import org.hl7.elm.r1.ParameterRef
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Retrieve
 import org.hl7.elm.r1.ValueSetRef
@@ -136,6 +143,41 @@ class ExpressionTrackBackVisitor : BaseElmLibraryVisitor<Element?, Position>() {
 
     override fun visitCodeSystemRef(
         elm: CodeSystemRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitOperandDef(
+        elm: OperandDef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitOperandRef(
+        elm: OperandRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitParameterDef(
+        elm: ParameterDef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitParameterRef(
+        elm: ParameterRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitLiteral(
+        elm: Literal,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitCodeRef(
+        elm: CodeRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitConceptRef(
+        elm: ConceptRef,
         context: Position,
     ): Element? = if (Elements.containsPosition(elm, context)) elm else null
 
