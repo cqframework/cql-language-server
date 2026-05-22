@@ -13,6 +13,7 @@ import org.hl7.elm.r1.Or
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Query
 import org.hl7.elm.r1.Retrieve
+import org.hl7.elm.r1.LetClause
 import org.hl7.elm.r1.ReturnClause
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
@@ -23,6 +24,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
+import org.opencds.cqf.cql.ls.server.visitor.CqlParseTreeVisitor
+import kotlin.math.max
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.core.utility.Uris
@@ -935,6 +938,148 @@ class HoverProviderTest {
         val value = hover!!.contents.right.value
         // Should show the expression type (the Items definition), not alias marker
         assertTrue(value.contains("define"), "Expected define syntax for source expression hover: $value")
+    }
+
+    @Test
+    fun hover_onWhereKeyword_returnsNull() {
+        // AllClausesQuery.cql: `where N > 1`
+        // Cursor on the "where" keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Where Clause Test" }
+        val query = def.expression as Query
+        // The ELM locator for where expression starts at the `where` keyword:
+        // Locator "7:5-7:15" → LSP Position(6, 4) for first char of 'where'.
+        val exprRange = TrackBacks.toRange(query.where!!.locator!!)!!
+        val pos = Position(exprRange.start.line, exprRange.start.character)
+
+        // Debug: check ANTLR tree structure
+        val parseTree = compilationManager.getParseTree(uri)
+        assertNotNull(parseTree, "ANTLR parse tree should not be null")
+        val ctx = CqlParseTreeVisitor.findDeepestContext(parseTree!!, pos)
+        assertNotNull(ctx, "Deepest ANTLR context should not be null ($pos)")
+        assertEquals(
+            "WhereClauseContext",
+            ctx!!.javaClass.simpleName,
+            "Expected WhereClauseContext at $pos"
+        )
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'where' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onWhereClauseExpression_returnsType() {
+        // AllClausesQuery.cql: `where N > 1`
+        // Hovering over "N" in the where condition should return the alias type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Where Clause Test" }
+        val query = def.expression as Query
+        val whereExpr = query.where ?: fail("Expected where expression")
+        val greater = whereExpr as? org.hl7.elm.r1.Greater ?: fail("Expected Greater expression")
+        val aliasRef = greater.operand[0] as? AliasRef ?: fail("Expected AliasRef as operand[0]")
+        // AliasRef locator at usage site, e.g. "7:11" → LSP Position(6, 10)
+        val aliasRange = TrackBacks.toRange(aliasRef.locator!!)!!
+        val pos = Position(aliasRange.start.line, aliasRange.start.character)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNotNull(hover, "Expected hover on where-clause expression, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("N:"), "Expected alias reference in where-clause hover: $value")
+    }
+
+    @Test
+    fun hover_onReturnKeyword_returnsNull() {
+        // AllClausesQuery.cql: `return N`
+        // Cursor on the "return" keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Return Clause Test" }
+        val query = def.expression as Query
+        // The ReturnClause locator starts at "return"
+        val returnRange = TrackBacks.toRange(query.`return`!!.locator!!)!!
+        val pos = Position(returnRange.start.line, returnRange.start.character)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'return' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onReturnClauseExpression_returnsType() {
+        // AllClausesQuery.cql: `return N`
+        // Hovering over the expression after "return" should show the alias type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Return Clause Test" }
+        val query = def.expression as Query
+        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val exprRange = TrackBacks.toRange(returnExpr.locator!!)!!
+        val pos = Position(exprRange.start.line, exprRange.start.character)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNotNull(hover, "Expected hover on return-clause expression, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("N:"), "Expected alias reference in return-clause hover: $value")
+    }
+
+    @Test
+    fun hover_onLetKeyword_returnsNull() {
+        // AllClausesQuery.cql line 13: `define "Let Clause Test": from "Numbers" N let X: N + 1 return X`
+        // Cursor on the "let" keyword at column 43 should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(12, 43)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'let' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onLetClauseIdentifier_returnsType() {
+        // AllClausesQuery.cql line 13: `define "Let Clause Test": from "Numbers" N let X: N + 1 return X`
+        // Hovering over "X" (the let identifier) at column 47 should produce a hover.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(12, 47)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNotNull(hover, "Expected hover on let-clause identifier, got null")
+    }
+
+    @Test
+    fun hover_onSortKeyword_returnsNull() {
+        // AllClausesQuery.cql line 15: `define "Sort Clause Test": from "Numbers" N sort by N`
+        // Cursor on the "sort" keyword at column 44 should return null.
+        // Note: the CQL compiler does not produce Query ELM for sort clauses,
+        // so we test keyword suppression via ANTLR only.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(14, 44)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'sort' keyword, got: ${hover?.contents?.right?.value}")
     }
 
     @Test
