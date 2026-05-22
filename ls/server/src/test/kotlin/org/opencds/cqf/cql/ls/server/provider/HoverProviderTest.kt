@@ -871,6 +871,73 @@ class HoverProviderTest {
     }
 
     @Test
+    fun hover_onFromKeyword_returnsNull() {
+        // FromQuery.cql: `from "Items" Item`
+        // Cursor on the "from" keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FromQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "From Clause Test" }
+        val query = def.expression as Query
+
+        val source = query.source.first()
+        val sourceRange = TrackBacks.toRange(source.locator!!)!!
+        val pos = Position(sourceRange.start.line, sourceRange.start.character - 5)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
+        )
+
+        assertNull(hover, "Expected null on 'from' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onFromClauseAlias_returnsItemType() {
+        // FromQuery.cql: `from "Items" Item`
+        // Hovering over "Item" (the alias) should return the item type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FromQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "From Clause Test" }
+        val query = def.expression as Query
+
+        val source = query.source.first()
+        val sourceEnd = TrackBacks.toRange(source.expression!!.locator!!)!!.end
+        val pos = Position(sourceEnd.line, sourceEnd.character + 2)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
+        )
+
+        assertNotNull(hover, "Expected hover on from-clause alias, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) Item:"), "Expected '(alias)' prefix and alias name in from-clause hover: $value")
+        assertTrue(value.contains("Integer"), "Expected item type Integer for from-alias hover: $value")
+    }
+
+    @Test
+    fun hover_onFromClauseSourceExpression_returnsType() {
+        // FromQuery.cql: `from "Items" Item`
+        // Hovering over "Items" (the source expression) should return the source type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FromQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "From Clause Test" }
+        val query = def.expression as Query
+
+        val source = query.source.first()
+        val sourceStart = TrackBacks.toRange(source.expression!!.locator!!)!!.start
+        // Position just inside the source expression, after the opening quote
+        val pos = Position(sourceStart.line, sourceStart.character + 1)
+
+        val hover = hoverProvider.hover(
+            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
+        )
+
+        assertNotNull(hover, "Expected hover on from-clause source expression, got null")
+        val value = hover!!.contents.right.value
+        // Should show the expression type (the Items definition), not alias marker
+        assertTrue(value.contains("define"), "Expected define syntax for source expression hover: $value")
+    }
+
+    @Test
     fun hover_onWithoutClauseAlias_returnsItemType() {
         // WithoutQuery.cql: "Without Clause Test" has `without "Items" Extra such that Extra > Item`
         // Hovering over "Extra" (the alias) should return the item type.

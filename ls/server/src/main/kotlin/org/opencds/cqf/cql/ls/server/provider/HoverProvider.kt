@@ -60,9 +60,11 @@ class HoverProvider(
         val raw = ExpressionTrackBackVisitor().visitLibrary(library, params.position) ?: return null
         val resolved = Elements.unwrapCoercions(raw, params.position)
 
+        // ANTLR parse tree — fetched once for all query clause resolution
+        val parseTree = compilationManager.getParseTree(uri)
+
         // ANTLR-based with/without classification (preferred path)
         if (resolved is With || resolved is Without) {
-            val parseTree = compilationManager.getParseTree(uri)
             if (parseTree != null) {
                 val result = resolveWithWithoutHover(resolved, parseTree, params, compiler, uri, library)
                 if (result != null) return result
@@ -71,6 +73,15 @@ class HoverProvider(
             } else {
                 if (shouldSuppressWithWithout(resolved, params)) return null
             }
+        }
+
+        // General ANTLR query keyword suppression for all clause types
+        // (sourceClause, whereClause, returnClause, letClause, sortClause, aggregateClause)
+        // When the cursor is on a keyword token directly inside any of these clause
+        // contexts (with no child rule context covering the cursor), suppress hover.
+        // With/Without clauses are excluded — they are handled above.
+        if (parseTree != null && isQueryKeywordPosition(parseTree, params.position)) {
+            return null
         }
 
         aliasForScopeProperty(resolved, params, compiler, uri, library)?.let { return it }
@@ -82,6 +93,44 @@ class HoverProvider(
     val markup = markupForElement(resolved, compiler, uri, library, params.position) ?: return null
     return Hover(markup, range)
 }
+
+    /**
+     * Returns true when the cursor is on a keyword terminal directly inside a query
+     * clause context (sourceClause, whereClause, returnClause, letClause, sortClause,
+     * aggregateClause), with no child rule context covering the cursor position.
+     *
+     * Example: in `from "Items" Item`, hovering on `from` returns true because the
+     * deepest ANTLR context at that position is the [SourceClauseContext] itself
+     * (the `from` token is directly inside the clause, not inside aliasedQuerySource).
+     *
+     * WithClauseContext/WithoutClauseContext are excluded — handled by resolveWithWithoutHover.
+     */
+    private fun isQueryKeywordPosition(
+        parseTree: cqlParser.LibraryContext,
+        position: Position,
+    ): Boolean {
+        val cursorCtx = CqlParseTreeVisitor.findDeepestContext(parseTree, position) ?: return false
+
+        var current: ParserRuleContext? = cursorCtx
+        while (current != null) {
+            when (current) {
+                is cqlParser.SourceClauseContext,
+                is cqlParser.WhereClauseContext,
+                is cqlParser.ReturnClauseContext,
+                is cqlParser.LetClauseContext,
+                is cqlParser.SortClauseContext,
+                is cqlParser.AggregateClauseContext -> {
+                    return cursorCtx == current
+                }
+                is cqlParser.WithClauseContext,
+                is cqlParser.WithoutClauseContext -> {
+                    return false
+                }
+            }
+            current = current.getParent() as? ParserRuleContext
+        }
+        return false
+    }
 
     /**
      * For scope-based property access (Property.scope = alias name, source = null)
