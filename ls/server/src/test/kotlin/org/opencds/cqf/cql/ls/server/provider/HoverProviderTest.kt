@@ -5,16 +5,18 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.hl7.elm.r1.Add
 import org.hl7.elm.r1.AliasRef
+import org.hl7.elm.r1.And
 import org.hl7.elm.r1.Code
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.FunctionRef
+import org.hl7.elm.r1.In
 import org.hl7.elm.r1.Or
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Query
 import org.hl7.elm.r1.Retrieve
-import org.hl7.elm.r1.LetClause
 import org.hl7.elm.r1.ReturnClause
+import org.hl7.elm.r1.UnaryExpression
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
 import org.hl7.elm.r1.Without
@@ -25,8 +27,6 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
-import org.opencds.cqf.cql.ls.server.visitor.CqlParseTreeVisitor
-import kotlin.math.max
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.core.utility.Uris
@@ -36,6 +36,7 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 import org.opencds.cqf.cql.ls.server.utility.TrackBacks
+import org.opencds.cqf.cql.ls.server.visitor.CqlParseTreeVisitor
 
 class HoverProviderTest {
     companion object {
@@ -104,7 +105,7 @@ class HoverProviderTest {
         assertNotNull(hover)
         val value = hover!!.contents.right.value
         assertTrue(value.contains("```cql"))
-        assertTrue(value.contains("define function \"Double\"(x System.Integer): System.Integer"), "Expected full function signature: $value")
+        assertTrue(value.contains("define function Double(x System.Integer): System.Integer"), "Expected full function signature: $value")
         assertTrue(value.contains("*FunctionLib version '1.0.0'*"), "Expected library annotation: $value")
     }
 
@@ -127,7 +128,7 @@ class HoverProviderTest {
         assertNotNull(hover)
         val value = hover!!.contents.right.value
         assertTrue(value.contains("define function"), "Expected CQL function signature in hover: $value")
-        assertTrue(value.contains("\"Double\""), "Expected function name in hover: $value")
+        assertTrue(value.contains("function Double"), "Expected function name in hover: $value")
         assertTrue(value.contains("("), "Expected parameter list in hover: $value")
         assertTrue(value.contains("System.Integer"), "Expected return type in hover: $value")
         assertTrue(value.contains("*FunctionLib version '1.0.0'*"), "Expected local library annotation: $value")
@@ -229,7 +230,7 @@ class HoverProviderTest {
         assertNotNull(hover)
         val value = hover!!.contents.right.value
         assertTrue(value.contains("define function"), "Expected CQL function signature in hover: $value")
-        assertTrue(value.contains("\"Double\""), "Expected function name in hover: $value")
+        assertTrue(value.contains("function Double"), "Expected function name in hover: $value")
         assertTrue(value.contains("*FunctionLib"), "Expected italic library source in hover: $value")
     }
 
@@ -493,7 +494,41 @@ class HoverProviderTest {
         assertNotNull(hover, "Expected alias hover on 'E' in E.period, got null")
         val value = hover!!.contents.right.value
         assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
-        assertTrue(value.contains("FHIR.Encounter"), "Expected Encounter type in alias hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
+    }
+
+    @Test
+    fun hover_onWithClauseSourceAliasPropertyAliasPortion_showsAliasType() {
+        // WithClauseScopeTest.cql: "With Scope Test" uses a with-clause with
+        // `such that AdultDepressionScreening.status is not null`.
+        // Hovering over "AdultDepressionScreening" (source alias, not with-clause alias)
+        // in the suchThat property access should show the alias type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithClauseScopeTest.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "With Scope Test" }
+        val query = def.expression as Query
+        val with = query.relationship.first() as With
+        // The suchThat is Not(IsNull(Property(scope=AdultDepressionScreening, path=status)))
+        // Navigate through UnaryExpression wrappers to find the Property
+        var current = with.suchThat
+        while (current is UnaryExpression) {
+            current = current.operand
+        }
+        val property =
+            current as? Property
+                ?: fail("Expected Property as deepest suchThat operand, got: ${current?.let { it::class.simpleName } ?: "null"}")
+        val range = TrackBacks.toRange(property.locator!!)!!
+        val posOnAlias = Position(range.start.line, range.start.character)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithClauseScopeTest.cql"), posOnAlias),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'AdultDepressionScreening' in suchThat property access, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) AdultDepressionScreening:"), "Expected '(alias) AdultDepressionScreening:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
     }
 
     @Test
@@ -648,6 +683,31 @@ class HoverProviderTest {
             hover!!.contents.right.value.contains("define fluent function"),
             "Expected CQL function syntax in hover: ${hover.contents.right.value}",
         )
+    }
+
+    @Test
+    fun hover_onChoicePropertyAlias_showsPropertyNotCoercion() {
+        // ChoicePropertyTest.cql: O.value where O is an alias for [Observation]
+        // Hovering over "value" should show property info, not the FHIRHelpers.ToValue wrapper.
+        val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ChoicePropertyTest.cql")
+        val hover = hoverProvider.hover(HoverParams(docId, Position(10, 12)))
+        assertNotNull(hover, "Expected hover on choice property 'value'")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) O.value:"), "Should show property info: $value")
+        assertFalse(value.contains("define function"), "Should not show FHIRHelpers wrapper: $value")
+    }
+
+    @Test
+    fun hover_onChoicePropertyInWithClause_showsPropertyNotCoercion() {
+        // ChoicePropertyWithClause.cql: Screening.value in a with/such-that clause
+        // Line 14:       such that Screening.value is not null
+        // Column 26 = 'v' of "value"
+        val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ChoicePropertyWithClause.cql")
+        val hover = hoverProvider.hover(HoverParams(docId, Position(14, 26)))
+        assertNotNull(hover, "Expected hover on choice property in with clause")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) Screening.value:"), "Should show property info: $value")
+        assertFalse(value.contains("define function"), "Should not show FHIRHelpers wrapper: $value")
     }
 
     @Test
@@ -848,9 +908,10 @@ class HoverProviderTest {
         val withoutRange = TrackBacks.toRange(withoutClause.locator!!)!!
         val pos = Position(withoutRange.start.line, withoutRange.start.character)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'without' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -867,9 +928,10 @@ class HoverProviderTest {
         val stRange = TrackBacks.toRange(withoutClause.suchThat!!.locator!!)!!
         val pos = Position(stRange.start.line, stRange.start.character - 10)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'such that' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -887,9 +949,10 @@ class HoverProviderTest {
         val sourceRange = TrackBacks.toRange(source.locator!!)!!
         val pos = Position(sourceRange.start.line, sourceRange.start.character - 5)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'from' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -907,9 +970,10 @@ class HoverProviderTest {
         val sourceEnd = TrackBacks.toRange(source.expression!!.locator!!)!!.end
         val pos = Position(sourceEnd.line, sourceEnd.character + 2)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
+            )
 
         assertNotNull(hover, "Expected hover on from-clause alias, got null")
         val value = hover!!.contents.right.value
@@ -931,9 +995,10 @@ class HoverProviderTest {
         // Position just inside the source expression, after the opening quote
         val pos = Position(sourceStart.line, sourceStart.character + 1)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FromQuery.cql"), pos),
+            )
 
         assertNotNull(hover, "Expected hover on from-clause source expression, got null")
         val value = hover!!.contents.right.value
@@ -962,12 +1027,13 @@ class HoverProviderTest {
         assertEquals(
             "WhereClauseContext",
             ctx!!.javaClass.simpleName,
-            "Expected WhereClauseContext at $pos"
+            "Expected WhereClauseContext at $pos",
         )
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'where' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -987,9 +1053,10 @@ class HoverProviderTest {
         val aliasRange = TrackBacks.toRange(aliasRef.locator!!)!!
         val pos = Position(aliasRange.start.line, aliasRange.start.character)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNotNull(hover, "Expected hover on where-clause expression, got null")
         val value = hover!!.contents.right.value
@@ -1014,12 +1081,19 @@ class HoverProviderTest {
         val keywordPos = Position(6, 4)
         val parseTree = compilationManager.getParseTree(uri)!!
         val kwCtx = CqlParseTreeVisitor.findDeepestContext(parseTree, keywordPos)
-        assertEquals("WhereClauseContext", kwCtx?.javaClass?.simpleName,
-            "At keyword position")
+        assertEquals(
+            "WhereClauseContext",
+            kwCtx?.javaClass?.simpleName,
+            "At keyword position",
+        )
         assertNull(
-            hoverProvider.hover(HoverParams(
-                TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), keywordPos)),
-            "Keyword position should produce null"
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"),
+                    keywordPos,
+                ),
+            ),
+            "Keyword position should produce null",
         )
 
         // Position 2: on "N" inside `where N > 1` → deeper context → non-null hover
@@ -1029,12 +1103,19 @@ class HoverProviderTest {
         val exprRange = TrackBacks.toRange(aliasRefLoc)!!
         val exprPos = Position(exprRange.start.line, exprRange.start.character)
         val exprCtx = CqlParseTreeVisitor.findDeepestContext(parseTree, exprPos)
-        assertNotEquals("WhereClauseContext", exprCtx?.javaClass?.simpleName,
-            "At expression position")
+        assertNotEquals(
+            "WhereClauseContext",
+            exprCtx?.javaClass?.simpleName,
+            "At expression position",
+        )
         assertNotNull(
-            hoverProvider.hover(HoverParams(
-                TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), exprPos)),
-            "Expression position should produce non-null hover"
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"),
+                    exprPos,
+                ),
+            ),
+            "Expression position should produce non-null hover",
         )
     }
 
@@ -1050,9 +1131,10 @@ class HoverProviderTest {
         val returnRange = TrackBacks.toRange(query.`return`!!.locator!!)!!
         val pos = Position(returnRange.start.line, returnRange.start.character)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'return' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -1069,9 +1151,10 @@ class HoverProviderTest {
         val exprRange = TrackBacks.toRange(returnExpr.locator!!)!!
         val pos = Position(exprRange.start.line, exprRange.start.character)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNotNull(hover, "Expected hover on return-clause expression, got null")
         val value = hover!!.contents.right.value
@@ -1086,9 +1169,10 @@ class HoverProviderTest {
         compilationManager.compile(uri) // ensure compilation
         val pos = Position(12, 43)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'let' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -1101,9 +1185,10 @@ class HoverProviderTest {
         compilationManager.compile(uri) // ensure compilation
         val pos = Position(12, 47)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNotNull(hover, "Expected hover on let-clause identifier, got null")
     }
@@ -1118,9 +1203,10 @@ class HoverProviderTest {
         compilationManager.compile(uri) // ensure compilation
         val pos = Position(14, 44)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
 
         assertNull(hover, "Expected null on 'sort' keyword, got: ${hover?.contents?.right?.value}")
     }
@@ -1138,13 +1224,458 @@ class HoverProviderTest {
         val sourceEnd = TrackBacks.toRange(withoutClause.expression!!.locator!!)!!.end
         val pos = Position(sourceEnd.line, sourceEnd.character + 2)
 
-        val hover = hoverProvider.hover(
-            HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
-        )
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithoutQuery.cql"), pos),
+            )
 
         assertNotNull(hover, "Expected hover on without-clause alias, got null")
         val value = hover!!.contents.right.value
         assertTrue(value.contains("(alias) Extra:"), "Expected '(alias)' prefix and alias name in without-clause hover: $value")
         assertTrue(value.contains("Integer"), "Expected item type Integer for without-alias hover: $value")
+    }
+
+    // ---- Phase 8: Expression operator keyword suppression ----
+
+    @Test
+    fun hover_onAndKeyword_returnsNull() {
+        // BinaryOpQuery.cql: `define "AndExpr": 1 > 0 and 2 > 1`
+        // Cursor on the `and` keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "AndExpr" }
+        val and = def.expression as And
+        val leftEnd = TrackBacks.toRange(and.operand[0].locator!!)!!.end
+        val pos = Position(leftEnd.line, leftEnd.character + 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), pos),
+            )
+        assertNull(hover, "Expected null on 'and' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onNotKeyword_returnsNull() {
+        // BinaryOpQuery.cql: `define "NotExpr": not (1 > 0)`
+        // Cursor on the `not` keyword should return null.
+        // Line 4: `define "NotExpr": not (1 > 0)` — `not` starts at char 18.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql")!!
+
+        // Cursor on the first character of `not` at Position(3, 18)
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(3, 18)),
+            )
+        assertNull(hover, "Expected null on 'not' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onIsNullKeywords_returnsNull() {
+        // BinaryOpQuery.cql: `define "IsNullExpr": 1 is null`
+        // Both `is` and `null` keywords should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql")!!
+
+        // Cursor on `is` keyword at Position(4, 23)
+        val isHover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(4, 23)),
+            )
+        assertNull(isHover, "Expected null on 'is' keyword in 'is null', got: ${isHover?.contents?.right?.value}")
+
+        // Cursor on `null` keyword at Position(4, 26)
+        val nullHover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(4, 26)),
+            )
+        assertNull(nullHover, "Expected null on 'null' keyword in 'is null', got: ${nullHover?.contents?.right?.value}")
+
+        // Cursor on the operand `1` at Position(4, 21) should NOT be null
+        val operandHover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(4, 21)),
+            )
+        assertNotNull(operandHover, "Expected hover on '1' operand in 'is null', got null")
+    }
+
+    @Test
+    fun hover_onIsNotNullKeywords_returnsNull() {
+        // BinaryOpQuery.cql: `define "IsNotNullExpr": 1 is not null`
+        // All three keywords `is`, `not`, `null` should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql")!!
+
+        // Cursor on `is` at Position(5, 26)
+        assertNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(5, 26)),
+            ),
+        )
+
+        // Cursor on `not` at Position(5, 29)
+        assertNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(5, 29)),
+            ),
+        )
+
+        // Cursor on `null` at Position(5, 33)
+        assertNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), Position(5, 33)),
+            ),
+        )
+    }
+
+    @Test
+    fun hover_onInKeyword_returnsNull() {
+        // BinaryOpQuery.cql: `define "InExpr": 1 in {1, 2, 3}`
+        // Cursor on `in` keyword should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "InExpr" }
+        val inExpr = def.expression as In
+        val leftEnd = TrackBacks.toRange(inExpr.operand[0].locator!!)!!.end
+        val pos = Position(leftEnd.line, leftEnd.character + 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/BinaryOpQuery.cql"), pos),
+            )
+        assertNull(hover, "Expected null on 'in' keyword, got: ${hover?.contents?.right?.value}")
+    }
+
+    @Test
+    fun hover_onIfThenElseKeywords_returnNull() {
+        // IfElseQuery.cql: `define "IfExpr": if 1 > 0 then 'yes' else 'no'`
+        // All three keywords `if`, `then`, `else` should return null.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/IfElseQuery.cql")!!
+
+        // Cursor on `if` at Position(2, 17)
+        assertNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/IfElseQuery.cql"), Position(2, 17)),
+            ),
+            "Expected null on 'if' keyword",
+        )
+
+        // Cursor on `then` at Position(2, 26)
+        assertNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/IfElseQuery.cql"), Position(2, 26)),
+            ),
+            "Expected null on 'then' keyword",
+        )
+
+        // Cursor on `else` at Position(2, 37)
+        assertNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/IfElseQuery.cql"), Position(2, 37)),
+            ),
+            "Expected null on 'else' keyword",
+        )
+
+        // Cursor on condition `1` at Position(2, 20) should NOT be null
+        assertNotNull(
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/IfElseQuery.cql"), Position(2, 20)),
+            ),
+            "Expected hover on '1' condition operand, got null",
+        )
+    }
+
+    @Test
+    fun hover_onFhirAliasPropertyPathPortionWithCoercion_returnsPropertyType() {
+        // ScopeCoercionQuery.cql line 11:
+        //   such that FHIRHelpers.ToInterval(E.period) = FHIRHelpers.ToInterval(E2.period)
+        // Hovering over `period` in `E.period` should show the property type,
+        // not the FHIRHelpers.ToInterval function signature (which the ELM path
+        // may resolve to via ExpressionTrackBackVisitor overlap).
+        // `period` starts at column 41 (0-indexed), cursor at column 43 (`r` in `period`).
+        val posOnPath = Position(10, 43)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ScopeCoercionQuery.cql"),
+                    posOnPath,
+                ),
+            )
+
+        assertNotNull(hover, "Expected property hover on 'period' in E.period, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) E.period:"), "Expected (element) prefix: $value")
+        assertFalse(
+            value.contains("define function"),
+            "Should NOT show FHIRHelpers function signature: $value",
+        )
+    }
+
+    @Test
+    fun hover_onScopeAliasWithCoercion_showsAliasType() {
+        // ScopeCoercionQuery.cql:
+        //   [Encounter] E with [Encounter] E2 such that FHIRHelpers.ToInterval(E.period) = FHIRHelpers.ToInterval(E2.period)
+        // Hovering over `E` in `E.period` should show alias type (Encounter, from ANTLR tree).
+        // The ANTLR classifier correctly identifies `E` as an AliasReference even though
+        // the ELM Property locator covers only "period" (not "E.period") when FHIRHelpers
+        // wraps the property access in a coercion function.
+        //
+        // `E` on line 11 (1-indexed) at column 39 (0-indexed, `E` in `E.period`):
+        //   `      such that FHIRHelpers.ToInterval(E.period)`
+        //                                      ^-- column 39
+        val posOnAlias = Position(10, 39)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ScopeCoercionQuery.cql"),
+                    posOnAlias,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'E' in E.period, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
+    }
+
+    @Test
+    fun hover_onWithAliasRetrieveSource_showsAliasType() {
+        // ScopeCoercionQuery.cql: E2 is a with-clause alias from [Encounter] E2.
+        // Hovering over `E2` in `E2.period` should use the ANTLR path.
+        // `E2` on line 11 at column 74:
+        //   `      such that FHIRHelpers.ToInterval(E.period) = FHIRHelpers.ToInterval(E2.period)`
+        //                                                                             ^-- column 74
+        val posOnAlias = Position(10, 74)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ScopeCoercionQuery.cql"),
+                    posOnAlias,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'E2' in E2.period, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E2:"), "Expected '(alias) E2:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
+    }
+
+    @Test
+    fun hover_onAliasDeclarationInExists_withExpressionRefSource() {
+        // AliasInExistsQuery.cql line 14:
+        //       with "Qualifying Encounter During Measurement Period" QualifyingEncounter
+        // Hovering on the alias DECLARATION `QualifyingEncounter` inside an exists()
+        // should resolve the type with the model namespace via the ELM path now that
+        // findAliasSource traverses through UnaryExpression (Exists).
+        // `Q` in `QualifyingEncounter` is at column 60 (0-indexed).
+        val posOnAlias = Position(13, 60)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AliasInExistsQuery.cql"),
+                    posOnAlias,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias declaration hover on 'QualifyingEncounter' in exists(), got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) QualifyingEncounter:"), "Expected '(alias) QualifyingEncounter:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias declaration hover: $value")
+    }
+
+    @Test
+    fun hover_onAliasDeclarationInExists_withRetrieveSource() {
+        // AliasInExistsQuery.cql line 13:
+        //   exists ( [Encounter] AdolescentScreening
+        // Hovering on the alias DECLARATION `AdolescentScreening` inside an exists()
+        // should resolve the type with the model namespace via the ELM path now that
+        // findAliasSource traverses through UnaryExpression (Exists).
+        // `A` in `AdolescentScreening` is at column 23 (0-indexed).
+        val posOnAlias = Position(12, 23)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AliasInExistsQuery.cql"),
+                    posOnAlias,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias declaration hover on 'AdolescentScreening' in exists(), got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) AdolescentScreening:"), "Expected '(alias) AdolescentScreening:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias declaration hover: $value")
+    }
+
+    @Test
+    fun hover_onAliasDeclarationInLast_showsFhirQualifiedType() {
+        // WithLastQuery.cql line 9:
+        //   Last([Encounter] E
+        // Hovering on the alias DECLARATION `E` inside a Last() wrapper
+        // should resolve the type via the ELM path now that findAliasSource
+        // traverses through Last via OperatorExpression.
+        // `E` is at column 19 (0-indexed).
+        val posOnAlias = Position(9, 19)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithLastQuery.cql"),
+                    posOnAlias,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias declaration hover on 'E' in Last(), got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias declaration hover: $value")
+    }
+
+    @Test
+    fun hover_onSortByImplicitProperty_period_returnsElementType() {
+        // SortByImplicitScopeQuery.cql line 10: `    sort by period`
+        // Hovering on `period` (implicit scope alias `E`) should show the
+        // property type, not ExpressionRef fallthrough.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/SortByImplicitScopeQuery.cql")!!
+        compilationManager.compile(uri)
+        val pos = Position(10, 12)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/SortByImplicitScopeQuery.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected property hover on 'period' in sort by, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) E.period:"), "Expected '(element) E.period:' in hover: $value")
+        assertFalse(value.contains("FHIRHelpers"), "Hover should not contain FHIRHelpers include: $value")
+    }
+
+    @Test
+    fun hover_onSortByImplicitProperty_effective_returnsChoiceType() {
+        // SortByImplicitScopeQuery.cql line 20: `    sort by start of effective`
+        // Hovering on `effective` (implicit scope alias `O`, Observation type)
+        // should show (element) effective: Choice<dateTime, Period, Timing, instant>.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/SortByImplicitScopeQuery.cql")!!
+        compilationManager.compile(uri)
+        val pos = Position(20, 21)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/SortByImplicitScopeQuery.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected property hover on 'effective' in sort by, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) O.effective:"), "Expected '(element) O.effective:' in hover: $value")
+        assertTrue(value.contains("Choice<"), "Expected Choice type for effective property: $value")
+        assertFalse(value.contains("FHIRHelpers"), "Hover should not contain FHIRHelpers include: $value")
+    }
+
+    @Test
+    fun hover_onSortByDeclaredAlias_returnsAliasType() {
+        // AllClausesQuery.cql line 15: `define "Sort Clause Test": from "Numbers" N sort by N`
+        // Hovering on the second `N` (the alias reference in sort-by):
+        // The classifier now identifies the alias reference directly, and the hover
+        // provider resolves it via markupForAlias from the ELM query source clause.
+        // `N` is at column 52 on line 14 (0-indexed).
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        compilationManager.compile(uri)
+        val pos = Position(14, 52)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'N' in sort-by, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) N:"), "Expected '(alias) N:' in hover: $value")
+    }
+
+    @Test
+    fun hover_onSortByBareIdentifier_returnsElementType() {
+        // SortByImplicitScopeQuery.cql line 15: `    sort by status`
+        // Hovering on `status` (implicit scope alias `E`, Encounter type)
+        // should show the property type for status on Encounter.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/SortByImplicitScopeQuery.cql")!!
+        compilationManager.compile(uri)
+        val pos = Position(15, 12)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/SortByImplicitScopeQuery.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected property hover on 'status' in sort by, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) E.status:"), "Expected '(element) E.status:' in hover: $value")
+        assertFalse(value.contains("FHIRHelpers"), "Hover should not contain FHIRHelpers include: $value")
+    }
+
+    @Test
+    fun hover_onUnaryOverload_picksOneArgSignature() {
+        // OverloadedFunctions.cql defines three "Add" overloads (1, 2, 3 args).
+        // Hovering the call site `"Add"(1)` should pick the one-argument overload.
+        val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql")
+        // Line 12: `define "UseUnary": "Add"(1)` — col 20 lands inside `"Add"`
+        val hover = hoverProvider.hover(HoverParams(docId, Position(11, 20)))
+
+        assertNotNull(hover, "Expected hover on overloaded function call")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("function Add(x System.Integer):"), "Expected unary overload signature: $value")
+        assertFalse(value.contains(", y"), "Should not show two-arg overload: $value")
+    }
+
+    @Test
+    fun hover_onBinaryOverload_picksTwoArgSignature() {
+        val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql")
+        // Line 13: `define "UseBinary": "Add"(1, 2)`
+        val hover = hoverProvider.hover(HoverParams(docId, Position(12, 21)))
+
+        assertNotNull(hover, "Expected hover on overloaded function call")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("function Add(x System.Integer, y System.Integer):"), "Expected binary overload signature: $value")
+        assertFalse(value.contains(", z"), "Should not show three-arg overload: $value")
+    }
+
+    @Test
+    fun hover_onTernaryOverload_picksThreeArgSignature() {
+        val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql")
+        // Line 14: `define "UseTernary": "Add"(1, 2, 3)`
+        val hover = hoverProvider.hover(HoverParams(docId, Position(13, 22)))
+
+        assertNotNull(hover, "Expected hover on overloaded function call")
+        val value = hover!!.contents.right.value
+        // Three-arg signature renders multi-line, check for z param
+        assertTrue(value.contains("z System.Integer"), "Expected ternary overload signature (z param): $value")
+    }
+
+    @Test
+    fun hover_onRetrieveType_returnsListOfType() {
+        // WithFhirQuery.cql: `[Encounter] E` — cursor on the type `Encounter` inside the brackets.
+        // The classifier returns CursorCategory.Retrieve and the hover renders the
+        // model-resolved list type.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithFhirQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Encounter Period Test" }
+        val retrieve = (def.expression as Query).source.first().expression as Retrieve
+        val range = TrackBacks.toRange(retrieve.locator!!)!!
+        // Cursor at the second character of the retrieve — past `[`, on the type name.
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithFhirQuery.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on Retrieve type, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("```cql"), "Expected cql block in hover: $value")
+        assertTrue(value.contains("Encounter"), "Expected Encounter type in hover: $value")
+        // Should be a List<...> type since Retrieve returns a list
+        assertTrue(value.contains("List<", ignoreCase = false), "Expected List<...> type marker: $value")
     }
 }

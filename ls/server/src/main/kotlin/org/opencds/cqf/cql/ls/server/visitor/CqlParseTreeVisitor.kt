@@ -15,7 +15,6 @@ import org.eclipse.lsp4j.Position
  * LSP Position: 0-based line and character.
  */
 object CqlParseTreeVisitor {
-
     fun findDeepestContext(
         root: ParserRuleContext,
         position: Position,
