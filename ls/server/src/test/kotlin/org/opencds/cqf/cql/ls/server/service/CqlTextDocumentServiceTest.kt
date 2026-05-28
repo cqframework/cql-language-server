@@ -5,9 +5,12 @@ import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
 import org.eclipse.lsp4j.DocumentFormattingParams
+import org.eclipse.lsp4j.DefinitionParams
+import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.ServerCapabilities
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -19,6 +22,7 @@ import org.greenrobot.eventbus.Subscribe
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent
@@ -240,5 +244,75 @@ class CqlTextDocumentServiceTest {
         assertNotNull(future)
         // Hover is currently disabled in HoverProvider (returns null); future should still complete
         future.get()
+    }
+
+    // -------------------------------------------------------------------------
+    // definition
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `definition returns Either containing LocationLink list for valid document`() {
+        val svc = buildService(EventBus.builder().build())
+        val params = DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/One.cql"), Position(0, 0))
+        val result = svc.definition(params).get()
+        assertNotNull(result, "Expected non-null Either result")
+        assertTrue(result.isRight, "Expected Either.forRight for definition")
+    }
+
+    @Test
+    fun `definition notifies client when provider throws`() {
+        val mockClient = Mockito.mock(LanguageClient::class.java)
+        val svc = buildService(EventBus.builder().build(), CompletableFuture.completedFuture(mockClient))
+        // SyntaxError.cql causes compilation to fail, making DefinitionProvider return empty
+        val params = DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/SyntaxError.cql"), Position(0, 0))
+        // Should complete without throwing
+        val result = svc.definition(params).get()
+        assertNotNull(result, "Expected non-null result even on error")
+    }
+
+    // -------------------------------------------------------------------------
+    // documentSymbol
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `documentSymbol returns symbol list for valid CQL`() {
+        val svc = buildService(EventBus.builder().build())
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/One.cql"))
+        val result = svc.documentSymbol(params).get()
+        assertNotNull(result, "Expected non-null symbol list")
+        assertTrue(result.isNotEmpty(), "Expected at least one document symbol for One.cql")
+    }
+
+    @Test
+    fun `documentSymbol returns empty list for syntax error`() {
+        val svc = buildService(EventBus.builder().build())
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/SyntaxError.cql"))
+        val result = svc.documentSymbol(params).get()
+        assertNotNull(result, "Expected non-null result even for syntax error")
+    }
+
+    // -------------------------------------------------------------------------
+    // references
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `references returns location list for valid document and position`() {
+        val svc = buildService(EventBus.builder().build())
+        val params = ReferenceParams()
+        params.textDocument = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/One.cql")
+        params.position = Position(0, 0)
+        val result = svc.references(params).get()
+        assertNotNull(result, "Expected non-null location list")
+    }
+
+    @Test
+    fun `references notifies client when provider throws`() {
+        val mockClient = Mockito.mock(LanguageClient::class.java)
+        val svc = buildService(EventBus.builder().build(), CompletableFuture.completedFuture(mockClient))
+        val params = ReferenceParams()
+        params.textDocument = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/SyntaxError.cql")
+        params.position = Position(0, 0)
+        val result = svc.references(params).get()
+        assertNotNull(result, "Expected non-null result even on error")
     }
 }

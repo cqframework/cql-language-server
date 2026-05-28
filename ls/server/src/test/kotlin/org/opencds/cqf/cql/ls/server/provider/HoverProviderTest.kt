@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -825,7 +826,7 @@ class HoverProviderTest {
         // Cursor past "TL." lands on the code name — should resolve cross-library CodeRef.
         val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")
         // char 10 lands past "TL." on "n" of "Venous foot pain, left"
-        val hover = hoverProvider.hover(HoverParams(docId, Position(5, 10)))
+        val hover = hoverProvider.hover(HoverParams(docId, Position(4, 22)))
 
         assertNotNull(hover, "Expected hover on cross-library CodeRef, got null")
         val value = hover!!.contents.right.value
@@ -1882,5 +1883,264 @@ class HoverProviderTest {
         val value = hover!!.contents.right.value
         assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
         assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
+    }
+
+    @Test
+    fun hover_onExpressionRef_codeDef_showsCodeMarkup() {
+        // Cross-library CodeRef: TerminologyCaller.cql: "UseCode": TL."Venous foot pain, left"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(uri)!!.library!!
+        // Position directly on "Venous foot pain, left" in TL."Venous foot pain, left" (line 5, col 22)
+        val pos = Position(4, 22)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on cross-library CodeRef")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("code \"Venous foot pain, left\""), "Expected code markup: $value")
+    }
+
+    @Test
+    fun hover_onExpressionRef_conceptDef_showsConceptMarkup() {
+        // Cross-library ConceptRef: TerminologyCaller.cql: "UseConcept": TL."Left Foot Pain"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(uri)!!.library!!
+        // Position directly on "Left Foot Pain" in TL."Left Foot Pain" (line 7, col 25)
+        val pos = Position(6, 25)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on cross-library ConceptRef")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("concept \"Left Foot Pain\""), "Expected concept markup: $value")
+    }
+
+    @Test
+    fun hover_onExpressionRef_codeSystemRef_showsCodeSystemMarkup() {
+        // Cross-library CodeSystemRef: TerminologyCaller.cql: "UseCodeSystem": TL."SNOMEDCT"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(uri)!!.library!!
+        // Position directly on "SNOMEDCT" in TL."SNOMEDCT" (line 9, col 28)
+        val pos = Position(8, 28)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on cross-library CodeSystemRef")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("codesystem \"SNOMEDCT\""), "Expected codesystem markup: $value")
+    }
+
+    @Test
+    fun hover_onExpressionRef_parameterDef_showsParameterMarkup() {
+        // WithParam.cql: define "Using Measurement Period": "Measurement Period"
+        // Hover cursor on "Measurement Period" in the expression body
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithParam.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Using Measurement Period" }
+        val ref = def.expression as org.hl7.elm.r1.ParameterRef
+        val range = TrackBacks.toRange(ref.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithParam.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on ParameterRef")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("parameter \"Measurement Period\""), "Expected parameter markup: $value")
+    }
+
+    @Test
+    fun hover_onExpressionDefName_returnsDefinitionMarkup() {
+        // One.cql: define "One": 1 — cursor on the definition name "One" shows define markup
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "One" }
+        val range = TrackBacks.toRange(def.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/One.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on ExpressionDefName")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("define \"One\":"), "Expected define markup: $value")
+        assertTrue(value.contains("System.Integer"), "Expected result type: $value")
+    }
+
+    @Test
+    fun hover_onAliasRefInWhereClause_returnsAliasType() {
+        // AllClausesQuery.cql line 6: `    where N > 1`
+        // Cursor on `N` in the where clause — an AliasRef that should show alias type
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql")!!
+        compilationManager.compile(uri)!!.library!!
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/AllClausesQuery.cql"), Position(6, 10)),
+            )
+
+        assertNotNull(hover, "Expected hover on alias 'N' in where clause, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) N:"), "Expected '(alias) N:' in hover: $value")
+    }
+
+    @Test
+    fun hover_onAliasRefInReturnClause_returnsAliasType() {
+        // ReturnClauseQuery.cql line 7: `    return N`
+        // Cursor on `N` in the return clause — an AliasRef
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/ReturnClauseQuery.cql")!!
+        compilationManager.compile(uri)!!.library!!
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ReturnClauseQuery.cql"), Position(6, 11)),
+            )
+
+        assertNotNull(hover, "Expected hover on alias 'N' in return clause, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) N:"), "Expected '(alias) N:' in hover: $value")
+    }
+
+    @Test
+    fun hover_onExpressionRefSourceProperty_showsElementType() {
+        // ExpressionRefSourceProperty.cql: "NameProp": "MyTuple".name
+        // Hover on `.name` portion — should show property type through ExpressionRef source
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/ExpressionRefSourceProperty.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "NameProp" }
+        val property = def.expression as Property
+        val propRange = TrackBacks.toRange(property.locator!!)!!
+        // Position near end = on ".name" portion
+        val posOnPath = Position(propRange.end.line, propRange.end.character - 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/ExpressionRefSourceProperty.cql"), posOnPath),
+            )
+
+        assertNotNull(hover, "Expected hover on property path portion, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) \"MyTuple\".name:"), "Expected 'MyTuple.name': $value")
+    }
+
+    @Test
+    fun hover_onMissingInclude_doesNotThrow() {
+        // MissingInclude.cql references an unresolvable include. Hover should
+        // not throw regardless of whether the compilation succeeds partially.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/MissingInclude.cql")!!
+        compilationManager.compile(uri)
+
+        assertDoesNotThrow {
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/MissingInclude.cql"), Position(5, 5)),
+            )
+        }
+    }
+
+    @Test
+    fun hover_onLiteral_string_returnsTypeName() {
+        // One.cql: define "One": 1 — but we need a string literal.
+        // Use TerminologyLib.cql which has string-based identifiers.
+        // For a string literal test, check that hover on a string value returns System.String.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionBody.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        // Line 11 (0-indexed): "    \"Identity\"('Hello')" — position on the string 'Hello'
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FunctionBody.cql"), Position(11, 16)),
+            )
+
+        assertNotNull(hover, "Expected hover on string literal")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("System.String"), "Expected System.String type for string literal: $value")
+    }
+
+    @Test
+    fun hover_onLiteral_boolean_returnsTypeName() {
+        // Two.cql: define "TwoBoolOr": true or false — cursor on `true` literal
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/Two.cql")!!
+        compilationManager.compile(uri)!!.library!!
+        // Line 11 (0-indexed): `define "TwoBoolOr": true or false`
+        // `true` starts at column 21
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/Two.cql"), Position(10, 20)),
+            )
+
+        assertNotNull(hover, "Expected hover on boolean literal")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("System.Boolean"), "Expected System.Boolean type: $value")
+    }
+
+    @Test
+    fun hover_onLiteral_decimal_returnsTypeName() {
+        // Use a decimal literal in an existing CQL file
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithParam.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        // Line 4: parameter "Rate" default 1.0 — cursor on `1.0` (a decimal literal)
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithParam.cql"), Position(3, 25)),
+            )
+
+        assertNotNull(hover, "Expected hover on decimal literal")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("System.Decimal") || value.contains("System.Integer"),
+            "Expected System.Decimal (or Integer) type: $value")
+    }
+
+    @Test
+    fun hover_onLiteral_number_returnsTypeName() {
+        // One.cql: define "One": 1 — cursor on `1` (an integer literal)
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
+        compilationManager.compile(uri)!!.library!!
+        // Line 3 (0-indexed): `    1` — cursor on `1` at column 4
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/One.cql"), Position(3, 4)),
+            )
+
+        assertNotNull(hover, "Expected hover on integer literal")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("System.Integer"), "Expected System.Integer type: $value")
+    }
+
+    @Test
+    fun hover_onFunctionDefName_returnsSignatureMarkup() {
+        // OverloadedFunctions.cql: function "Add" is defined — cursor on its def name
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.filterIsInstance<FunctionDef>().first { it.name == "Add" && (it.operand?.size ?: 0) == 1 }
+        val range = TrackBacks.toRange(def.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on FunctionDefName markupp")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("define function"), "Expected 'define function' in markup: $value")
+        assertTrue(value.contains("Add("), "Expected function name 'Add': $value")
     }
 }

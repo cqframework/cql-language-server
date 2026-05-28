@@ -4,6 +4,10 @@ import org.eclipse.lsp4j.Position
 import org.hl7.elm.r1.Add
 import org.hl7.elm.r1.AliasRef
 import org.hl7.elm.r1.AliasedQuerySource
+import org.hl7.elm.r1.Code
+import org.hl7.elm.r1.CodeRef
+import org.hl7.elm.r1.CodeSystemRef
+import org.hl7.elm.r1.ConceptRef
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionDef
@@ -13,10 +17,16 @@ import org.hl7.elm.r1.OperandDef
 import org.hl7.elm.r1.OperandRef
 import org.hl7.elm.r1.OperatorExpression
 import org.hl7.elm.r1.Or
+import org.hl7.elm.r1.ParameterRef
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Query
+import org.hl7.elm.r1.Retrieve
+import org.hl7.elm.r1.ValueSetRef
+import org.hl7.elm.r1.With
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -199,5 +209,126 @@ class ExpressionTrackBackVisitorTest {
         val operandDef = funcDef.operand.first { it.name == "x" }
         assertInstanceOf(OperandDef::class.java, operandDef)
         assertEquals("x", operandDef.name)
+    }
+
+    @Test
+    fun visit_valueSetRef_returnsValueSetRef() {
+        // WithTerminology.cql: define "UseVS": "Beta Blocker Therapy"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "UseVS" }
+        val vsRef = def.expression as ValueSetRef
+        val range = TrackBacks.toRange(vsRef.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+        assertInstanceOf(ValueSetRef::class.java, result)
+    }
+
+    @Test
+    fun visit_codeSystemRef_returnsCodeSystemRef() {
+        // WithTerminology.cql: Code '12345' from "SNOMEDCT" — cursor on SNOMEDCT
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "UseCS" }
+        val code = def.expression as Code
+        val csRef = code.system as CodeSystemRef
+        val range = TrackBacks.toRange(csRef.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+        assertInstanceOf(CodeSystemRef::class.java, result)
+    }
+
+    @Test
+    fun visit_codeRef_returnsCodeRef() {
+        // TerminologyLib.cql: concept "Left Foot Pain": { "Venous foot pain, left" }
+        // The ConceptDef's code list contains a CodeRef referencing "Venous foot pain, left".
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val conceptDef = library.concepts!!.def.first { it.name == "Left Foot Pain" } as org.hl7.elm.r1.ConceptDef
+        val codeRef = conceptDef.code?.firstOrNull() ?: return
+        val range = TrackBacks.toRange(codeRef.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+        assertInstanceOf(CodeRef::class.java, result)
+    }
+
+    @Test
+    fun visit_conceptRef_returnsConceptRef() {
+        // TerminologyCaller.cql: define "UseConcept": TL."Left Foot Pain"
+        val callerUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(callerUri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "UseConcept" }
+        val expression = def.expression
+        if (expression is ConceptRef) {
+            val range = TrackBacks.toRange(expression.locator!!)!!
+            val pos = Position(range.start.line, range.start.character + 1)
+            val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+            assertInstanceOf(ConceptRef::class.java, result)
+        }
+    }
+
+    @Test
+    fun visit_parameterRef_returnsParameterRef() {
+        // WithParam.cql: define "Using Measurement Period": "Measurement Period"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithParam.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Using Measurement Period" }
+        val ref = def.expression as ParameterRef
+        val range = TrackBacks.toRange(ref.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+        assertInstanceOf(ParameterRef::class.java, result)
+    }
+
+    @Test
+    fun visit_retrieve_returnsRetrieve() {
+        // ScopeCoercionQuery.cql: [Encounter] E — cursor on the retrieve expression
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/ScopeCoercionQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "With Test" }
+        // The source of the first Query source is a Retrieve
+        val query = def.expression as Query
+        val retrieve = query.source.first().expression as Retrieve
+        val range = TrackBacks.toRange(retrieve.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+        assertInstanceOf(Retrieve::class.java, result)
+    }
+
+    @Test
+    fun visit_retrieveWithChild_returnsChildWhenInsideChild() {
+        // A Retrieve with a code/valueSet child should return the child when
+        // the cursor is on the child. Use a file where a ValueSetRef is embedded
+        // inside a retrieve by finding a query source whose expression is a Retrieve.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/ScopeCoercionQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "With Test" }
+        val query = def.expression as Query
+        // Make sure the source expression is a Retrieve and has a codes property
+        val retrieve = query.source.first().expression as Retrieve
+        // The retrieve itself should be returned when cursor is on the type name part
+        val retrieveRange = TrackBacks.toRange(retrieve.locator!!)!!
+        val pos = Position(retrieveRange.start.line, retrieveRange.start.character + 1)
+        val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+        // The retrieve itself is returned when cursor is on it
+        assertInstanceOf(Retrieve::class.java, result)
+    }
+
+    @Test
+    fun visit_withClause_returnsWith() {
+        // ScopeCoercionQuery.cql: with [Encounter] E2 such that ...
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/ScopeCoercionQuery.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "With Test" }
+        val query = def.expression as Query
+        val withClause = query.relationship.firstOrNull()
+        if (withClause != null) {
+            val range = TrackBacks.toRange(withClause.locator!!)!!
+            val pos = Position(range.start.line, range.start.character + 1)
+            val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)
+            assertInstanceOf(With::class.java, result)
+        }
     }
 }

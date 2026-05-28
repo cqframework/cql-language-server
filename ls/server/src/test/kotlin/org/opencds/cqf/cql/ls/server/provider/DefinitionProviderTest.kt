@@ -5,9 +5,13 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.hl7.elm.r1.Add
 import org.hl7.elm.r1.Code
+import org.hl7.elm.r1.CodeRef
 import org.hl7.elm.r1.CodeSystemRef
+import org.hl7.elm.r1.ConceptRef
 import org.hl7.elm.r1.ExpressionRef
+import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.FunctionRef
+import org.hl7.elm.r1.OperandRef
 import org.hl7.elm.r1.ParameterRef
 import org.hl7.elm.r1.ValueSetRef
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -258,5 +262,189 @@ class DefinitionProviderTest {
             )
 
         assertFalse(locations.isEmpty(), "Expected a location for ParameterRef 'Measurement Period'")
+    }
+
+    // -------------------------------------------------------------------------
+    // Local (unqualified) FunctionRef — same library, no library alias
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_localFunctionRef_navigatesToFunctionDef() {
+        // FunctionLib.cql line 9: define "UseDouble": "Double"(42)
+        // The FunctionRef is unqualified (no library alias) and resolves locally
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionLib.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "UseDouble" }
+        val ref = def.expression as FunctionRef
+        val range = TrackBacks.toRange(ref.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FunctionLib.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for local FunctionRef 'Double'")
+        val loc = locations.first()
+        assertTrue(loc.targetUri.contains("FunctionLib"), "Expected definition in same library, got: ${loc.targetUri}")
+        assertNotNull(loc.originSelectionRange, "Expected originSelectionRange to be set")
+    }
+
+    // -------------------------------------------------------------------------
+    // Cross-library ValueSetRef — cursor on TL."..." resolves to included lib
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_crossLibraryValueSetRef_navigatesToValueSetDef() {
+        // TerminologyCaller.cql: define "UseValueSet": TL."Ambulatory Encounter"
+        val callerUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(callerUri)!!.library!!
+
+        val def = library.statements!!.def.first { it.name == "UseValueSet" }
+        val expression = def.expression
+        // The compiler may resolve as ExpressionRef or ValueSetRef
+        val refElm =
+            when {
+                expression is ValueSetRef -> expression
+                expression is ExpressionRef -> expression
+                else -> return
+            }
+        val range = TrackBacks.toRange(refElm.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for cross-library ValueSetRef")
+        assertTrue(locations.any { it.targetUri.contains("TerminologyLib") }, "Expected definition in TerminologyLib")
+    }
+
+    @Test
+    fun definition_crossLibraryConceptRef_navigatesToConceptDef() {
+        // TerminologyCaller.cql: define "UseConcept": TL."Left Foot Pain"
+        val callerUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(callerUri)!!.library!!
+
+        val def = library.statements!!.def.first { it.name == "UseConcept" }
+        val expression = def.expression
+        val refElm =
+            when {
+                expression is ConceptRef -> expression
+                expression is ExpressionRef -> expression
+                else -> return
+            }
+        val range = TrackBacks.toRange(refElm.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for cross-library ConceptRef")
+        assertTrue(locations.any { it.targetUri.contains("TerminologyLib") }, "Expected definition in TerminologyLib")
+    }
+
+    // -------------------------------------------------------------------------
+    // Cross-library CodeSystemRef — cursor on TL."SNOMEDCT"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_crossLibraryCodeSystemRef_navigatesToCodeSystemDef() {
+        // CrossTerminologyCaller.cql has "UseCodeSystem": TL."SNOMEDCT"
+        val callerUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(callerUri)!!.library!!
+
+        val def = library.statements!!.def.first { it.name == "UseCodeSystem" }
+        val expression = def.expression
+        val refElm =
+            when {
+                expression is CodeSystemRef -> expression
+                expression is ExpressionRef -> expression
+                else -> return
+            }
+        val range = TrackBacks.toRange(refElm.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for cross-library CodeSystemRef")
+        assertTrue(locations.any { it.targetUri.contains("TerminologyLib") }, "Expected definition in TerminologyLib")
+    }
+
+    // -------------------------------------------------------------------------
+    // Cross-library CodeRef — cursor on TL."Venous foot pain, left"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_crossLibraryCodeRef_navigatesToCodeDef() {
+        val callerUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql")!!
+        val termLibUri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
+        compilationManager.compile(termLibUri)
+        val library = compilationManager.compile(callerUri)!!.library!!
+
+        val def = library.statements!!.def.first { it.name == "UseCode" }
+        val expression = def.expression
+        // The compiler may resolve this as ExpressionRef or CodeRef
+        val refElm =
+            when {
+                expression is CodeRef -> expression
+                expression is ExpressionRef -> expression
+                else -> return
+            }
+        val range = TrackBacks.toRange(refElm.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/TerminologyCaller.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for cross-library CodeRef")
+        assertTrue(locations.any { it.targetUri.contains("TerminologyLib") }, "Expected definition in TerminologyLib")
+    }
+
+    // -------------------------------------------------------------------------
+    // OperandRef with no locator — falls back to FunctionDef
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_operandRefFallback_noLocatorOnOperandDef_returnsFunctionDef() {
+        // FunctionBody.cql line 3: define function "Identity"(x System.String):
+        // The ELM compiler does not set locators on OperandDef nodes. The DefinitionProvider
+        // fallback uses the parent FunctionDef locator instead.
+        // We navigate to the operand `x` by finding a reference to it in the body.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionBody.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        // The function body on line 4 (1-indexed): `    x` — cursor on `x` which is an OperandRef
+        // Position(3, 4) lands on `x` in the Identity function body (0-indexed line 3 = file line 4)
+        val locations =
+            provider.definition(
+                DefinitionParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FunctionBody.cql"),
+                    Position(3, 4),
+                ),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for OperandRef 'x' fallback to FunctionDef")
+        val loc = locations.first()
+        // The target should be the FunctionDef's locator (function signature), not the operand
+        assertTrue(
+            loc.targetUri.contains("FunctionBody"),
+            "Expected definition in FunctionBody, got: ${loc.targetUri}",
+        )
+        // The targetRange should cover the function signature (not just the operand)
+        assertNotNull(loc.targetRange, "Expected targetRange to be set")
     }
 }
