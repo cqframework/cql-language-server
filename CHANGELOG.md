@@ -1,6 +1,31 @@
 # Change Log
 
 
+
+## v4.7.0
+
+Date: 2026-05-28
+
+* resolve alias hover in nested sub-queries and property hover across union + FunctionRef wrapper
+* replace ELM-position-based hover with ANTLR CursorClassifier
+* prevent ANTLR keyword suppression from swallowing expression hovers
+* generic ANTLR keyword suppression for all query clause types
+* change hover to use hybird approach POC
+* format code with ktfmt (trailing commas, chain assignment, import ordering)
+* add CQL test resources for hover and navigation coverage
+* enrich hover provider with CQL syntax output, coercion unwrapping, and new ELM type support
+* add go-to-definition support for function operands and parameters
+* add ExpressionTrackBackVisitor support for Literal, OperandRef, OperandDef, ParameterRef, CodeRef, ConceptRef
+* add Elements.unwrapCoercions for compiler-generated wrapper resolution
+* adds code navigation support
+* code cleanup and more unit tests
+* adds more LibraryResolutionManager tests
+* adds more LibraryResolutionManager tests
+* adds FederatedLibrarySourceProvider and FederatedTerminologyRepo
+* adds support for multi-projects library resolution
+* bump version to 4.7.0
+
+
 ## v4.6.0
 
 Date: 2026-05-14
