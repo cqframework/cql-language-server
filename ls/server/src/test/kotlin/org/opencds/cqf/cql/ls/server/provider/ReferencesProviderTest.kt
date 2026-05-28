@@ -123,4 +123,50 @@ class ReferencesProviderTest {
         // May be empty or contain same-library refs — just assert it doesn't throw
         assertTrue(locations.isEmpty() || locations.isNotEmpty())
     }
+
+    // -------------------------------------------------------------------------
+    // ValueSetRef — references to "Beta Blocker Therapy"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun references_valueSetRef_findsUsages() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        compilationManager.compile(uri)
+        val library = compilationManager.compile(uri)!!.library!!
+
+        val vsDef = library.statements!!.def.first { it.name == "UseVS" }
+        val ref = vsDef.expression as org.hl7.elm.r1.ValueSetRef
+        val range = TrackBacks.toRange(ref.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.references(
+                ReferenceParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithTerminology.cql"), pos, ReferenceContext(false)),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected at least one reference to 'Beta Blocker Therapy'")
+    }
+
+    // -------------------------------------------------------------------------
+    // CodeSystemRef — references to "SNOMEDCT"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun references_codeSystemRef_findsUsages() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+
+        val csDef = library.statements!!.def.first { it.name == "UseCS" }
+        val code = csDef.expression as org.hl7.elm.r1.Code
+        val csRef = code.system as? org.hl7.elm.r1.CodeSystemRef ?: return
+        val range = TrackBacks.toRange(csRef.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.references(
+                ReferenceParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithTerminology.cql"), pos, ReferenceContext(false)),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected at least one reference to 'SNOMEDCT'")
+    }
 }

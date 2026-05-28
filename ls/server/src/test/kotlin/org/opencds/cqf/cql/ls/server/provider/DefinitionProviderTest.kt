@@ -4,8 +4,12 @@ import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.hl7.elm.r1.Add
+import org.hl7.elm.r1.Code
+import org.hl7.elm.r1.CodeSystemRef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionRef
+import org.hl7.elm.r1.ParameterRef
+import org.hl7.elm.r1.ValueSetRef
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -187,5 +191,72 @@ class DefinitionProviderTest {
                 ),
             )
         assertTrue(locations.isEmpty(), "Expected empty locations for non-navigable position")
+    }
+
+    // -------------------------------------------------------------------------
+    // ValueSetRef — cursor on "Beta Blocker Therapy"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_valueSetRef_navigatesToValueSetDef() {
+        // WithTerminology.cql line 7: define "UseVS": "Beta Blocker Therapy"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "UseVS" }
+        val ref = def.expression as ValueSetRef
+        val range = TrackBacks.toRange(ref.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithTerminology.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for ValueSetRef 'Beta Blocker Therapy'")
+    }
+
+    // -------------------------------------------------------------------------
+    // CodeSystemRef — cursor on "SNOMEDCT" inside Code '12345' from "SNOMEDCT"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_codeSystemRef_navigatesToCodeSystemDef() {
+        // WithTerminology.cql line 10: define "UseCS": Code '12345' from "SNOMEDCT"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "UseCS" }
+        val code = def.expression as Code
+        val csRef = code.system as? CodeSystemRef ?: return
+        val range = TrackBacks.toRange(csRef.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithTerminology.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for CodeSystemRef 'SNOMEDCT'")
+    }
+
+    // -------------------------------------------------------------------------
+    // ParameterRef — cursor on "Measurement Period" in the expression body
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun definition_parameterRef_navigatesToParameterDef() {
+        // WithParam.cql line 6: define "Using Measurement Period": "Measurement Period"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithParam.cql")!!
+        val library = compilationManager.compile(uri)!!.library!!
+        val def = library.statements!!.def.first { it.name == "Using Measurement Period" }
+        val ref = def.expression as ParameterRef
+        val range = TrackBacks.toRange(ref.locator!!)!!
+        val pos = Position(range.start.line, range.start.character + 1)
+
+        val locations =
+            provider.definition(
+                DefinitionParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/WithParam.cql"), pos),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected a location for ParameterRef 'Measurement Period'")
     }
 }
