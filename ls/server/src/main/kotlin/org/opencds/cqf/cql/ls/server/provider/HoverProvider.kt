@@ -23,6 +23,7 @@ import org.hl7.elm.r1.ConceptDef
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.FunctionDef
+import org.hl7.elm.r1.FunctionRef
 import org.hl7.elm.r1.LetClause
 import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.ParameterDef
@@ -34,6 +35,7 @@ import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.utility.Elements
 import org.opencds.cqf.cql.ls.server.visitor.CqlParseTreeVisitor
+import org.opencds.cqf.cql.ls.server.visitor.DefinitionTrackBackVisitor
 import java.net.URI
 
 class HoverProvider(
@@ -58,7 +60,7 @@ class HoverProvider(
             is CursorCategory.PropertyName ->
                 hoverProperty(category, compiler, library, params.position, parseTree)
             is CursorCategory.FunctionCall ->
-                hoverFunctionCall(category, compiler, library, uri)
+                hoverFunctionCall(category, compiler, library, uri, params.position)
             is CursorCategory.ExpressionRef ->
                 hoverExpressionRef(category, compiler, library, uri)
             is CursorCategory.ParameterRef ->
@@ -111,14 +113,29 @@ class HoverProvider(
         position: Position,
         parseTree: cqlParser.LibraryContext,
     ): Hover? {
-        // Prefer ELM-name-keyed lookup for fully-qualified type name with model namespace.
-        markupForAlias(name, compiler, uri, library, position)?.let { return Hover(it, range) }
-        // ANTLR fallback for expressions not captured in the ELM tree (e.g. unresolved sources).
-        val antlrType = resolveAliasTypeFromAntlrWithContext(parseTree, position, name, library) ?: return null
-        return Hover(
-            cqlBlock("""(alias) $name: ${formatCqlType(antlrType)}""", localLibraryLabel(library)),
-            range,
-        )
+        // ANTLR-first: resolve type from parse tree for common cases
+        // (retrieve sources, identifier sources, parenthesized expressions).
+        val antlrType = resolveAliasTypeFromAntlrWithContext(parseTree, position, name, library)
+        if (antlrType != null) {
+            // Use ANTLR result directly when qualified or when ELM cannot improve it.
+            if (antlrType.contains('.')) {
+                return Hover(
+                    cqlBlock("""(alias) $name: ${formatCqlType(antlrType)}""", localLibraryLabel(library)),
+                    range,
+                )
+            }
+            // Unqualified: try ELM first for the fully-qualified type.
+            val elmMarkup = markupForAlias(name, compiler, uri, library, position)
+            if (elmMarkup != null) return Hover(elmMarkup, range)
+            // ELM didn't have it — use the ANTLR unqualified name.
+            return Hover(
+                cqlBlock("""(alias) $name: ${formatCqlType(antlrType)}""", localLibraryLabel(library)),
+                range,
+            )
+        }
+        // ELM fallback for cases ANTLR can't reach
+        // (let clauses, aliases inside aggregates like exists/Last).
+        return markupForAlias(name, compiler, uri, library, position)?.let { Hover(it, range) }
     }
 
     private fun hoverFunctionCall(
@@ -126,18 +143,55 @@ class HoverProvider(
         compiler: CqlCompiler,
         library: Library,
         uri: URI,
+        position: Position,
     ): Hover? {
-        val candidates: List<FunctionDef> =
-            if (category.libraryName == null) {
-                compiler.compiledLibrary?.resolveFunctionRef(category.name)?.toList() ?: emptyList()
+        val candidates: List<FunctionDef>
+        val resolvedLibraryName: String?
+
+        if (category.libraryName != null) {
+            // Qualified function call (e.g., FL."Func"): resolve from the named library.
+            candidates = resolveIncludedLibrary(category.libraryName, library, uri)
+                ?.compiledLibrary?.resolveFunctionRef(category.name)?.toList() ?: emptyList()
+            resolvedLibraryName = category.libraryName
+        } else {
+            // Unqualified function call: try local library first.
+            val local = compiler.compiledLibrary?.resolveFunctionRef(category.name)?.toList() ?: emptyList()
+            if (local.isNotEmpty()) {
+                candidates = local
+                resolvedLibraryName = null
             } else {
-                resolveIncludedLibrary(category.libraryName, library, uri)
-                    ?.compiledLibrary?.resolveFunctionRef(category.name)?.toList() ?: emptyList()
+                // Use ELM trackback to find which included library the compiler resolved it to.
+                val functionRef = findFunctionRefAtPosition(compiler, position)
+                val libAlias = functionRef?.libraryName
+                if (libAlias != null) {
+                    candidates = resolveIncludedLibrary(libAlias, library, uri)
+                        ?.compiledLibrary?.resolveFunctionRef(category.name)?.toList() ?: emptyList()
+                    resolvedLibraryName = libAlias
+                } else {
+                    candidates = emptyList()
+                    resolvedLibraryName = null
+                }
             }
+        }
+
         val resolved = pickOverload(candidates, category.arity) ?: return null
-        val fromLibrary = fromLibraryForName(category.libraryName, library)
+        val fromLibrary = fromLibraryForName(resolvedLibraryName, library)
         val markup = markup(resolved, fromLibrary) ?: return null
         return category.range?.let { Hover(markup, it) }
+    }
+
+    /**
+     * Walks the ELM tree to find the [FunctionRef] whose locator covers the given [position].
+     * Relies on the compiler's own function resolution — the returned [FunctionRef.libraryName]
+     * identifies which included library (if any) the function was resolved from.
+     */
+    private fun findFunctionRefAtPosition(
+        compiler: CqlCompiler,
+        position: Position,
+    ): FunctionRef? {
+        val library = compiler.library ?: return null
+        val visitor = DefinitionTrackBackVisitor()
+        return visitor.visitLibrary(library, position) as? FunctionRef
     }
 
     private fun hoverExpressionRef(
@@ -255,29 +309,53 @@ class HoverProvider(
         position: Position,
         parseTree: cqlParser.LibraryContext,
     ): Hover? {
-        if (category.aliasName == null) return null
-        // 1. Query alias source (AliasedQuerySource/LetClause) — most common.
-        hoverPropertyFromQueryAlias(category, library, position)?.let { return it }
-        // 2. Implicit scope (sort-by) — ANTLR + ModelManager.
-        if (category.implicit) {
-            hoverPropertyFromImplicitScope(category, compiler, library, parseTree, position)?.let { return it }
+        if (category.aliasName != null) {
+            // 1. Query alias source (AliasedQuerySource/LetClause) — ANTLR-first, ELM fallback.
+            hoverPropertyFromQueryAlias(category, compiler, library, position, parseTree)?.let { return it }
+            // 2. Implicit scope (sort-by) — ANTLR + ModelManager.
+            if (category.implicit) {
+                hoverPropertyFromImplicitScope(category, compiler, library, parseTree, position)?.let { return it }
+            }
+            // 3. Expression-ref source (e.g. `"Most Recent Encounter".period`).
+            hoverPropertyFromExpressionDef(category, library)?.let { return it }
+            return null
         }
-        // 3. Expression-ref source (e.g. `"Most Recent Encounter".period`).
-        hoverPropertyFromExpressionDef(category, library)?.let { return it }
-        return null
+        // 4. Complex expression receiver (e.g. `(query).period`) — resolve via ELM trackback.
+        return hoverPropertyFromExpressionReceiver(compiler, position, category)
     }
 
     /**
      * Resolves a PropertyName whose alias is a query alias (AliasedQuerySource / LetClause).
-     * Uses [findAliasSource] to bridge the ANTLR-identified alias name to its ELM source
-     * expression, then walks the source's [DataType] for the property element.
+     * Uses an ANTLR-first approach: resolves the alias source type from the parse tree by
+     * cursor position, walks the model's [ClassType] for the property element. Falls back
+     * to ELM [findAliasSource] for complex alias sources ANTLR can't reach.
      */
     private fun hoverPropertyFromQueryAlias(
         category: CursorCategory.PropertyName,
+        compiler: CqlCompiler,
         library: Library,
         position: Position,
+        parseTree: cqlParser.LibraryContext,
     ): Hover? {
         val aliasName = category.aliasName ?: return null
+
+        // ANTLR-first: resolve property type from parse tree by position.
+        // Handles simple retrieve sources, expression-ref sources, and
+        // parenthesized retrieves. Avoids ELM structural wrapper gaps (FunctionRef, etc.)
+        // by using position-based parse tree navigation.
+        val antlrType = resolvePropertyTypeFromAntlrAlias(parseTree, position, aliasName, category.name, compiler, library)
+        if (antlrType != null) {
+            return Hover(
+                cqlBlock(
+                    "(element) $aliasName.${category.name}: ${formatCqlType(antlrType.toString())}",
+                    localLibraryLabel(library),
+                ),
+                category.range,
+            )
+        }
+
+        // ELM fallback for complex alias sources ANTLR can't reach
+        // (tuple types, choice types, function-return types, nested let clauses).
         val defs = library.statements?.def ?: return null
         val searchDefs = defs.filter { Elements.containsPosition(it, position) }.ifEmpty { defs }
         for (def in searchDefs) {
@@ -354,10 +432,32 @@ class HoverProvider(
     }
 
     /**
+     * Resolves property hover for a complex expression receiver with no named alias
+     * (e.g. `(query).property`). Uses ELM trackback to find the expression element at
+     * the cursor position and display its compiled result type.
+     */
+    private fun hoverPropertyFromExpressionReceiver(
+        compiler: CqlCompiler,
+        position: Position,
+        category: CursorCategory.PropertyName,
+    ): Hover? {
+        val library = compiler.library ?: return null
+        val element = DefinitionTrackBackVisitor().visitLibrary(library, position) ?: return null
+        val resultType = element.resultType?.toString() ?: return null
+        return Hover(
+            cqlBlock(
+                "(element) ${category.name}: ${formatCqlType(resultType)}",
+                localLibraryLabel(library),
+            ),
+            category.range,
+        )
+    }
+
+    /**
      * Resolves a property type from a [DataType] by name, handling both
      * [ClassType.allElements] and [TupleType.elements].
      */
-    private fun resolvePropertyType(
+    fun resolvePropertyType(
         elementType: DataType,
         propertyName: String,
     ): DataType? {
@@ -366,6 +466,10 @@ class HoverProvider(
                 elementType.allElements.firstOrNull { it.name == propertyName }?.type
                     ?: resolveChoiceProperty(elementType, propertyName)
             is TupleType -> elementType.elements.firstOrNull { it.name == propertyName }?.type
+            is ChoiceType -> {
+                val resolved = elementType.types.mapNotNull { resolvePropertyType(it, propertyName) }
+                if (resolved.isEmpty()) null else ChoiceType(resolved)
+            }
             else -> null
         }
     }
@@ -475,7 +579,7 @@ class HoverProvider(
     ): Element? {
         if (elm == null) return null
         return when (elm) {
-            is AliasedQuerySource -> if (elm.alias == alias) elm else null
+            is AliasedQuerySource -> if (elm.alias == alias) elm else findAliasSource(elm.expression, alias)
             is LetClause -> if (elm.identifier == alias) elm else null
             is Query ->
                 elm.source.firstNotNullOfOrNull { findAliasSource(it, alias) }
@@ -493,6 +597,18 @@ class HoverProvider(
                 findAliasSource(elm.then, alias)
                     ?: findAliasSource(elm.`else`, alias)
                     ?: findAliasSource(elm.condition, alias)
+            is org.hl7.elm.r1.FunctionRef -> elm.operand.firstNotNullOfOrNull { findAliasSource(it, alias) }
+            is org.hl7.elm.r1.Sort -> findAliasSource(elm.source, alias)
+            is org.hl7.elm.r1.Slice -> findAliasSource(elm.source, alias)
+            is org.hl7.elm.r1.Case ->
+                findAliasSource(elm.comparand, alias)
+                    ?: elm.caseItem.firstNotNullOfOrNull { item ->
+                        findAliasSource(item.then, alias) ?: findAliasSource(item.`when`, alias)
+                    }
+                    ?: findAliasSource(elm.`else`, alias)
+            is org.hl7.elm.r1.Repeat -> findAliasSource(elm.source, alias) ?: findAliasSource(elm.element, alias)
+            is org.hl7.elm.r1.Property -> findAliasSource(elm.source, alias)
+            is org.hl7.elm.r1.Combine -> findAliasSource(elm.source, alias)
             else -> null
         }
     }
@@ -530,13 +646,14 @@ class HoverProvider(
     }
 
     /**
-     * Resolves the alias source type from the ANTLR parse tree, handling both
-     * retrieve sources (e.g. `[Encounter]`) via [resolveRetrieveTypeFromAntlr]
-     * and expression-ref sources (e.g. `"Qualifying Encounter..."`) by looking
-     * up the referenced expression definition in the ELM library.
-     *
-     * Returns null for parenthesized expressions or other sources not supported
-     * by the ANTLR path, falling through to the ELM-based path.
+     * Resolves the alias source type, handling the three possible [querySource]
+     * alternatives:
+     *   1. Retrieve sources (e.g. `[Encounter]`) — type extracted from ANTLR.
+     *   2. Expression-ref sources (e.g. `"Qualifying Encounter..."`) — looked up
+     *      by name in the ELM library.
+     *   3. Parenthesized expressions (e.g. `( complex expression )`) — walks the
+     *      ANTLR tree for a nested [RetrieveContext] at any depth; falls back to
+     *      ELM alias lookup when no retrieve is found.
      */
     private fun resolveAliasTypeFromAntlr(
         aqs: cqlParser.AliasedQuerySourceContext,
@@ -545,13 +662,50 @@ class HoverProvider(
         val retrieveType = resolveRetrieveTypeFromAntlr(aqs)
         if (retrieveType != null) return retrieveType
 
-        val qie = aqs.querySource()?.qualifiedIdentifierExpression() ?: return null
-        val exprName = qie.text.removeSurrounding("\"")
-        val def =
-            library.statements?.def?.firstOrNull { it.name == exprName }
-                ?: return null
-        val rt = def.resultType ?: return null
-        return rt.toString()
+        val qie = aqs.querySource()?.qualifiedIdentifierExpression()
+        if (qie != null) {
+            val exprName = qie.text.removeSurrounding("\"")
+            val def =
+                library.statements?.def?.firstOrNull { it.name == exprName }
+                    ?: return null
+            return def.resultType?.toString()
+        }
+
+        // Parenthesized expression: walk ANTLR tree to find a retrieve at any depth
+        // (handles common patterns like `([Retrieve])`, `([Retrieve].filter())`, etc.)
+        val nestedRetrieve = findNestedRetrieve(aqs.querySource())
+        if (nestedRetrieve != null) {
+            val nts = nestedRetrieve.namedTypeSpecifier() ?: return null
+            val qualifiers = nts.qualifier().joinToString(".") { it.text }
+            val typeName = nts.referentialOrTypeNameIdentifier()?.text ?: return null
+            return if (qualifiers.isNotEmpty()) "$qualifiers.$typeName" else typeName
+        }
+
+        // Fallback: bridge to ELM via alias name
+        val aliasName = aqs.alias()?.identifier()?.text?.removeSurrounding("\"") ?: return null
+        for (def in library.statements?.def.orEmpty()) {
+            val found = findAliasSource(def, aliasName)
+            if (found != null) return found.resultType?.toString()
+        }
+        return null
+    }
+
+    /**
+     * Recursively walks an ANTLR subtree to find a [cqlParser.RetrieveContext] at
+     * any depth. Handles parenthesized expressions, fluent invocation chains, and
+     * other syntactic wrappers between the [querySource] node and the actual retrieve.
+     */
+    private fun findNestedRetrieve(ctx: ParserRuleContext?): cqlParser.RetrieveContext? {
+        if (ctx == null) return null
+        if (ctx is cqlParser.RetrieveContext) return ctx
+        for (i in 0 until ctx.childCount) {
+            val child = ctx.getChild(i)
+            if (child is ParserRuleContext) {
+                val found = findNestedRetrieve(child)
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     /**
@@ -567,6 +721,33 @@ class HoverProvider(
     ): String? {
         val aqs = CursorClassifier.findAliasedQuerySource(parseTree, position, aliasName) ?: return null
         return resolveAliasTypeFromAntlr(aqs, library)
+    }
+
+    /**
+     * Resolves a property [DataType] for an alias using only the ANTLR parse tree
+     * and [ModelManager]. Locates the [AliasedQuerySourceContext] at the cursor
+     * [position] by walking up the parse tree, extracts the source type name from
+     * the retrieve/expression-ref/paren source, resolves it via the model, then
+     * looks up the [propertyName] element.
+     *
+     * Returns null for non-retrieve sources or when the model cannot resolve the type —
+     * the caller should fall back to ELM-based resolution.
+     */
+    private fun resolvePropertyTypeFromAntlrAlias(
+        parseTree: cqlParser.LibraryContext,
+        position: Position,
+        aliasName: String,
+        propertyName: String,
+        compiler: CqlCompiler,
+        library: Library,
+    ): DataType? {
+        val aqs = CursorClassifier.findAliasedQuerySource(parseTree, position, aliasName) ?: return null
+        val typeName = resolveAliasTypeFromAntlr(aqs, library) ?: return null
+        val modelManager = compiler.libraryManager?.modelManager ?: return null
+        val model = resolveModelForRetrieve(aqs, modelManager) ?: return null
+        val sourceType = model.resolveTypeName(typeName) ?: return null
+        val elementType = if (sourceType is ListType) sourceType.elementType else sourceType
+        return resolvePropertyType(elementType, propertyName)
     }
 
     /**

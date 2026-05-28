@@ -3,6 +3,9 @@ package org.opencds.cqf.cql.ls.server.provider
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.hl7.cql.model.ChoiceType
+import org.hl7.cql.model.ClassType
+import org.hl7.cql.model.ClassTypeElement
 import org.hl7.elm.r1.Add
 import org.hl7.elm.r1.AliasRef
 import org.hl7.elm.r1.And
@@ -708,6 +711,64 @@ class HoverProviderTest {
         val value = hover!!.contents.right.value
         assertTrue(value.contains("(element) Screening.value:"), "Should show property info: $value")
         assertFalse(value.contains("define function"), "Should not show FHIRHelpers wrapper: $value")
+    }
+
+    @Test
+    fun resolvePropertyType_choiceType_allAlternativesMatch_returnsChoiceOfResults() {
+        val stringType = ClassType("System.String")
+        val integerType = ClassType("System.Integer")
+
+        val typeA = ClassType("TypeA")
+        typeA.addElement(ClassTypeElement("foo", stringType))
+
+        val typeB = ClassType("TypeB")
+        typeB.addElement(ClassTypeElement("foo", integerType))
+
+        val choiceType = ChoiceType(typeA, typeB)
+        val result = hoverProvider.resolvePropertyType(choiceType, "foo")
+
+        assertNotNull(result)
+        assertTrue(result is ChoiceType)
+        val resultChoice = result as ChoiceType
+        assertEquals(2, resultChoice.types.size)
+        assertTrue(resultChoice.types.any { it is ClassType && it.name == "System.String" })
+        assertTrue(resultChoice.types.any { it is ClassType && it.name == "System.Integer" })
+    }
+
+    @Test
+    fun resolvePropertyType_choiceType_someAlternativesMatch_returnsChoiceOfMatching() {
+        val stringType = ClassType("System.String")
+        val integerType = ClassType("System.Integer")
+
+        val typeA = ClassType("TypeA")
+        typeA.addElement(ClassTypeElement("foo", stringType))
+
+        val typeB = ClassType("TypeB")
+        typeB.addElement(ClassTypeElement("bar", integerType))
+
+        val choiceType = ChoiceType(typeA, typeB)
+        val result = hoverProvider.resolvePropertyType(choiceType, "foo")
+
+        assertNotNull(result)
+        assertTrue(result is ChoiceType)
+        val resultChoice = result as ChoiceType
+        // Only typeA has "foo"; typeB has "bar" — result should be System.String alone
+        assertEquals(1, resultChoice.types.size)
+        assertTrue(resultChoice.types.any { it is ClassType && it.name == "System.String" })
+    }
+
+    @Test
+    fun resolvePropertyType_choiceType_noAlternativesMatch_returnsNull() {
+        val typeA = ClassType("TypeA")
+        typeA.addElement(ClassTypeElement("foo", ClassType("System.String")))
+
+        val typeB = ClassType("TypeB")
+        typeB.addElement(ClassTypeElement("bar", ClassType("System.Integer")))
+
+        val choiceType = ChoiceType(typeA, typeB)
+        val result = hoverProvider.resolvePropertyType(choiceType, "nonexistent")
+
+        assertNull(result)
     }
 
     @Test
@@ -1616,6 +1677,22 @@ class HoverProviderTest {
     }
 
     @Test
+    fun hover_onUnqualifiedFluentFunctionFromInclude_returnsDetails() {
+        // UnqualifiedFluentFunctionCall.cql line 5: `  5.square()`
+        // Hovering on `square` (unqualified fluent call resolved from IncludedFuncLib)
+        // should show the function signature from IncludedFuncLib, not the local library.
+        val docId = TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/UnqualifiedFluentFunctionCall.cql")
+        // Position(5, 4) lands on the 's' of "square"
+        val hover = hoverProvider.hover(HoverParams(docId, Position(5, 4)))
+
+        assertNotNull(hover, "Expected hover on square from included library IncludedFuncLib, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("function square"), "Expected function signature for square: $value")
+        assertTrue(value.contains("IncludedFuncLib"), "Expected IncludedFuncLib source library annotation: $value")
+        assertFalse(value.contains("*UnqualifiedFluentFunctionCall*"), "Should NOT show local library annotation: $value")
+    }
+
+    @Test
     fun hover_onUnaryOverload_picksOneArgSignature() {
         // OverloadedFunctions.cql defines three "Add" overloads (1, 2, 3 args).
         // Hovering the call site `"Add"(1)` should pick the one-argument overload.
@@ -1677,5 +1754,133 @@ class HoverProviderTest {
         assertTrue(value.contains("Encounter"), "Expected Encounter type in hover: $value")
         // Should be a List<...> type since Retrieve returns a list
         assertTrue(value.contains("List<", ignoreCase = false), "Expected List<...> type marker: $value")
+    }
+
+    @Test
+    fun hover_onPropertyInUnionWrappedByFunctionRef_returnsElementType() {
+        // UnionFluentQuery.cql: `wrapper( ( [Encounter] E return E.status ) union ... )`
+        // The cursor is on `status` in `E.status` inside the FIRST union member's inner query.
+        // The ELM has FunctionRef("wrapper") → Union → Query(E) — the FunctionRef blocks
+        // name-based findAliasSource (before the fix). The ANTLR-first path resolves by
+        // cursor position, bypassing the FunctionRef wrapper.
+        // `status` is at column 17-22 on line 15 (0-indexed).
+        val pos = Position(14, 20)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/UnionFluentQuery.cql"),
+                    pos,
+                ),
+            )
+
+        assertNotNull(hover, "Expected property hover on 'status' inside FunctionRef-wrapped union, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) E.status:"), "Expected '(element) E.status:' in hover: $value")
+        assertFalse(value.contains("FHIRHelpers"), "Hover should not contain FHIRHelpers include: $value")
+    }
+
+    @Test
+    fun hover_onPropertyInUnionSecondMemberWrappedByFunctionRef_returnsElementType() {
+        // UnionFluentQuery.cql: same fixture as above but cursor on `status` in the
+        // SECOND union member's inner query (line 18: `return E.status`).
+        // Verifies that position-based ANTLR resolution correctly distinguishes
+        // duplicate alias names across union members.
+        // `status` is at column 19-24 on line 18 (0-indexed).
+        val pos = Position(17, 22)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/UnionFluentQuery.cql"),
+                    pos,
+                ),
+            )
+
+        assertNotNull(hover, "Expected property hover on 'status' in second union member, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) E.status:"), "Expected '(element) E.status:' in hover: $value")
+        assertFalse(value.contains("FHIRHelpers"), "Hover should not contain FHIRHelpers include: $value")
+    }
+
+    @Test
+    fun hover_onAliasRefInNestedExistsQuery_showsAliasFromOuterQuery() {
+        // NestedQueryAliasRefTest.cql line 10:
+        //     where exists ( ( E.type ) T
+        //                        ^
+        // Hovering on `E` inside the nested query `(E.type) T` should resolve
+        // the alias from the outer query `[Encounter] E`, not fall through to
+        // ExpressionDefName/ExpressionRef.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/NestedQueryAliasRefTest.cql")!!
+        compilationManager.compile(uri)!!.library!!
+        // `E` in `( E.type )` is at column 21 on line 10 (0-indexed).
+        val pos = Position(9, 21)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/NestedQueryAliasRefTest.cql"),
+                    pos,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'E' in nested exists() query, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
+    }
+
+    @Test
+    fun hover_onAliasRefInNestedUnionExistsQuery_firstBranch_showsAliasFromOuterQuery() {
+        // UnionNestedAliasRefTest.cql line 11:
+        //         where exists ( ( E.type ) T
+        //                            ^
+        // Hovering on `E` inside the nested query `(E.type) T` in the first
+        // union branch should resolve the alias from that branch's outer query
+        // `[Encounter] E`, not fall through to ExpressionDefName.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/UnionNestedAliasRefTest.cql")!!
+        compilationManager.compile(uri)!!.library!!
+        // `E` in `( E.type )` is at column 23 on line 11 (0-indexed).
+        val pos = Position(10, 23)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/UnionNestedAliasRefTest.cql"),
+                    pos,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'E' in first union branch nested exists, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
+    }
+
+    @Test
+    fun hover_onAliasRefInNestedUnionExistsQuery_secondBranch_showsAliasFromOuterQuery() {
+        // UnionNestedAliasRefTest.cql line 16:
+        //           where exists ( ( E.type ) T
+        //                              ^
+        // Hovering on `E` inside the nested query `(E.type) T` in the second
+        // union branch should resolve the alias from that branch's outer query
+        // `[Encounter] E`, not fall through to ExpressionDefName.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/UnionNestedAliasRefTest.cql")!!
+        compilationManager.compile(uri)!!.library!!
+        // `E` in `( E.type )` is at column 25 on line 16 (0-indexed).
+        val pos = Position(15, 25)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/UnionNestedAliasRefTest.cql"),
+                    pos,
+                ),
+            )
+
+        assertNotNull(hover, "Expected alias hover on 'E' in second union branch nested exists, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias) E:' in hover: $value")
+        assertTrue(value.contains("FHIR.Encounter"), "Expected FHIR-qualified Encounter type in alias hover: $value")
     }
 }

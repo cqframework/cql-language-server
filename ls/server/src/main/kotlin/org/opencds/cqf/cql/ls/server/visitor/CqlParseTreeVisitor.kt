@@ -19,12 +19,20 @@ object CqlParseTreeVisitor {
         root: ParserRuleContext,
         position: Position,
     ): ParserRuleContext? {
-        if (!containsPosition(root, position)) return null
-        for (i in 0 until root.childCount) {
-            val child = root.getChild(i)
-            if (child is ParserRuleContext) {
-                val deeper = findDeepestContext(child, position)
-                if (deeper != null) return deeper
+        if (root.start != null && root.stop != null) {
+            if (!containsPosition(root, position)) return null
+        }
+        // Iterate the children list directly rather than using childCount +
+        // getChild(i), because labeled alternative nodes created via ANTLR
+        // copyFrom may have a non-null children list whose size is reflected
+        // by childCount inconsistently in some runtime versions.
+        val children = root.children
+        if (children != null) {
+            for (child in children) {
+                if (child is ParserRuleContext) {
+                    val deeper = findDeepestContext(child, position)
+                    if (deeper != null) return deeper
+                }
             }
         }
         return root

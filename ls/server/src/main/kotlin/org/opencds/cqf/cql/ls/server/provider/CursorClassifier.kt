@@ -223,6 +223,49 @@ object CursorClassifier {
             }
         }
 
+        // Codesystem identifier in a Code declaration (e.g. `Code '12345' from "SNOMEDCT"`).
+        val csIdCtx = walkUpTo<cqlParser.CodesystemIdentifierContext>(deepest)
+        if (csIdCtx != null) {
+            val idCtx = csIdCtx.identifier()
+            if (encloses(idCtx, deepest)) {
+                val name = stripQuotes(idCtx.text)
+                val libraryName = csIdCtx.libraryIdentifier()?.identifier()?.text?.let { stripQuotes(it) }
+                return CursorCategory.ExpressionRef(name = name, libraryName = libraryName, range = antlrTokenRange(idCtx))
+            }
+        }
+        // Code identifier in a Concept declaration (e.g. `Concept { "Code A" }`).
+        val codeIdCtx = walkUpTo<cqlParser.CodeIdentifierContext>(deepest)
+        if (codeIdCtx != null) {
+            val idCtx = codeIdCtx.identifier()
+            if (encloses(idCtx, deepest)) {
+                val name = stripQuotes(idCtx.text)
+                val libraryName = codeIdCtx.libraryIdentifier()?.identifier()?.text?.let { stripQuotes(it) }
+                return CursorCategory.ExpressionRef(name = name, libraryName = libraryName, range = antlrTokenRange(idCtx))
+            }
+        }
+
+        // QualifiedIdentifierExpression: a quoted/bare identifier used as a query source,
+        // terminology, or other expression-name context (e.g. `from "Items" Item`,
+        // `[Encounter: "Ambulatory Encounter"]`). Resolves to an expression/valueset/
+        // codesystem/code/concept ref by name. Checked before function invocation so that
+        // identifiers inside function arguments (e.g. `Last([Observation: "Code"] ...)`)
+        // are correctly classified as ExpressionRef rather than as the enclosing function call.
+        val qieCtx = walkUpTo<cqlParser.QualifiedIdentifierExpressionContext>(deepest)
+        if (qieCtx != null) {
+            val refId = qieCtx.referentialIdentifier()
+            if (encloses(refId, deepest)) {
+                val name = stripQuotes(refId.text)
+                val qualifiers = qieCtx.qualifierExpression()
+                val libraryName =
+                    if (qualifiers.isNotEmpty() && qualifiers.first().text in collectLibraryAliases(parseTree)) {
+                        qualifiers.first().text
+                    } else {
+                        null
+                    }
+                return CursorCategory.ExpressionRef(name = name, libraryName = libraryName, range = antlrTokenRange(refId))
+            }
+        }
+
         val qfiCtx = walkUpTo<cqlParser.QualifiedFunctionInvocationContext>(deepest)
         if (qfiCtx != null) {
             val rawName =
@@ -250,44 +293,21 @@ object CursorClassifier {
             return CursorCategory.FunctionCall(name = name, libraryName = null, arity = arity, range = range)
         }
 
-        // Codesystem identifier in a Code declaration (e.g. `Code '12345' from "SNOMEDCT"`).
-        val csIdCtx = walkUpTo<cqlParser.CodesystemIdentifierContext>(deepest)
-        if (csIdCtx != null) {
-            val idCtx = csIdCtx.identifier()
-            if (encloses(idCtx, deepest)) {
-                val name = stripQuotes(idCtx.text)
-                val libraryName = csIdCtx.libraryIdentifier()?.identifier()?.text?.let { stripQuotes(it) }
-                return CursorCategory.ExpressionRef(name = name, libraryName = libraryName, range = antlrTokenRange(idCtx))
-            }
-        }
-        // Code identifier in a Concept declaration (e.g. `Concept { "Code A" }`).
-        val codeIdCtx = walkUpTo<cqlParser.CodeIdentifierContext>(deepest)
-        if (codeIdCtx != null) {
-            val idCtx = codeIdCtx.identifier()
-            if (encloses(idCtx, deepest)) {
-                val name = stripQuotes(idCtx.text)
-                val libraryName = codeIdCtx.libraryIdentifier()?.identifier()?.text?.let { stripQuotes(it) }
-                return CursorCategory.ExpressionRef(name = name, libraryName = libraryName, range = antlrTokenRange(idCtx))
-            }
-        }
-
-        // QualifiedIdentifierExpression: a quoted/bare identifier used as a query source,
-        // terminology, or other expression-name context (e.g. `from "Items" Item`,
-        // `[Encounter: "Ambulatory Encounter"]`). Resolves to an expression/valueset/
-        // codesystem/code/concept ref by name.
-        val qieCtx = walkUpTo<cqlParser.QualifiedIdentifierExpressionContext>(deepest)
-        if (qieCtx != null) {
-            val refId = qieCtx.referentialIdentifier()
-            if (encloses(refId, deepest)) {
-                val name = stripQuotes(refId.text)
-                val qualifiers = qieCtx.qualifierExpression()
-                val libraryName =
-                    if (qualifiers.isNotEmpty() && qualifiers.first().text in collectLibraryAliases(parseTree)) {
-                        qualifiers.first().text
-                    } else {
-                        null
-                    }
-                return CursorCategory.ExpressionRef(name = name, libraryName = libraryName, range = antlrTokenRange(refId))
+        // Alias fallback: when findDeepestContext returns a higher-level context node
+        // (e.g. a QueryContext instead of descending to IdentifierContext for the token
+        // at the cursor position), check if the cursor is on a single-token-width node
+        // whose text matches a known query alias.
+        val fallbackQueryCtx = walkUpTo<cqlParser.QueryContext>(deepest)
+        if (fallbackQueryCtx != null) {
+            val fallbackToken = deepest.start
+            if (fallbackToken != null && fallbackToken === deepest.stop && isOnToken(fallbackToken, position)) {
+                val fallbackName = stripQuotes(fallbackToken.text ?: "")
+                if (fallbackName.isNotEmpty() && matchQueryAlias(fallbackQueryCtx, fallbackName)) {
+                    return CursorCategory.AliasReference(
+                        name = fallbackName,
+                        range = antlrTokenRange(deepest),
+                    )
+                }
             }
         }
 
@@ -344,37 +364,38 @@ object CursorClassifier {
     }
 
     private fun collectQueryAliases(ctx: ParserRuleContext): Set<String> {
-        val queryCtx = walkUpTo<cqlParser.QueryContext>(ctx) ?: return emptySet()
         val aliases = mutableSetOf<String>()
-
-        val sourceClause = queryCtx.sourceClause()
-        for (i in 0 until sourceClause.childCount) {
-            val child = sourceClause.getChild(i)
-            if (child is cqlParser.AliasedQuerySourceContext) {
-                val alias = child.alias()?.identifier()?.text
-                if (alias != null) aliases.add(alias)
+        var current: ParserRuleContext? = ctx
+        while (current != null) {
+            val queryCtx = walkUpTo<cqlParser.QueryContext>(current) ?: break
+            val sourceClause = queryCtx.sourceClause()
+            for (i in 0 until sourceClause.childCount) {
+                val child = sourceClause.getChild(i)
+                if (child is cqlParser.AliasedQuerySourceContext) {
+                    val alias = child.alias()?.identifier()?.text
+                    if (alias != null) aliases.add(alias)
+                }
             }
-        }
-
-        for (i in 0 until queryCtx.childCount) {
-            val child = queryCtx.getChild(i)
-            if (child is cqlParser.QueryInclusionClauseContext) {
-                for (j in 0 until child.childCount) {
-                    val ic = child.getChild(j)
-                    val aqs =
-                        when (ic) {
-                            is cqlParser.WithClauseContext -> ic.aliasedQuerySource()
-                            is cqlParser.WithoutClauseContext -> ic.aliasedQuerySource()
-                            else -> null
+            for (i in 0 until queryCtx.childCount) {
+                val child = queryCtx.getChild(i)
+                if (child is cqlParser.QueryInclusionClauseContext) {
+                    for (j in 0 until child.childCount) {
+                        val ic = child.getChild(j)
+                        val aqs =
+                            when (ic) {
+                                is cqlParser.WithClauseContext -> ic.aliasedQuerySource()
+                                is cqlParser.WithoutClauseContext -> ic.aliasedQuerySource()
+                                else -> null
+                            }
+                        if (aqs != null) {
+                            val alias = aqs.alias()?.identifier()?.text
+                            if (alias != null) aliases.add(alias)
                         }
-                    if (aqs != null) {
-                        val alias = aqs.alias()?.identifier()?.text
-                        if (alias != null) aliases.add(alias)
                     }
                 }
             }
+            current = queryCtx.getParent() as? ParserRuleContext
         }
-
         return aliases
     }
 
@@ -391,6 +412,11 @@ object CursorClassifier {
      * the enclosing [QueryContext], then scans its [sourceClause] and all
      * [queryInclusionClause]s (with/without) for an alias matching [name].
      *
+     * If no match is found in the nearest query, continues walking up through
+     * all enclosing [QueryContext] ancestors. This handles alias references
+     * in nested sub-queries (e.g., `exists( ( E.type ) T ... )` where `E` is
+     * declared in the outer query context).
+     *
      * Returns null when not inside any query or no matching alias is found.
      */
     fun findAliasedQuerySource(
@@ -399,36 +425,37 @@ object CursorClassifier {
         name: String,
     ): cqlParser.AliasedQuerySourceContext? {
         val deepest = CqlParseTreeVisitor.findDeepestContext(parseTree, position) ?: return null
-        val queryCtx = walkUpTo<cqlParser.QueryContext>(deepest) ?: return null
-
-        val sourceClause = queryCtx.sourceClause()
-        for (i in 0 until sourceClause.childCount) {
-            val child = sourceClause.getChild(i)
-            if (child is cqlParser.AliasedQuerySourceContext) {
-                val alias = child.alias()?.identifier()?.text
-                if (alias == name) return child
+        var current: ParserRuleContext? = deepest
+        while (current != null) {
+            val queryCtx = walkUpTo<cqlParser.QueryContext>(current) ?: break
+            val sourceClause = queryCtx.sourceClause()
+            for (i in 0 until sourceClause.childCount) {
+                val child = sourceClause.getChild(i)
+                if (child is cqlParser.AliasedQuerySourceContext) {
+                    val alias = child.alias()?.identifier()?.text
+                    if (alias == name) return child
+                }
             }
-        }
-
-        for (i in 0 until queryCtx.childCount) {
-            val child = queryCtx.getChild(i)
-            if (child is cqlParser.QueryInclusionClauseContext) {
-                for (j in 0 until child.childCount) {
-                    val ic = child.getChild(j)
-                    val aqs =
-                        when (ic) {
-                            is cqlParser.WithClauseContext -> ic.aliasedQuerySource()
-                            is cqlParser.WithoutClauseContext -> ic.aliasedQuerySource()
-                            else -> null
+            for (i in 0 until queryCtx.childCount) {
+                val child = queryCtx.getChild(i)
+                if (child is cqlParser.QueryInclusionClauseContext) {
+                    for (j in 0 until child.childCount) {
+                        val ic = child.getChild(j)
+                        val aqs =
+                            when (ic) {
+                                is cqlParser.WithClauseContext -> ic.aliasedQuerySource()
+                                is cqlParser.WithoutClauseContext -> ic.aliasedQuerySource()
+                                else -> null
+                            }
+                        if (aqs != null) {
+                            val alias = aqs.alias()?.identifier()?.text
+                            if (alias == name) return aqs
                         }
-                    if (aqs != null) {
-                        val alias = aqs.alias()?.identifier()?.text
-                        if (alias == name) return aqs
                     }
                 }
             }
+            current = queryCtx.getParent() as? ParserRuleContext
         }
-
         return null
     }
 
