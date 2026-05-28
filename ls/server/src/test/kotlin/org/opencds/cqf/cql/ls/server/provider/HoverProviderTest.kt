@@ -23,13 +23,13 @@ import org.hl7.elm.r1.UnaryExpression
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
 import org.hl7.elm.r1.Without
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -2104,8 +2104,10 @@ class HoverProviderTest {
 
         assertNotNull(hover, "Expected hover on decimal literal")
         val value = hover!!.contents.right.value
-        assertTrue(value.contains("System.Decimal") || value.contains("System.Integer"),
-            "Expected System.Decimal (or Integer) type: $value")
+        assertTrue(
+            value.contains("System.Decimal") || value.contains("System.Integer"),
+            "Expected System.Decimal (or Integer) type: $value",
+        )
     }
 
     @Test

@@ -9,9 +9,7 @@ import org.hl7.elm.r1.CodeRef
 import org.hl7.elm.r1.CodeSystemRef
 import org.hl7.elm.r1.ConceptRef
 import org.hl7.elm.r1.ExpressionRef
-import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.FunctionRef
-import org.hl7.elm.r1.OperandRef
 import org.hl7.elm.r1.ParameterRef
 import org.hl7.elm.r1.ValueSetRef
 import org.junit.jupiter.api.Assertions.assertEquals

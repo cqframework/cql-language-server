@@ -1,11 +1,11 @@
 package org.opencds.cqf.cql.ls.server.service
 
+import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
 import org.eclipse.lsp4j.DocumentFormattingParams
-import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams

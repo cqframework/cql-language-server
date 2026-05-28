@@ -24,9 +24,7 @@ import org.hl7.elm.r1.Retrieve
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
