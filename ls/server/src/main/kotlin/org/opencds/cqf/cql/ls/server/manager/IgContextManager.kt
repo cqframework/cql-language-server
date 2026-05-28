@@ -173,8 +173,7 @@ open class IgContextManager(private val contentService: ContentService) {
             current = parent
             val igIniPath = Uris.addPath(parent, "/ig.ini") ?: continue
             log.info("Attempting to read ini from path {}", igIniPath)
-            val input = contentService.read(igIniPath)
-            if (input != null) {
+            contentService.read(igIniPath)?.use {
                 log.info("Initializing ig from ini...")
                 val igContext = IGContext(LoggerAdapter(log))
                 igContext.initializeFromIni(Paths.get(igIniPath).toString())
