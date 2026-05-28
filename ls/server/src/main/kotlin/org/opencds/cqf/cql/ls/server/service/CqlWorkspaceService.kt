@@ -39,7 +39,7 @@ class CqlWorkspaceService(
 ) : WorkspaceService {
     companion object {
         private val log = LoggerFactory.getLogger(CqlWorkspaceService::class.java)
-        private val basicWatchers = listOf("**/cql-options.json", "ig.ini")
+        private val basicWatchers = listOf("**/cql-options.json", "ig.ini", "**/config.json", "**/config.jsonc")
     }
 
     @Suppress("java:S125") // Keeping the commented code for future reference
@@ -155,9 +155,5 @@ class CqlWorkspaceService(
             .entries.firstOrNull { it.value > 1 }
             ?.let { (cmd, _) -> throw IllegalArgumentException("The command $cmd was contributed multiple times") }
         return ImmutableList.copyOf(allCommands)
-    }
-
-    fun stop() {
-        // Add shutdown logic here. For example, unsubscribe the EventBus
     }
 }

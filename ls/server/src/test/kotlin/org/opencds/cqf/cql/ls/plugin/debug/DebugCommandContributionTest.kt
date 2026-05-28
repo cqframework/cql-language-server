@@ -12,6 +12,7 @@ import org.opencds.cqf.cql.ls.plugin.debug.DebugCommandContribution.Companion.ST
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import java.io.InputStream
 import java.net.URI
 
@@ -31,7 +32,7 @@ class DebugCommandContributionTest {
 
                 override fun read(uri: URI): InputStream? = null
             }
-        val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         contribution = DebugCommandContribution(cm)
     }
 

@@ -7,3 +7,5 @@ define "Two":
 
 define "Two List":
     { 1, 2, 3}
+
+define "TwoBoolOr": true or false

@@ -6,6 +6,7 @@ dependency-reduced-pom.xml
 classpath.txt
 test-classpath.txt
 docpath.txt
+LOG_FILE_IS_UNDEFINED
 
 *.log
 *.log.*

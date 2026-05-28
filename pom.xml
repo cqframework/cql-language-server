@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>4.6.0</version>
+    <version>4.7.0</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -24,6 +24,7 @@
         <cql.version>4.8.0</cql.version>
         <logback.version>1.2.13</logback.version>
         <slf4j.version>1.7.36</slf4j.version>
+        <picocli.version>4.6.1</picocli.version>
         <jackson.version>2.18.6</jackson.version>
         <jackson.databind.version>2.18.6</jackson.databind.version>
         <error-prone.version>2.24.1</error-prone.version>
@@ -169,6 +170,19 @@
                 <groupId>org.greenrobot</groupId>
                 <artifactId>eventbus-java</artifactId>
                 <version>3.3.1</version>
+            </dependency>
+
+            <!--
+                Pin commons-compress to 1.27.1: fhir-utilities:6.7.9 (from HAPI FHIR) is
+                compiled against 1.27.1 (its parent BOM) and calls TarArchiveInputStream
+                .getNextEntry() expecting a TarArchiveEntry covariant return that only
+                exists in 1.27.1+. Without this pin, cqf-fhir-npm:4.8.0 drags in 1.24.0,
+                which is missing that method signature and causes NoSuchMethodError.
+            -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>1.27.1</version>
             </dependency>
 
             <dependency>

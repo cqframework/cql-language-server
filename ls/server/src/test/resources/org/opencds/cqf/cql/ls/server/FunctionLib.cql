@@ -5,3 +5,6 @@ define "MyValue":
 
 define function "Double"(x Integer):
     x * 2
+
+define "UseDouble":
+    "Double"(42)

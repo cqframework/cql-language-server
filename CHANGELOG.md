@@ -1,6 +1,31 @@
 # Change Log
 
 
+
+## v4.7.0
+
+Date: 2026-05-28
+
+* resolve alias hover in nested sub-queries and property hover across union + FunctionRef wrapper
+* replace ELM-position-based hover with ANTLR CursorClassifier
+* prevent ANTLR keyword suppression from swallowing expression hovers
+* generic ANTLR keyword suppression for all query clause types
+* change hover to use hybird approach POC
+* format code with ktfmt (trailing commas, chain assignment, import ordering)
+* add CQL test resources for hover and navigation coverage
+* enrich hover provider with CQL syntax output, coercion unwrapping, and new ELM type support
+* add go-to-definition support for function operands and parameters
+* add ExpressionTrackBackVisitor support for Literal, OperandRef, OperandDef, ParameterRef, CodeRef, ConceptRef
+* add Elements.unwrapCoercions for compiler-generated wrapper resolution
+* adds code navigation support
+* code cleanup and more unit tests
+* adds more LibraryResolutionManager tests
+* adds more LibraryResolutionManager tests
+* adds FederatedLibrarySourceProvider and FederatedTerminologyRepo
+* adds support for multi-projects library resolution
+* bump version to 4.7.0
+
+
 ## v4.6.0
 
 Date: 2026-05-14
@@ -13,30 +38,7 @@ Date: 2026-05-14
 
 ## v4.5.0
 
-Date: 2026-04-15
-
-### Execute CQL
-
-Adds a JSON-RPC–based Execute CQL command (`org.opencds.cqf.cql.ls.executeCql`) that
-replaces the previous CLI-based approach.
-
-* Accepts a structured `ExecuteCqlRequest` with per-library FHIR model paths, terminology URI,
-  context, and user-defined parameters
-* Evaluates all test cases for a library in a single batch (compile once, evaluate per patient)
-* `CqlEvaluator` — new evaluator that builds a shared engine per batch and runs each patient context
-* `DelegatingRepository` — mutable repository wrapper that swaps the patient bundle between evaluations
-* `ExecuteCqlCommandContribution` — registers the command and dispatches to `CqlEvaluator`
-* Removed `CliCommand` and `CqlCommand` (picocli CLI) — no longer needed
-* Returns structured JSON: expression results, server-side logs, and used-default-parameter metadata
-
-### Compilation Cache + Surgical Invalidation
-
-* `CqlCompilationManager` now caches compiled `CqlCompiler` results per source URI
-* Reverse dependency index tracks which URIs depend on each library identifier
-* `invalidate(uri)` evicts the URI and all dependents from the cache
-* `DiagnosticsService.didChangeWatchedFiles` triggers surgical invalidation on `.cql` file changes
-* `IgStandardRepository` adds a `typeResourceCache` — caches directory scans per resource
-  type/compartment combination, eliminating redundant filesystem walks across patients in a batch
+Date: 2026-04-08
 
 ### Module Consolidation
 

@@ -29,6 +29,7 @@ import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import java.net.URI
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -43,7 +44,7 @@ class DiagnosticsServiceTest {
         @JvmStatic
         fun beforeAll() {
             val cs = TestContentService()
-            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             diagnosticsService =
                 DiagnosticsService(
                     CompletableFuture.completedFuture(Mockito.mock(LanguageClient::class.java)),
@@ -55,7 +56,7 @@ class DiagnosticsServiceTest {
         /** Builds a fresh DiagnosticsService backed by a Mockito LanguageClient. */
         private fun buildService(client: LanguageClient = Mockito.mock(LanguageClient::class.java)): DiagnosticsService {
             val cs = TestContentService()
-            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
             return DiagnosticsService(CompletableFuture.completedFuture(client), compilationManager, cs)
         }
     }

@@ -82,15 +82,13 @@ open class IgStandardRepository : IRepository {
             .build<Path, IBaseResource>()
 
     /**
-     * Directory-level cache: caches the full result of scanning a directory for a given
-     * resource type + compartment combination. Keyed by "${resourceType}|${compartmentPath}".
-     *
-     * Without this cache, every `search()` call (e.g. ValueSet lookup during terminology
-     * expansion) re-walks the entire directory (600+ files for a terminology bundle), even
-     * when the result has already been computed for a prior patient in the same batch.
-     * This cache makes the scan happen at most once per resource type per repository instance.
+     * Caches the full result of a [readDirectoryForResourceType] scan, keyed by
+     * (resource type, compartment). Prevents repeated [Files.walk] calls when
+     * [search] is invoked multiple times for the same type (e.g. ValueSet lookups
+     * during terminology expansion across many patients). Invalidated by [clearCache].
      */
-    private val typeResourceCache = ConcurrentHashMap<String, Map<IIdType, IBaseResource>>()
+    private val typeResourceCache =
+        ConcurrentHashMap<Pair<Class<*>, IgStandardRepositoryCompartment>, Map<IIdType, IBaseResource>>()
 
     /**
      * Creates a new IgRepository with auto-detected conventions and default encoding behavior.
@@ -302,20 +300,13 @@ open class IgStandardRepository : IRepository {
         resourceClass: Class<T>,
         igRepositoryCompartment: IgStandardRepositoryCompartment,
     ): Map<IIdType, T> {
-        val cacheKey = "${resourceClass.simpleName}|${pathForCompartment(igRepositoryCompartment)}"
-        return typeResourceCache.computeIfAbsent(cacheKey) {
-            readDirectoryForResourceTypeUncached(resourceClass, igRepositoryCompartment)
-        } as Map<IIdType, T>
-    }
+        val cacheKey = Pair(resourceClass, igRepositoryCompartment)
+        typeResourceCache[cacheKey]?.let { return it as Map<IIdType, T> }
 
-    private fun <T : IBaseResource> readDirectoryForResourceTypeUncached(
-        resourceClass: Class<T>,
-        igRepositoryCompartment: IgStandardRepositoryCompartment,
-    ): Map<IIdType, IBaseResource> {
         val path = directoryForResource(resourceClass, igRepositoryCompartment)
         if (!path.toFile().exists()) return emptyMap()
 
-        val resources = ConcurrentHashMap<IIdType, IBaseResource>()
+        val resources = ConcurrentHashMap<IIdType, T>()
         val resourceFileFilter: (Path) -> Boolean =
             when (conventions.filenameMode) {
                 IgStandardConventions.FilenameMode.ID_ONLY -> ::acceptByFileExtension
@@ -331,14 +322,22 @@ open class IgStandardRepository : IRepository {
                     .map { it!! }
                     .forEach { r ->
                         if (r.fhirType() != resourceClass.simpleName) return@forEach
-                        if (!r.idElement.hasIdPart()) return@forEach
-                        resources[r.idElement.toUnqualifiedVersionless()] = r
+                        if (!r.idElement.hasIdPart()) {
+                            log.warn(
+                                "Skipping {} resource with no id at path: {}",
+                                r.fhirType(),
+                                r.getUserData(SOURCE_PATH_TAG),
+                            )
+                            return@forEach
+                        }
+                        resources[r.idElement.toUnqualifiedVersionless()] = resourceClass.cast(r)
                     }
             }
         } catch (e: IOException) {
             throw UnclassifiedServerFailureException(500, "Unable to read resources from path: $path")
         }
 
+        typeResourceCache[cacheKey] = resources
         return resources
     }
 

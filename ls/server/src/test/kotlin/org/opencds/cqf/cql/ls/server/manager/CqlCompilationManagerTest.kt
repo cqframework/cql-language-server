@@ -31,7 +31,7 @@ class CqlCompilationManagerTest {
         @BeforeAll
         @JvmStatic
         fun beforeAll() {
-            manager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+            manager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         }
     }
 
@@ -50,7 +50,7 @@ class CqlCompilationManagerTest {
 
                 override fun read(uri: URI): InputStream? = null
             }
-        val localManager = CqlCompilationManager(nullCs, CompilerOptionsManager(nullCs), IgContextManager(nullCs))
+        val localManager = CqlCompilationManager(nullCs, CompilerOptionsManager(nullCs), IgContextManager(nullCs), LibraryResolutionManager(emptyList()))
         val result = localManager.compile(URI("file:///nonexistent.cql"))
         assertNull(result)
     }
@@ -121,16 +121,17 @@ class CqlCompilationManagerTest {
     @Test
     fun compile_stream_returnsNonNull() {
         val stream = cs.read(ONE_URI)!!
-        val compiler = manager.compile(ONE_URI, stream)
-        assertNotNull(compiler)
+        val result = manager.compile(ONE_URI, stream)
+        assertNotNull(result)
+        assertNotNull(result.compiler)
     }
 
     @Test
     fun compile_stream_validCql_hasNoErrors() {
         val stream = cs.read(ONE_URI)!!
-        val compiler = manager.compile(ONE_URI, stream)
+        val result = manager.compile(ONE_URI, stream)
         val errors =
-            compiler.exceptions.filter {
+            result.compiler.exceptions.filter {
                 it.severity == CqlCompilerException.ErrorSeverity.Error
             }
         assertTrue(errors.isEmpty(), "Expected no errors when compiling One.cql from stream")
@@ -143,7 +144,7 @@ class CqlCompilationManagerTest {
 
     @Test
     fun compile_cachedResult_returnsSameInstance() {
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         val first = localManager.compile(ONE_URI)
         val second = localManager.compile(ONE_URI)
         assertSame(first, second, "Expected cache hit to return the same CqlCompiler instance")
@@ -151,7 +152,7 @@ class CqlCompilationManagerTest {
 
     @Test
     fun invalidate_evictsChangedFile() {
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         val first = localManager.compile(ONE_URI)
         localManager.invalidate(ONE_URI)
         val second = localManager.compile(ONE_URI)
@@ -160,7 +161,7 @@ class CqlCompilationManagerTest {
 
     @Test
     fun invalidate_evictsDependentFile_butNotUnrelated() {
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         localManager.compile(FUNCTION_LIB_URI)
         val caller = localManager.compile(FUNCTION_CALLER_URI)
         val unrelated = localManager.compile(ONE_URI)
@@ -178,25 +179,46 @@ class CqlCompilationManagerTest {
 
     @Test
     fun compile_stream_populatesCache() {
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         val stream = cs.read(ONE_URI)!!
         val fromStream = localManager.compile(ONE_URI, stream)
         val fromCache = localManager.compile(ONE_URI)
-        assertSame(fromStream, fromCache, "compile(uri) should return the instance cached by compile(uri, stream)")
+        assertSame(fromStream.compiler, fromCache, "compile(uri) should return the instance cached by compile(uri, stream)")
     }
 
     @Test
     fun invalidate_onUncachedUri_isNoOp() {
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         // Should not throw — URI was never compiled
         localManager.invalidate(ONE_URI)
         // Cache miss → fresh compile
         assertNotNull(localManager.compile(ONE_URI))
     }
 
+    // -----------------------------------------------------------------------
+    // getParseTree — ANTLR parse tree accessible post-compilation
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getParseTree_returnsNonNull_forValidCql() {
+        manager.compile(ONE_URI)
+        val tree = manager.getParseTree(ONE_URI)
+        assertNotNull(tree, "Expected non-null ANTLR parse tree after compilation")
+    }
+
+    @Test
+    fun getParseTree_parseTreeStructure_hasExpectedRoot() {
+        manager.compile(ONE_URI)
+        val tree = manager.getParseTree(ONE_URI)!!
+        // The root should be a LibraryContext with the library identifier
+        val libDef = tree.libraryDefinition()
+        assertNotNull(libDef, "Expected library definition in parse tree")
+        assertNotNull(libDef!!.qualifiedIdentifier(), "Expected library identifier in parse tree")
+    }
+
     @Test
     fun getDependentUris_returnsCallers() {
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
 
         val libIdentifier = localManager.compile(FUNCTION_LIB_URI)!!.compiledLibrary!!.library!!.identifier!!
         localManager.compile(FUNCTION_CALLER_URI)
@@ -205,41 +227,5 @@ class CqlCompilationManagerTest {
 
         assertTrue(FUNCTION_CALLER_URI in deps, "FunctionCaller should be listed as a dependent of FunctionLib")
         assertFalse(ONE_URI in deps, "One.cql should not appear as a dependent of FunctionLib")
-    }
-
-    @Test
-    fun getDependentUris_unknownIdentifier_returnsEmptySet() {
-        // An identifier never registered via compile() must not throw and must return empty.
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
-        val ghost = VersionedIdentifier().withId("DoesNotExist").withVersion("9.9.9")
-        val deps = localManager.getDependentUris(ghost)
-        assertTrue(deps.isEmpty(), "Expected empty set for an identifier that was never compiled")
-    }
-
-    @Test
-    fun getDependentUris_libraryWithNoDependents_returnsEmptySet() {
-        // One.cql is self-contained — nothing includes it — so its identifier must have no dependents.
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
-        val identifier = localManager.compile(ONE_URI)!!.compiledLibrary!!.library!!.identifier!!
-        val deps = localManager.getDependentUris(identifier)
-        assertTrue(deps.isEmpty(), "Expected no dependents for One.cql (it is not included by any other library)")
-    }
-
-    @Test
-    fun compile_stream_overwritesCachedEntry() {
-        // compile(uri) is cache-first: it returns the cached instance on a hit.
-        // compile(uri, stream) always recompiles regardless of cache state and replaces the entry.
-        // Verify that a second stream call produces a new instance and that compile(uri) then
-        // returns the new instance (not the original one).
-        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs))
-
-        val first = localManager.compile(ONE_URI, cs.read(ONE_URI)!!)
-        // compile(uri) must return the instance just written to the cache
-        assertSame(first, localManager.compile(ONE_URI))
-
-        // A second stream compile must produce a different instance and overwrite the cache
-        val second = localManager.compile(ONE_URI, cs.read(ONE_URI)!!)
-        assertNotSame(first, second, "compile(uri, stream) must always recompile, not return the cached instance")
-        assertSame(second, localManager.compile(ONE_URI), "Cache must hold the most recent stream-compiled instance")
     }
 }

@@ -14,7 +14,7 @@
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_FILE}</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${java.io.tmpdir}/cql-ls.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>
             <maxHistory>7</maxHistory>
             <totalSizeCap>50MB</totalSizeCap>
@@ -23,6 +23,14 @@
             <pattern>%-4relative [%thread] %-5level %logger{35} %msg %n</pattern>
         </encoder>
     </appender>
+
+    <!-- Debug logging for View ELM / compilation diagnostics -->
+    <logger name="org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution" level="DEBUG" />
+    <logger name="org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager" level="DEBUG" />
+    <logger name="org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider" level="DEBUG" />
+    <!-- Debug logging for cross-project library resolution -->
+    <logger name="org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager" level="DEBUG" />
+    <logger name="org.opencds.cqf.cql.ls.server.service.FileContentService" level="DEBUG" />
 
     <!-- log.level is set by the VS Code extension via -Dlog.level=ALL in debug mode.
          Defaults to INFO so startup and command-lifecycle messages are visible. -->
