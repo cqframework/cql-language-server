@@ -28,6 +28,7 @@ import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.fhir.cql.CqlOptions
+import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.EvaluationResults
 import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
@@ -395,6 +396,7 @@ object CqlEvaluator {
         libraryResolutionManager: LibraryResolutionManager,
         detailedTracing: Boolean = false,
         defineOrderOut: MutableList<String>? = null,
+        breakpointHandler: BreakpointHandler? = null,
     ): Pair<List<LibraryResult>, List<DetailedExpressionResult>> {
         val libraryResults = mutableListOf<LibraryResult>()
         val detailedResults = mutableListOf<DetailedExpressionResult>()
@@ -462,6 +464,10 @@ object CqlEvaluator {
                 val identifier = VersionedIdentifier().withId(libraryRequest.libraryName)
 
                 val parameters = params
+
+                if (breakpointHandler != null) {
+                    engine.state.breakpointHandler = breakpointHandler
+                }
                 val evaluationResults =
                     engine.evaluate {
                         if (!parameters.isNullOrEmpty()) this.parameters = parameters
@@ -591,6 +597,7 @@ object CqlEvaluator {
         igContextManager: IgContextManager,
         libraryResolutionManager: LibraryResolutionManager,
         detailedTracing: Boolean = false,
+        breakpointHandler: BreakpointHandler? = null,
     ): DetailedEvaluationResult {
         log.debug(
             "{}: fhirVersion={} libraries={} rootDir={}",
@@ -647,6 +654,7 @@ object CqlEvaluator {
                     evaluationSettings, sharedLibraryCache, cqlRootUri, igContextManager,
                     libraryResolutionManager, detailedTracing = detailedTracing,
                     defineOrderOut = if (detailedTracing) allDefineOrder else null,
+                    breakpointHandler = breakpointHandler,
                 )
                 allDetailed.addAll(detailed)
                 results
@@ -706,5 +714,36 @@ object CqlEvaluator {
             request, contentService, igContextManager, libraryResolutionManager,
             detailedTracing = true,
         )
+    }
+
+    /**
+     * Evaluates a single library on a background thread with fine-grained stepping controlled
+     * by the given [BreakpointHandler]. The method returns immediately; the handler's
+     * [BreakpointHandler.onBeforeExpression] callback is invoked for every ELM expression
+     * and may return [org.opencds.cqf.cql.engine.debug.BreakpointAction.PAUSE] to suspend
+     * evaluation. Use [BreakpointHandler.release] or the convenience methods on
+     * [StreamingBreakpointHandler] to resume stepping.
+     */
+    fun evaluateStreaming(
+        request: ExecuteCqlRequest,
+        contentService: ContentService,
+        igContextManager: IgContextManager,
+        libraryResolutionManager: LibraryResolutionManager,
+        breakpointHandler: BreakpointHandler,
+        executor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor(),
+    ): java.util.concurrent.CompletableFuture<Unit> {
+        val future = java.util.concurrent.CompletableFuture<Unit>()
+        executor.submit {
+            try {
+                evaluateInternal(
+                    request, contentService, igContextManager, libraryResolutionManager,
+                    breakpointHandler = breakpointHandler,
+                )
+                future.complete(Unit)
+            } catch (e: Exception) {
+                future.completeExceptionally(e)
+            }
+        }
+        return future
     }
 }

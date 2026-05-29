@@ -12,6 +12,7 @@ import org.hl7.elm.r1.IncludeDef
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.OperandRef
 import org.hl7.elm.r1.ParameterRef
+import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.ValueSetRef
 import org.opencds.cqf.cql.ls.server.utility.Elements
 
@@ -73,6 +74,11 @@ class DefinitionTrackBackVisitor : BaseElmLibraryVisitor<Element?, Position>() {
 
     override fun visitCodeSystemRef(
         elm: CodeSystemRef,
+        context: Position,
+    ): Element? = if (Elements.containsPosition(elm, context)) elm else null
+
+    override fun visitProperty(
+        elm: Property,
         context: Position,
     ): Element? = if (Elements.containsPosition(elm, context)) elm else null
 

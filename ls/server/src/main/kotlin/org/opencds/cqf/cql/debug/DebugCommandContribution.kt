@@ -33,9 +33,9 @@ class DebugCommandContribution(
         if (START_DEBUG_COMMAND == params.command) {
             val session = debugSession
             if (session == null || !session.isActive()) {
-                val newSession = DebugSession(
-                    CqlDebugServer(compilationManager, contentService, igContextManager, libraryResolutionManager),
-                )
+                val debugServer = CqlDebugServer(compilationManager, contentService, igContextManager, libraryResolutionManager)
+                debugServer.enableStreaming()
+                val newSession = DebugSession(debugServer)
                 debugSession = newSession
                 return try {
                     CompletableFuture.completedFuture(newSession.start().get())

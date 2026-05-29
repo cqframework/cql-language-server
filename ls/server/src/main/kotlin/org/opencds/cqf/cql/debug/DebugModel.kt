@@ -35,4 +35,11 @@ data class DebugLaunchArgs(
     val terminologyUri: String? = null,
     val rootDir: String? = null,
     val optionsPath: String? = null,
+    val parameters: List<ParameterRequestData>? = null,
+)
+
+data class ParameterRequestData(
+    val parameterName: String,
+    val parameterType: String,
+    val parameterValue: String,
 )

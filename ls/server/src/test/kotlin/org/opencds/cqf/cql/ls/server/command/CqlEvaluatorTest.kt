@@ -115,11 +115,11 @@ class CqlEvaluatorTest {
     }
 
     @Test
-    fun `formatValue formats IBaseDatatype via toString`() {
+    fun `formatValue formats IBaseDatatype via fhirType`() {
         // StringType is IBaseDatatype but NOT IBaseResource — verifies the branch ordering fix
         // (IBaseDatatype must be checked before IBase, otherwise IBase's branch matches first).
         val s = StringType("hello")
-        assertEquals("hello", formatValue(s))
+        assertEquals("string", formatValue(s))
     }
 
     // -------------------------------------------------------------------------
