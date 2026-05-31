@@ -15,7 +15,6 @@ import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
-import org.opencds.cqf.cql.debug.TestDebugClient
 import java.net.Socket
 
 class DebugSessionTest {

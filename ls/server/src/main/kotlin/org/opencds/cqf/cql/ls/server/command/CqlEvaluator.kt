@@ -18,6 +18,10 @@ import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseDatatype
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.hl7.fhir.r5.context.ILoggingService
+import org.opencds.cqf.cql.engine.debug.BreakpointHandler
+import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
+import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
+import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
@@ -28,11 +32,6 @@ import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.fhir.cql.CqlOptions
-import org.opencds.cqf.cql.engine.debug.BreakpointHandler
-import org.opencds.cqf.cql.engine.execution.EvaluationResults
-import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
-import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
-import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
 import org.opencds.cqf.fhir.cql.Engines
 import org.opencds.cqf.fhir.cql.EvaluationSettings
 import org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings
@@ -574,8 +573,10 @@ object CqlEvaluator {
                 }
                 log.debug(
                     "sub-expr define={} locator={} type={} value={}",
-                    parentDefine, locator,
-                    frame.result?.javaClass?.simpleName, frame.result,
+                    parentDefine,
+                    locator,
+                    frame.result?.javaClass?.simpleName,
+                    frame.result,
                 )
                 collectSubExpressions(frame.subframes, parentDefine, results)
             } else if (frame is ExpressionDefTraceFrame) {
@@ -602,7 +603,9 @@ object CqlEvaluator {
         log.debug(
             "{}: fhirVersion={} libraries={} rootDir={}",
             if (detailedTracing) "evaluateDetailed" else "evaluate",
-            request.fhirVersion, request.libraries.size, request.rootDir,
+            request.fhirVersion,
+            request.libraries.size,
+            request.rootDir,
         )
         val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
 
@@ -631,11 +634,15 @@ object CqlEvaluator {
             grouped.getOrPut(key) { mutableListOf() }.add(lib)
         }
 
-        val terminologyRepo: IRepository = run {
-            val inputPaths = libraryResolutionManager.getInputDirectories()
-            if (inputPaths.isEmpty()) NoOpRepository(fhirContext)
-            else FederatedTerminologyRepo(fhirContext, inputPaths)
-        }
+        val terminologyRepo: IRepository =
+            run {
+                val inputPaths = libraryResolutionManager.getInputDirectories()
+                if (inputPaths.isEmpty()) {
+                    NoOpRepository(fhirContext)
+                } else {
+                    FederatedTerminologyRepo(fhirContext, inputPaths)
+                }
+            }
 
         val libraryCaches = mutableMapOf<String?, ConcurrentHashMap<VersionedIdentifier, CompiledLibrary>>()
         val allDetailed = mutableListOf<DetailedExpressionResult>()
@@ -649,13 +656,22 @@ object CqlEvaluator {
                         buildCqlOptions(request.optionsPath),
                         NpmProcessor(igContext),
                     ).withLibraryCache(sharedLibraryCache)
-                val (results, detailed) = evaluateBatch(
-                    batch, fhirContext, npmProcessor, contentService, terminologyRepo,
-                    evaluationSettings, sharedLibraryCache, cqlRootUri, igContextManager,
-                    libraryResolutionManager, detailedTracing = detailedTracing,
-                    defineOrderOut = if (detailedTracing) allDefineOrder else null,
-                    breakpointHandler = breakpointHandler,
-                )
+                val (results, detailed) =
+                    evaluateBatch(
+                        batch,
+                        fhirContext,
+                        npmProcessor,
+                        contentService,
+                        terminologyRepo,
+                        evaluationSettings,
+                        sharedLibraryCache,
+                        cqlRootUri,
+                        igContextManager,
+                        libraryResolutionManager,
+                        detailedTracing = detailedTracing,
+                        defineOrderOut = if (detailedTracing) allDefineOrder else null,
+                        breakpointHandler = breakpointHandler,
+                    )
                 allDetailed.addAll(detailed)
                 results
             }
@@ -685,7 +701,10 @@ object CqlEvaluator {
         libraryResolutionManager: LibraryResolutionManager,
     ): ExecuteCqlResponse {
         return evaluateInternal(
-            request, contentService, igContextManager, libraryResolutionManager,
+            request,
+            contentService,
+            igContextManager,
+            libraryResolutionManager,
             detailedTracing = false,
         ).response
     }
@@ -711,7 +730,10 @@ object CqlEvaluator {
         libraryResolutionManager: LibraryResolutionManager,
     ): DetailedEvaluationResult {
         return evaluateInternal(
-            request, contentService, igContextManager, libraryResolutionManager,
+            request,
+            contentService,
+            igContextManager,
+            libraryResolutionManager,
             detailedTracing = true,
         )
     }
@@ -736,7 +758,10 @@ object CqlEvaluator {
         executor.submit {
             try {
                 evaluateInternal(
-                    request, contentService, igContextManager, libraryResolutionManager,
+                    request,
+                    contentService,
+                    igContextManager,
+                    libraryResolutionManager,
                     breakpointHandler = breakpointHandler,
                 )
                 future.complete(Unit)

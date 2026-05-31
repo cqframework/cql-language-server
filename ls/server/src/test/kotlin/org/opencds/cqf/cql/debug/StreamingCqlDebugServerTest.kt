@@ -79,12 +79,20 @@ class StreamingCqlDebugServerTest {
         return server
     }
 
-    private fun pauseAt(handler: StreamingBreakpointHandler, line: Int, char: Int, endLine: Int, endChar: Int, name: String) {
+    private fun pauseAt(
+        handler: StreamingBreakpointHandler,
+        line: Int,
+        char: Int,
+        endLine: Int,
+        endChar: Int,
+        name: String,
+    ) {
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = name
-            it.locator = "$line:$char-$endLine:$endChar"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = name
+                it.locator = "$line:$char-$endLine:$endChar"
+            }
         val state = State(Environment(null))
         handler.onBeforeExpression(elm, state)
     }
@@ -102,8 +110,8 @@ class StreamingCqlDebugServerTest {
         assertEquals(1, response.totalFrames)
         val frame = response.stackFrames[0]
         assertEquals("TestExpression", frame.name)
-        assertEquals(10, frame.line)   // TrackBack "10" → 0-indexed 9 → DAP 10
-        assertEquals(5, frame.column)  // TrackBack "5" → 0-indexed 4 → DAP 5
+        assertEquals(10, frame.line) // TrackBack "10" → 0-indexed 9 → DAP 10
+        assertEquals(5, frame.column) // TrackBack "5" → 0-indexed 4 → DAP 5
         assertEquals(10, frame.endLine)
         assertEquals(26, frame.endColumn) // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
         assertNotNull(frame.source)
@@ -152,10 +160,11 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         // Add a variable with a complex value
@@ -178,13 +187,14 @@ class StreamingCqlDebugServerTest {
     @Test
     fun `evaluate returns notAvailable when state is null`() {
         val server = setupServer()
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "TestExpr"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "TestExpr"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
         assertEquals("not available", response.result)
     }
 
@@ -194,10 +204,11 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
@@ -207,13 +218,14 @@ class StreamingCqlDebugServerTest {
         )
         handler.onBeforeExpression(elm, state)
 
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "patientId"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "patientId"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
         assertEquals("{\"id\":\"1111\"}", response.result)
     }
 
@@ -223,21 +235,23 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         state.contextValues["Patient"] = mapOf("id" to "pat-1", "name" to listOf(mapOf("family" to "Smith")))
         handler.onBeforeExpression(elm, state)
 
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "Patient"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Patient"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
         assertEquals("{\"id\":\"pat-1\",\"name\":[{\"family\":\"Smith\"}]}", response.result)
     }
 
@@ -247,23 +261,25 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         // Populate the evaluation cache with a define result
         val libId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TestLib" }
         state.cache.cacheExpression(libId, "isOfficial", org.opencds.cqf.cql.engine.execution.ExpressionResult(true, null))
         handler.onBeforeExpression(elm, state)
 
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "isOfficial"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "isOfficial"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
         assertEquals("true", response.result)
     }
 
@@ -273,10 +289,11 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
@@ -284,13 +301,14 @@ class StreamingCqlDebugServerTest {
         )
         handler.onBeforeExpression(elm, state)
 
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "nonExistent"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "nonExistent"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
         assertEquals("not available", response.result)
     }
 
@@ -299,13 +317,15 @@ class StreamingCqlDebugServerTest {
     @Test
     fun `setBreakpoints updates streaming handler`() {
         val server = setupServer()
-        val bpArgs = SetBreakpointsArguments().also {
-            it.source = Source().also { s -> s.path = "/test.cql" }
-            it.breakpoints = arrayOf(
-                org.eclipse.lsp4j.debug.SourceBreakpoint().also { bp -> bp.line = 5 },
-                org.eclipse.lsp4j.debug.SourceBreakpoint().also { bp -> bp.line = 10 },
-            )
-        }
+        val bpArgs =
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "/test.cql" }
+                it.breakpoints =
+                    arrayOf(
+                        org.eclipse.lsp4j.debug.SourceBreakpoint().also { bp -> bp.line = 5 },
+                        org.eclipse.lsp4j.debug.SourceBreakpoint().also { bp -> bp.line = 10 },
+                    )
+            }
         val response = server.setBreakpoints(bpArgs).get()
         assertEquals(2, response.breakpoints.size)
         assertEquals(setOf(5, 10), server.testHandler.getBreakpointLines())
@@ -394,32 +414,33 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
-        
+
         // Setup Patient resource
         val patient = Patient()
         patient.id = "pat-1"
         patient.addName().setFamily("Smith").addGiven("John")
-        
+
         // This is where engine stores the ID as string
         state.contextValues["Patient"] = "pat-1"
-        
+
         // This is where we now store the full resource
         handler.contextResourcesByName["Patient"] = patient
-        
+
         handler.onBeforeExpression(elm, state)
 
         val response = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
         assertNotNull(response.variables)
-        
+
         // Find Patient variable
         val patientVar = response.variables.firstOrNull { it.name == "Patient" }
         assertNotNull(patientVar)
-        
+
         // Check for full resource JSON
         val value = patientVar!!.value
         assert(value.contains("Patient"))
@@ -433,30 +454,32 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
-        
+
         // Setup Patient resource
         val patient = Patient()
         patient.id = "pat-1"
         patient.addName().setFamily("Smith")
-        
+
         state.contextValues["Patient"] = "pat-1"
         handler.contextResourcesByName["Patient"] = patient
-        
+
         handler.onBeforeExpression(elm, state)
 
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "Patient"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
-        
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Patient"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
+
         assertNotNull(response.result)
         val value = response.result
         assert(value.contains("Patient"))
@@ -470,25 +493,27 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
-        
+
         state.contextValues["Patient"] = "pat-1"
         // handler.contextResourcesByName NOT populated
-        
+
         handler.onBeforeExpression(elm, state)
 
-        val response = server.evaluate(
-            EvaluateArguments().also {
-                it.expression = "Patient"
-                it.context = "hover"
-                it.frameId = 0
-            },
-        ).get()
-        
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Patient"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
+
         assertEquals("\"pat-1\"", response.result)
     }
 
@@ -499,12 +524,13 @@ class StreamingCqlDebugServerTest {
         val server = setupServer()
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to CqlDebugServer.ParameterMetadata(
-                    name = "Measurement Period",
-                    type = "Interval<DateTime>",
-                    defaultValue = "Interval[2026-01-01, 2027-01-01]"
-                )
-            )
+                "Measurement Period" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Measurement Period",
+                        type = "Interval<DateTime>",
+                        defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                    ),
+            ),
         )
 
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
@@ -520,21 +546,23 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         handler.onBeforeExpression(elm, state)
 
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to CqlDebugServer.ParameterMetadata(
-                    name = "Measurement Period",
-                    type = "Interval<DateTime>",
-                    defaultValue = "Interval[2026-01-01, 2027-01-01]"
-                )
-            )
+                "Measurement Period" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Measurement Period",
+                        type = "Interval<DateTime>",
+                        defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                    ),
+            ),
         )
 
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
@@ -549,10 +577,11 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         handler.onBeforeExpression(elm, state)
 
@@ -569,10 +598,11 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
 
         // Add parameters to state
@@ -583,17 +613,19 @@ class StreamingCqlDebugServerTest {
 
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to CqlDebugServer.ParameterMetadata(
-                    name = "Measurement Period",
-                    type = "Interval<DateTime>",
-                    defaultValue = null
-                ),
-                "Patient Type" to CqlDebugServer.ParameterMetadata(
-                    name = "Patient Type",
-                    type = "String",
-                    defaultValue = "'HMO'"
-                )
-            )
+                "Measurement Period" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Measurement Period",
+                        type = "Interval<DateTime>",
+                        defaultValue = null,
+                    ),
+                "Patient Type" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Patient Type",
+                        type = "String",
+                        defaultValue = "'HMO'",
+                    ),
+            ),
         )
 
         val response = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
@@ -616,17 +648,19 @@ class StreamingCqlDebugServerTest {
 
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to CqlDebugServer.ParameterMetadata(
-                    name = "Measurement Period",
-                    type = "Interval<DateTime>",
-                    defaultValue = "Interval[2026-01-01, 2027-01-01]"
-                ),
-                "Rate" to CqlDebugServer.ParameterMetadata(
-                    name = "Rate",
-                    type = "Decimal",
-                    defaultValue = "2.5"
-                )
-            )
+                "Measurement Period" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Measurement Period",
+                        type = "Interval<DateTime>",
+                        defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                    ),
+                "Rate" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Rate",
+                        type = "Decimal",
+                        defaultValue = "2.5",
+                    ),
+            ),
         )
 
         val response = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
@@ -649,14 +683,15 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
-            org.opencds.cqf.cql.engine.execution.Variable("localVar").withValue("123")
+            org.opencds.cqf.cql.engine.execution.Variable("localVar").withValue("123"),
         )
 
         handler.onBeforeExpression(elm, state)
@@ -673,12 +708,13 @@ class StreamingCqlDebugServerTest {
 
         server.initParameterMetadata(
             mapOf(
-                "TestParam" to CqlDebugServer.ParameterMetadata(
-                    name = "TestParam",
-                    type = "String",
-                    defaultValue = "'default'"
-                )
-            )
+                "TestParam" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "TestParam",
+                        type = "String",
+                        defaultValue = "'default'",
+                    ),
+            ),
         )
 
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
@@ -693,22 +729,24 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         handler.stepIn()
-        val elm = ExpressionDef().also {
-            it.name = "TestExpr"
-            it.locator = "1:1-1:10"
-        }
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
         val state = State(Environment(null))
         state.parameters["Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
         handler.onBeforeExpression(elm, state)
 
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to CqlDebugServer.ParameterMetadata(
-                    name = "Measurement Period",
-                    type = "Interval<DateTime>",
-                    defaultValue = null
-                )
-            )
+                "Measurement Period" to
+                    CqlDebugServer.ParameterMetadata(
+                        name = "Measurement Period",
+                        type = "Interval<DateTime>",
+                        defaultValue = null,
+                    ),
+            ),
         )
 
         val scopesResponse = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()

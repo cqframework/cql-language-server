@@ -8,13 +8,11 @@ import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
@@ -22,6 +20,8 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 class DebugServerTest {
     private fun makeServer(): CqlDebugServer {
@@ -40,9 +40,10 @@ class DebugServerTest {
         lrm: LibraryResolutionManager,
     ) : CqlDebugServer(cm, cs, ig, lrm) {
         override fun executeLaunch(args: DebugLaunchArgs) {
-            snapshots = listOf(
-                ExpressionSnapshot("Test", "true", "file:///test.cql", 0, 0, 0, 10),
-            )
+            snapshots =
+                listOf(
+                    ExpressionSnapshot("Test", "true", "file:///test.cql", 0, 0, 0, 10),
+                )
             currentIndex = -1
             stepToNext("entry")
         }
@@ -56,13 +57,14 @@ class DebugServerTest {
         lrm: LibraryResolutionManager,
     ) : CqlDebugServer(cm, cs, ig, lrm) {
         override fun executeLaunch(args: DebugLaunchArgs) {
-            snapshots = listOf(
-                ExpressionSnapshot("A", "1", "file:///test.cql", 0, 0, 0, 1),
-                ExpressionSnapshot("B", "false", "file:///test.cql", 1, 0, 1, 5),
-                ExpressionSnapshot("A", "42", "file:///test.cql", 2, 0, 2, 2),
-                ExpressionSnapshot("C", "\"hello\"", "file:///test.cql", 3, 0, 3, 7),
-                ExpressionSnapshot("B", "true", "file:///test.cql", 4, 0, 4, 4),
-            )
+            snapshots =
+                listOf(
+                    ExpressionSnapshot("A", "1", "file:///test.cql", 0, 0, 0, 1),
+                    ExpressionSnapshot("B", "false", "file:///test.cql", 1, 0, 1, 5),
+                    ExpressionSnapshot("A", "42", "file:///test.cql", 2, 0, 2, 2),
+                    ExpressionSnapshot("C", "\"hello\"", "file:///test.cql", 3, 0, 3, 7),
+                    ExpressionSnapshot("B", "true", "file:///test.cql", 4, 0, 4, 4),
+                )
             currentIndex = -1
             stepToNext("entry")
         }
@@ -258,7 +260,11 @@ class DebugServerTest {
      * a subsequent evaluate(hover) request. Calls next() (targetIndex + 1) times.
      * After this, currentIndex == targetIndex + 1.
      */
-    private fun advancePastFrame(server: CqlDebugServer, client: IDebugProtocolClient, targetIndex: Int) {
+    private fun advancePastFrame(
+        server: CqlDebugServer,
+        client: IDebugProtocolClient,
+        targetIndex: Int,
+    ) {
         for (i in 0..targetIndex) {
             server.next(org.eclipse.lsp4j.debug.NextArguments()).get()
         }
@@ -277,11 +283,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 3)
 
         // Hover "A" should return "42" (the most recent A at frame 3), not "1"
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "A"
-            it.frameId = 3
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "A"
+                it.frameId = 3
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("42", response.result)
         assertEquals(0, response.variablesReference)
@@ -298,11 +305,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 2)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "Unknown"
-            it.frameId = 2
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "Unknown"
+                it.frameId = 2
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
         assertEquals(0, response.variablesReference)
@@ -320,11 +328,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 1)
 
         // frameId is null — should search all snapshots and return the last "B" (true)
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "B"
-            it.frameId = null
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "B"
+                it.frameId = null
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("true", response.result)
         assertEquals(0, response.variablesReference)
@@ -342,11 +351,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 1)
 
         // any non-hover context with an unknown name should return "not available"
-        val evalArgs = EvaluateArguments().also {
-            it.context = "repl"
-            it.expression = "Unknown"
-            it.frameId = 1
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "repl"
+                it.expression = "Unknown"
+                it.frameId = 1
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
         assertEquals(0, response.variablesReference)
@@ -364,11 +374,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 1)
 
         // VS Code may send null context for Copy Value
-        val evalArgs = EvaluateArguments().also {
-            it.context = null
-            it.expression = "A"
-            it.frameId = 1
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = null
+                it.expression = "A"
+                it.frameId = 1
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("1", response.result)
         assertEquals(0, response.variablesReference)
@@ -386,11 +397,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 3)
 
         // Should work for any arbitrary context string
-        val evalArgs = EvaluateArguments().also {
-            it.context = "variables"
-            it.expression = "C"
-            it.frameId = 3
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "variables"
+                it.expression = "C"
+                it.frameId = 3
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("\"hello\"", response.result)
         assertEquals(0, response.variablesReference)
@@ -408,11 +420,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 1)
 
         // frame 1 sees A=1, B=false — clipboard should return "false" for B
-        val evalArgs = EvaluateArguments().also {
-            it.context = "clipboard"
-            it.expression = "B"
-            it.frameId = 1
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "clipboard"
+                it.expression = "B"
+                it.frameId = 1
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("false", response.result)
         assertEquals(0, response.variablesReference)
@@ -430,11 +443,12 @@ class DebugServerTest {
         advancePastFrame(server, client, 2)
 
         // frame 2 sees A=42, B=false — watch should return "42" for A
-        val evalArgs = EvaluateArguments().also {
-            it.context = "watch"
-            it.expression = "A"
-            it.frameId = 2
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "watch"
+                it.expression = "A"
+                it.frameId = 2
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("42", response.result)
         assertEquals(0, response.variablesReference)
@@ -451,11 +465,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 1)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "watch"
-            it.expression = "Unknown"
-            it.frameId = 1
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "watch"
+                it.expression = "Unknown"
+                it.frameId = 1
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
         assertEquals(0, response.variablesReference)
@@ -481,11 +496,12 @@ class DebugServerTest {
         lrm: LibraryResolutionManager,
     ) : CqlDebugServer(cm, cs, ig, lrm) {
         override fun executeLaunch(args: DebugLaunchArgs) {
-            snapshots = listOf(
-                ExpressionSnapshot("Initial Population", "true", "file:///test.cql", 0, 0, 0, 19),
-                ExpressionSnapshot("SDE Sex", "\"M\"", "file:///test.cql", 2, 0, 2, 5),
-                ExpressionSnapshot("Test", "42", "file:///test.cql", 4, 0, 4, 4),
-            )
+            snapshots =
+                listOf(
+                    ExpressionSnapshot("Initial Population", "true", "file:///test.cql", 0, 0, 0, 19),
+                    ExpressionSnapshot("SDE Sex", "\"M\"", "file:///test.cql", 2, 0, 2, 5),
+                    ExpressionSnapshot("Test", "42", "file:///test.cql", 4, 0, 4, 4),
+                )
             currentIndex = -1
             stepToNext("entry")
         }
@@ -512,11 +528,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 2)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "Population"
-            it.frameId = 2
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "Population"
+                it.frameId = 2
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("true", response.result)
         assertEquals(0, response.variablesReference)
@@ -534,11 +551,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 2)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "\"SDE Sex\""
-            it.frameId = 2
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "\"SDE Sex\""
+                it.frameId = 2
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("\"M\"", response.result)
         assertEquals(0, response.variablesReference)
@@ -556,11 +574,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 2)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "Foo"
-            it.frameId = 2
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "Foo"
+                it.frameId = 2
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
         assertEquals(0, response.variablesReference)
@@ -578,11 +597,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 4)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "A"
-            it.frameId = 4
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "A"
+                it.frameId = 4
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("42", response.result)
     }
@@ -597,21 +617,23 @@ class DebugServerTest {
         lrm: LibraryResolutionManager,
     ) : CqlDebugServer(cm, cs, ig, lrm) {
         override fun executeLaunch(args: DebugLaunchArgs) {
-            snapshots = listOf(
-                ExpressionSnapshot("isOfficial", "true", "file:///test.cql", 8, 0, 9, 55),
-                ExpressionSnapshot("Patient Name", "\"John\"", "file:///test.cql", 11, 0, 18, 5),
-                ExpressionSnapshot("Extra", "42", "file:///test.cql", 20, 0, 20, 5),
-            )
+            snapshots =
+                listOf(
+                    ExpressionSnapshot("isOfficial", "true", "file:///test.cql", 8, 0, 9, 55),
+                    ExpressionSnapshot("Patient Name", "\"John\"", "file:///test.cql", 11, 0, 18, 5),
+                    ExpressionSnapshot("Extra", "42", "file:///test.cql", 20, 0, 20, 5),
+                )
             // Simulate sub-expression trace results with locators in 1-indexed TrackBack format.
             // Line 9 CQL:   exists (Patient.name Name where Name.use.value = 'official')
             //             line 9, col 10-21 is "Patient.name"
             //             line 9, col 13-21 is "Patient.name" (parsed differently by CQL engine, Property vs Query)
             //             line 9, col 22-26 is "Name"
-            subExpressionSnapshots = listOf(
-                SubExpressionSnapshot("true", "isOfficial", 9, 10, 9, 21),  // Patient.name
-                SubExpressionSnapshot("\"John\"", "isOfficial", 9, 13, 9, 20),  // name (nested)
-                SubExpressionSnapshot("FHIR.HumanName {\$this: ...}", "isOfficial", 9, 22, 9, 26),  // Name alias
-            )
+            subExpressionSnapshots =
+                listOf(
+                    SubExpressionSnapshot("true", "isOfficial", 9, 10, 9, 21), // Patient.name
+                    SubExpressionSnapshot("\"John\"", "isOfficial", 9, 13, 9, 20), // name (nested)
+                    SubExpressionSnapshot("FHIR.HumanName {\$this: ...}", "isOfficial", 9, 22, 9, 26), // Name alias
+                )
             currentIndex = -1
             stepToNext("entry")
         }
@@ -638,11 +660,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 0)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "@9:11"
-            it.frameId = 0
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "@9:11"
+                it.frameId = 0
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("true", response.result)
         assertEquals(0, response.variablesReference)
@@ -660,11 +683,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 0)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "@8:0"
-            it.frameId = 0
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "@8:0"
+                it.frameId = 0
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
         assertEquals(0, response.variablesReference)
@@ -683,11 +707,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 0)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "@9:16"
-            it.frameId = 0
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "@9:16"
+                it.frameId = 0
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("\"John\"", response.result)
         assertEquals(0, response.variablesReference)
@@ -705,11 +730,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 0)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "isOfficial"
-            it.frameId = 0
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "isOfficial"
+                it.frameId = 0
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("true", response.result)
         assertEquals(0, response.variablesReference)
@@ -728,11 +754,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 1)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "@9:15"
-            it.frameId = 1
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "@9:15"
+                it.frameId = 1
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
     }
@@ -749,11 +776,12 @@ class DebugServerTest {
 
         advancePastFrame(server, client, 0)
 
-        val evalArgs = EvaluateArguments().also {
-            it.context = "hover"
-            it.expression = "@notaposition"
-            it.frameId = 0
-        }
+        val evalArgs =
+            EvaluateArguments().also {
+                it.context = "hover"
+                it.expression = "@notaposition"
+                it.frameId = 0
+            }
         val response = server.evaluate(evalArgs).get()
         assertEquals("not available", response.result)
     }
@@ -815,10 +843,11 @@ class DebugServerTest {
         override fun executeLaunch(args: DebugLaunchArgs) {
             val defineOrder = listOf("PatientAge", "InitPop")
             val orderIndex = defineOrder.withIndex().associate { (i, name) -> name to i }
-            snapshots = listOf(
-                ExpressionSnapshot("InitPop", "true", "file:///test.cql", 1, 0, 1, 10),
-                ExpressionSnapshot("PatientAge", "true", "file:///test.cql", 5, 0, 5, 20),
-            ).sortedBy { orderIndex[it.name] ?: Int.MAX_VALUE }
+            snapshots =
+                listOf(
+                    ExpressionSnapshot("InitPop", "true", "file:///test.cql", 1, 0, 1, 10),
+                    ExpressionSnapshot("PatientAge", "true", "file:///test.cql", 5, 0, 5, 20),
+                ).sortedBy { orderIndex[it.name] ?: Int.MAX_VALUE }
             subExpressionSnapshots = emptyList()
             currentIndex = -1
             stepToNext("entry")

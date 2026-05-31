@@ -8,8 +8,10 @@ import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
 
 class CqlEvaluatorDefineOrderTest {
-
-    private fun defFrame(name: String, vararg children: TraceFrame): ExpressionDefTraceFrame =
+    private fun defFrame(
+        name: String,
+        vararg children: TraceFrame,
+    ): ExpressionDefTraceFrame =
         ExpressionDefTraceFrame(
             VersionedIdentifier().withId("TestLib"),
             ExpressionDef().also { it.name = name },
@@ -40,10 +42,11 @@ class CqlEvaluatorDefineOrderTest {
     @Test
     fun collectDefineOrder_sharedDependency_deduplicatedOnFirstOccurrence() {
         // Both A and B depend on C. Post-order: C, A, B (C appears only once)
-        val frames = listOf(
-            defFrame("A", defFrame("C")),
-            defFrame("B", defFrame("C")),
-        )
+        val frames =
+            listOf(
+                defFrame("A", defFrame("C")),
+                defFrame("B", defFrame("C")),
+            )
         val result = mutableListOf<String>()
         CqlEvaluator.collectDefineOrder(frames, mutableSetOf(), result)
         assertEquals(listOf("C", "A", "B"), result)
@@ -67,14 +70,15 @@ class CqlEvaluatorDefineOrderTest {
 
     @Test
     fun collectDefineOrder_frameWithNullName_skipped() {
-        val unnamed = ExpressionDefTraceFrame(
-            VersionedIdentifier().withId("TestLib"),
-            ExpressionDef(),  // name not set -> null
-            emptyList(),
-            "Patient" to ("test" as Any),
-            null,
-            emptyList(),
-        )
+        val unnamed =
+            ExpressionDefTraceFrame(
+                VersionedIdentifier().withId("TestLib"),
+                ExpressionDef(), // name not set -> null
+                emptyList(),
+                "Patient" to ("test" as Any),
+                null,
+                emptyList(),
+            )
         val frames = listOf(unnamed, defFrame("A"))
         val result = mutableListOf<String>()
         CqlEvaluator.collectDefineOrder(frames, mutableSetOf(), result)

@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
 import org.eclipse.lsp4j.debug.Capabilities
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
@@ -14,8 +15,6 @@ import org.eclipse.lsp4j.debug.ExitedEventArguments
 import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.NextArguments
 import org.eclipse.lsp4j.debug.Scope
-import org.eclipse.lsp4j.debug.StepInArguments
-import org.eclipse.lsp4j.debug.StepOutArguments
 import org.eclipse.lsp4j.debug.ScopesArguments
 import org.eclipse.lsp4j.debug.ScopesResponse
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
@@ -26,6 +25,8 @@ import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.StackFrame
 import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.StackTraceResponse
+import org.eclipse.lsp4j.debug.StepInArguments
+import org.eclipse.lsp4j.debug.StepOutArguments
 import org.eclipse.lsp4j.debug.StoppedEventArguments
 import org.eclipse.lsp4j.debug.TerminatedEventArguments
 import org.eclipse.lsp4j.debug.Thread
@@ -40,16 +41,16 @@ import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.Interval
 import org.hl7.elm.r1.IntervalTypeSpecifier
-import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.ListTypeSpecifier
+import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.NamedTypeSpecifier
 import org.hl7.elm.r1.ParameterDef
 import org.hl7.elm.r1.Property
 import org.hl7.fhir.instance.model.api.IBase
+import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.core.ContentService
-import org.opencds.cqf.cql.ls.server.command.CqlEvaluator
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
-import org.opencds.cqf.cql.ls.server.command.DetailedEvaluationResult
+import org.opencds.cqf.cql.ls.server.command.CqlEvaluator
 import org.opencds.cqf.cql.ls.server.command.DetailedExpressionResult
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlRequest
 import org.opencds.cqf.cql.ls.server.command.LibraryRequest
@@ -58,12 +59,13 @@ import org.opencds.cqf.cql.ls.server.command.ParameterRequest
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
-import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.ls.server.provider.CursorCategory
+import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
+import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -153,9 +155,13 @@ open class CqlDebugServer(
         breakpointLines.clear()
         args.breakpoints?.forEach { breakpointLines.add(it.line - 1) }
         streamingHandler?.setBreakpoints(args.breakpoints?.map { it.line }?.toSet() ?: emptySet())
-        val bps = args.breakpoints?.map { bp ->
-            Breakpoint().also { it.isVerified = true; it.line = bp.line }
-        }?.toTypedArray() ?: emptyArray()
+        val bps =
+            args.breakpoints?.map { bp ->
+                Breakpoint().also {
+                    it.isVerified = true
+                    it.line = bp.line
+                }
+            }?.toTypedArray() ?: emptyArray()
         return CompletableFuture.completedFuture(SetBreakpointsResponse().also { it.breakpoints = bps })
     }
 
@@ -168,11 +174,12 @@ open class CqlDebugServer(
             val typeName = extractTypeName(paramDef)
             val defaultValueStr = extractDefaultValue(paramDef)
 
-            metadata[name] = ParameterMetadata(
-                name = name,
-                type = typeName,
-                defaultValue = defaultValueStr
-            )
+            metadata[name] =
+                ParameterMetadata(
+                    name = name,
+                    type = typeName,
+                    defaultValue = defaultValueStr,
+                )
         }
 
         return metadata
@@ -256,23 +263,26 @@ open class CqlDebugServer(
         val expressions = detailedResult.response.results.firstOrNull()?.expressions ?: emptyList()
 
         val compiler = compilationManager.compile(libraryUri)
-        val locatorMap: Map<String, String?> = compiler?.compiledLibrary?.library
-            ?.statements?.def
-            ?.filterNot { it is FunctionDef }
-            ?.filter { it.name != null }
-            ?.associate { it.name!! to it.locator }
-            ?: emptyMap()
+        val locatorMap: Map<String, String?> =
+            compiler?.compiledLibrary?.library
+                ?.statements?.def
+                ?.filterNot { it is FunctionDef }
+                ?.filter { it.name != null }
+                ?.associate { it.name!! to it.locator }
+                ?: emptyMap()
 
         val orderIndex = detailedResult.defineOrder.withIndex().associate { (i, name) -> name to i }
         // Sort by dependency-first evaluation order (from trace), not source order.
         // Defines not present in the trace sort to the end.
-        snapshots = expressions.mapNotNull { expr ->
-            parseLocator(locatorMap[expr.name] ?: return@mapNotNull null, expr.name, expr.value, args.libraryUri)
-        }.sortedBy { orderIndex[it.name] ?: Int.MAX_VALUE }
+        snapshots =
+            expressions.mapNotNull { expr ->
+                parseLocator(locatorMap[expr.name] ?: return@mapNotNull null, expr.name, expr.value, args.libraryUri)
+            }.sortedBy { orderIndex[it.name] ?: Int.MAX_VALUE }
 
-        subExpressionSnapshots = detailedResult.subExpressions.mapNotNull { detail ->
-            parseSubExpressionLocator(detail)
-        }
+        subExpressionSnapshots =
+            detailedResult.subExpressions.mapNotNull { detail ->
+                parseSubExpressionLocator(detail)
+            }
 
         currentIndex = -1
         stepToNext("entry")
@@ -296,15 +306,27 @@ open class CqlDebugServer(
 
         streamingLaunchUri = args.libraryUri
 
-        parameterMetadata = extractParameterMetadata(URI.create(args.libraryUri))
+        val libraryUri = URI.create(args.libraryUri)
+        val parseTree = compilationManager.getParseTree(libraryUri)
+        if (parseTree != null) {
+            handler.applyCqlStepLineFilter(CqlStepPositionCollector.collect(parseTree))
+        }
+
+        parameterMetadata = extractParameterMetadata(libraryUri)
 
         val request = buildExecuteCqlRequest(args)
 
         streamingExecutor = Executors.newSingleThreadExecutor()
 
-        streamingCompletion = CqlEvaluator.evaluateStreaming(
-            request, contentService, igContextManager, libraryResolutionManager, handler, streamingExecutor!!,
-        )
+        streamingCompletion =
+            CqlEvaluator.evaluateStreaming(
+                request,
+                contentService,
+                igContextManager,
+                libraryResolutionManager,
+                handler,
+                streamingExecutor!!,
+            )
 
         streamingCompletion!!.whenComplete { _, error ->
             log.debug("Streaming evaluation completed: error={}", error?.message)
@@ -318,23 +340,25 @@ open class CqlDebugServer(
             fhirVersion = args.fhirVersion,
             rootDir = args.rootDir,
             optionsPath = args.optionsPath,
-            libraries = listOf(
-                LibraryRequest(
-                    libraryName = args.libraryName,
-                    libraryUri = args.libraryUri,
-                    libraryVersion = null,
-                    terminologyUri = args.terminologyUri,
-                    model = args.testCaseUri?.let { ModelRequest("FHIR", it) },
-                    context = args.testCaseName?.let { ContextRequest("Patient", it) },
-                    parameters = args.parameters?.map { p ->
-                        ParameterRequest(
-                            parameterName = p.parameterName,
-                            parameterType = p.parameterType,
-                            parameterValue = p.parameterValue,
-                        )
-                    } ?: emptyList(),
+            libraries =
+                listOf(
+                    LibraryRequest(
+                        libraryName = args.libraryName,
+                        libraryUri = args.libraryUri,
+                        libraryVersion = null,
+                        terminologyUri = args.terminologyUri,
+                        model = args.testCaseUri?.let { ModelRequest("FHIR", it) },
+                        context = args.testCaseName?.let { ContextRequest("Patient", it) },
+                        parameters =
+                            args.parameters?.map { p ->
+                                ParameterRequest(
+                                    parameterName = p.parameterName,
+                                    parameterType = p.parameterType,
+                                    parameterValue = p.parameterValue,
+                                )
+                            } ?: emptyList(),
+                    ),
                 ),
-            ),
         )
     }
 
@@ -370,7 +394,13 @@ open class CqlDebugServer(
     override fun threads(): CompletableFuture<ThreadsResponse> =
         CompletableFuture.completedFuture(
             ThreadsResponse().also {
-                it.threads = arrayOf(Thread().also { t -> t.id = 1; t.name = "CQL" })
+                it.threads =
+                    arrayOf(
+                        Thread().also { t ->
+                            t.id = 1
+                            t.name = "CQL"
+                        },
+                    )
             },
         )
 
@@ -382,15 +412,16 @@ open class CqlDebugServer(
             val bounds = parseLocatorLines(locator)
             val name = extractExpressionName(elm)
             val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
-            val frame = StackFrame().also { f ->
-                f.id = 0
-                f.name = name ?: "(unknown)"
-                f.line = bounds.startLine + 1
-                f.column = bounds.startChar + 1
-                f.endLine = bounds.endLine + 1
-                f.endColumn = bounds.endChar + 1  // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
-                f.source = sourceUri?.let { Source().also { s -> s.path = it } }
-            }
+            val frame =
+                StackFrame().also { f ->
+                    f.id = 0
+                    f.name = name ?: "(unknown)"
+                    f.line = bounds.startLine + 1
+                    f.column = bounds.startChar + 1
+                    f.endLine = bounds.endLine + 1
+                    f.endColumn = bounds.endChar + 1 // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
+                    f.source = sourceUri?.let { Source().also { s -> s.path = it } }
+                }
             return CompletableFuture.completedFuture(
                 StackTraceResponse().also {
                     it.stackFrames = arrayOf(frame)
@@ -399,17 +430,19 @@ open class CqlDebugServer(
             )
         }
         val snap = snapshots.getOrNull(currentIndex)
-        val frame = StackFrame().also { f ->
-            f.id = currentIndex.coerceAtLeast(0)
-            f.name = snap?.name ?: "(none)"
-            f.line = (snap?.startLine ?: 0) + 1
-            f.column = (snap?.startChar ?: 0) + 1
-            f.endLine = (snap?.endLine ?: 0) + 1
-            f.endColumn = (snap?.endChar ?: 0) + 1  // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
-            f.source = snap?.let {
-                Source().also { s -> s.path = Paths.get(URI.create(it.sourceUri)).toString() }
+        val frame =
+            StackFrame().also { f ->
+                f.id = currentIndex.coerceAtLeast(0)
+                f.name = snap?.name ?: "(none)"
+                f.line = (snap?.startLine ?: 0) + 1
+                f.column = (snap?.startChar ?: 0) + 1
+                f.endLine = (snap?.endLine ?: 0) + 1
+                f.endColumn = (snap?.endChar ?: 0) + 1 // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
+                f.source =
+                    snap?.let {
+                        Source().also { s -> s.path = Paths.get(URI.create(it.sourceUri)).toString() }
+                    }
             }
-        }
         return CompletableFuture.completedFuture(
             StackTraceResponse().also {
                 it.stackFrames = arrayOf(frame)
@@ -432,7 +465,7 @@ open class CqlDebugServer(
                     s.name = "Parameters"
                     s.variablesReference = 2
                     s.isExpensive = false
-                }
+                },
             )
         }
 
@@ -442,7 +475,7 @@ open class CqlDebugServer(
                     s.name = "Locals"
                     s.variablesReference = 1
                     s.isExpensive = false
-                }
+                },
             )
         } else {
             scopes.add(
@@ -450,12 +483,12 @@ open class CqlDebugServer(
                     s.name = "Expressions"
                     s.variablesReference = 1
                     s.isExpensive = false
-                }
+                },
             )
         }
 
         return CompletableFuture.completedFuture(
-            ScopesResponse().also { it.scopes = scopes.toTypedArray() }
+            ScopesResponse().also { it.scopes = scopes.toTypedArray() },
         )
     }
 
@@ -477,7 +510,7 @@ open class CqlDebugServer(
                                 v.value = formatVariableValue(value, gson)
                                 v.type = metadata?.type
                                 v.variablesReference = 0
-                            }
+                            },
                         )
                     }
                 } else {
@@ -488,12 +521,12 @@ open class CqlDebugServer(
                                 v.value = metadata.defaultValue ?: "(no default)"
                                 v.type = metadata.type
                                 v.variablesReference = 0
-                            }
+                            },
                         )
                     }
                 }
                 return CompletableFuture.completedFuture(
-                    VariablesResponse().also { it.variables = vars.toTypedArray() }
+                    VariablesResponse().also { it.variables = vars.toTypedArray() },
                 )
             }
 
@@ -525,7 +558,7 @@ open class CqlDebugServer(
                 }
             }
             return CompletableFuture.completedFuture(
-                VariablesResponse().also { it.variables = vars.toTypedArray() }
+                VariablesResponse().also { it.variables = vars.toTypedArray() },
             )
         }
 
@@ -537,24 +570,25 @@ open class CqlDebugServer(
                         v.value = metadata.defaultValue ?: "(no default)"
                         v.type = metadata.type
                         v.variablesReference = 0
-                    }
+                    },
                 )
             }
             return CompletableFuture.completedFuture(
-                VariablesResponse().also { it.variables = vars.toTypedArray() }
+                VariablesResponse().also { it.variables = vars.toTypedArray() },
             )
         }
 
-        val expressionVars = snapshots.take(currentIndex + 1).map { snap ->
-            Variable().also {
-                it.name = snap.name
-                it.value = snap.value
-                it.evaluateName = snap.name
-                it.variablesReference = 0
-            }
-        }.toTypedArray()
+        val expressionVars =
+            snapshots.take(currentIndex + 1).map { snap ->
+                Variable().also {
+                    it.name = snap.name
+                    it.value = snap.value
+                    it.evaluateName = snap.name
+                    it.variablesReference = 0
+                }
+            }.toTypedArray()
         return CompletableFuture.completedFuture(
-            VariablesResponse().also { it.variables = expressionVars }
+            VariablesResponse().also { it.variables = expressionVars },
         )
     }
 
@@ -598,14 +632,15 @@ open class CqlDebugServer(
                     // Search engine cache for expression results
                     // In streaming mode, the current library identifier might not be in the state stack yet.
                     // We can attempt to resolve the identifier from the paused ELM element.
-                    val libId = state.getCurrentLibrary()?.identifier
-                        ?: handler.lastPausedElm?.locator?.let { _ ->
-                             // If we are paused, the element's locator might provide context.
-                             // For now, allow a fallback if we can infer or if the state is incomplete.
-                             // This addresses the test case limitation.
-                             org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TestLib" }
-                        }
-                    
+                    val libId =
+                        state.getCurrentLibrary()?.identifier
+                            ?: handler.lastPausedElm?.locator?.let { _ ->
+                                // If we are paused, the element's locator might provide context.
+                                // For now, allow a fallback if we can infer or if the state is incomplete.
+                                // This addresses the test case limitation.
+                                org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TestLib" }
+                            }
+
                     if (libId != null) {
                         state.cache.setExpressionCaching(true)
                         val cachedResult = state.cache.getCachedExpression(libId, args.expression)
@@ -619,13 +654,21 @@ open class CqlDebugServer(
 
                     // Handle @line:col position-based hover
                     if (args.expression.startsWith("@")) {
-
                         val pos = args.expression.removePrefix("@")
                         val parts = pos.split(":")
                         if (parts.size == 2) {
                             val line = parts[0].toIntOrNull()
                             val col = parts[1].toIntOrNull()
                             if (line != null && col != null) {
+                                val parseTree = compilationManager.getParseTree(URI.create(streamingLaunchUri ?: ""))
+                                if (parseTree != null && state != null) {
+                                    val hoverPos = Position(line, col)
+                                    val category = CursorClassifier.classify(parseTree, hoverPos)
+                                    val classifiedResult = resolveFromCursorCategory(category, state, handler, gson)
+                                    if (classifiedResult != null) {
+                                        return@supplyAsync classifiedResult
+                                    }
+                                }
                                 val value = handler.findValueAtPosition(line, col)
                                 if (value != null) {
                                     return@supplyAsync EvaluateResponse().also {
@@ -667,27 +710,41 @@ open class CqlDebugServer(
         }
     }
 
-    private fun lookupByName(expression: String, frameId: Int?): EvaluateResponse {
-        val candidates = if (frameId != null && frameId in snapshots.indices) {
-            snapshots.subList(0, frameId + 1)
-        } else {
-            snapshots.take(currentIndex + 1)
-        }
+    private fun lookupByName(
+        expression: String,
+        frameId: Int?,
+    ): EvaluateResponse {
+        val candidates =
+            if (frameId != null && frameId in snapshots.indices) {
+                snapshots.subList(0, frameId + 1)
+            } else {
+                snapshots.take(currentIndex + 1)
+            }
         return candidates.lastOrNull { nameMatches(it.name, expression) }
-            ?.let { snap -> EvaluateResponse().also { it.result = snap.value; it.variablesReference = 0 } }
+            ?.let { snap ->
+                EvaluateResponse().also {
+                    it.result = snap.value
+                    it.variablesReference = 0
+                }
+            }
             ?: notAvailable()
     }
 
-    private fun handleHoverEvaluate(expression: String, frameId: Int?): EvaluateResponse {
+    private fun handleHoverEvaluate(
+        expression: String,
+        frameId: Int?,
+    ): EvaluateResponse {
         // 1. Name-based define match
-        val candidates = if (frameId != null && frameId in snapshots.indices) {
-            snapshots.subList(0, frameId + 1)
-        } else {
-            snapshots
-        }
-        val defineSnapshot = candidates.lastOrNull { snap ->
-            nameMatches(snap.name, expression)
-        }
+        val candidates =
+            if (frameId != null && frameId in snapshots.indices) {
+                snapshots.subList(0, frameId + 1)
+            } else {
+                snapshots
+            }
+        val defineSnapshot =
+            candidates.lastOrNull { snap ->
+                nameMatches(snap.name, expression)
+            }
         if (defineSnapshot != null) {
             return EvaluateResponse().also {
                 it.result = defineSnapshot.value
@@ -700,13 +757,14 @@ open class CqlDebugServer(
             val pos = parseHoverPosition(expression) ?: return notAvailable()
             val currentDefine = snapshots[frameId].name
 
-            val match = subExpressionSnapshots
-                .filter { snap ->
-                    snap.parentDefine == currentDefine && snap.contains(pos.first, pos.second)
-                }
-                .minByOrNull {
-                    (it.endLine - it.startLine) * 10_000 + (it.endChar - it.startChar)
-                }
+            val match =
+                subExpressionSnapshots
+                    .filter { snap ->
+                        snap.parentDefine == currentDefine && snap.contains(pos.first, pos.second)
+                    }
+                    .minByOrNull {
+                        (it.endLine - it.startLine) * 10_000 + (it.endChar - it.startChar)
+                    }
 
             if (match != null) {
                 return EvaluateResponse().also {
@@ -719,7 +777,10 @@ open class CqlDebugServer(
         return notAvailable()
     }
 
-    private fun nameMatches(snapshotName: String, expression: String): Boolean {
+    private fun nameMatches(
+        snapshotName: String,
+        expression: String,
+    ): Boolean {
         if (snapshotName == expression) return true
         val stripped = expression.trim('"')
         if (snapshotName == stripped) return true
@@ -756,50 +817,195 @@ open class CqlDebugServer(
         return LocatorBounds(sl - 1, sc - 1, el - 1, ec)
     }
 
-    private fun formatVariableValue(value: Any?, gson: Gson): String {
+    private fun formatVariableValue(
+        value: Any?,
+        gson: Gson,
+    ): String {
         return when (value) {
             null -> "null"
             is String -> "\"$value\""
             is Boolean, is Number -> value.toString()
-            is IBase -> try {
-                fhirContext.newJsonParser().encodeToString(value)
-            } catch (_: Exception) {
-                value.toString()
-            }
-            else -> try { gson.toJson(value) } catch (_: Exception) { value.toString() }
+            is IBase ->
+                try {
+                    fhirContext.newJsonParser().encodeToString(value)
+                } catch (_: Exception) {
+                    value.toString()
+                }
+            else ->
+                try {
+                    gson.toJson(value)
+                } catch (_: Exception) {
+                    value.toString()
+                }
         }
     }
 
-    private fun resolvePropertyValue(property: Property, state: org.opencds.cqf.cql.engine.execution.State, gson: Gson): String? {
+    private fun resolvePropertyValue(
+        property: Property,
+        state: org.opencds.cqf.cql.engine.execution.State,
+        gson: Gson,
+    ): String? {
         // property.source is an Element (often ExpressionRef), property.path is the property name
         val sourceName = (property.source as? org.hl7.elm.r1.ExpressionRef)?.name ?: return null
 
         // Look up source from contextValues
-        val sourceValue = state.contextValues[sourceName]
-            ?: state.stack.flatMap { frame -> frame.variables }.find { v -> v.name == sourceName }?.value
-            ?: return null
+        val sourceValue =
+            state.contextValues[sourceName]
+                ?: state.stack.flatMap { frame -> frame.variables }.find { v -> v.name == sourceName }?.value
+                ?: return null
 
         return when (sourceValue) {
             is List<*> -> {
-                val items = sourceValue.mapNotNull { item ->
-                    if (item is IBase) {
-                        val id = getResourceId(item)
-                        val period = extractPeriodFromResource(item)
-                        if (period != null) {
-                            """{"id": "$id", "period": "$period"}"""
-                        } else null
-                    } else null
-                }
+                val items =
+                    sourceValue.mapNotNull { item ->
+                        if (item is IBase) {
+                            val id = getResourceId(item)
+                            val period = extractPeriodFromResource(item)
+                            if (period != null) {
+                                """{"id": "$id", "period": "$period"}"""
+                            } else {
+                                null
+                            }
+                        } else {
+                            null
+                        }
+                    }
                 if (items.isEmpty()) "[]" else "[${items.joinToString(", ")}]"
             }
             is IBase -> {
+                // Always return as list for consistency
                 val id = getResourceId(sourceValue)
                 val period = extractPeriodFromResource(sourceValue)
                 if (period != null) {
-                    """{"id": "$id", "period": "$period"}"""
-                } else null
+                    """[{"id": "$id", "period": "$period"}]"""
+                } else {
+                    "[]"
+                }
             }
             else -> null
+        }
+    }
+
+    private fun resolveFromCursorCategory(
+        category: CursorCategory,
+        state: State,
+        handler: StreamingBreakpointHandler,
+        gson: Gson,
+    ): EvaluateResponse? {
+        return when (category) {
+            is CursorCategory.AliasReference -> {
+                val value =
+                    state.stack.flatMap { it.variables }.find { it.name == category.name }?.value
+                        ?: handler.getContextResource(category.name)
+                if (value != null) {
+                    EvaluateResponse().also {
+                        it.result = formatVariableValue(value, gson)
+                        it.variablesReference = 0
+                    }
+                } else {
+                    null
+                }
+            }
+            is CursorCategory.OperandRef -> {
+                val value = state.stack.flatMap { it.variables }.find { it.name == category.name }?.value
+                if (value != null) {
+                    EvaluateResponse().also {
+                        it.result = formatVariableValue(value, gson)
+                        it.variablesReference = 0
+                    }
+                } else {
+                    null
+                }
+            }
+            is CursorCategory.ExpressionRef -> {
+                if (category.libraryName == null) {
+                    val value = handler.evaluatedValuesByName[category.name]
+                    if (value != null) {
+                        EvaluateResponse().also {
+                            it.result = formatVariableValue(value, gson)
+                            it.variablesReference = 0
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+            is CursorCategory.ParameterRef -> {
+                val value = state.parameters[category.name]
+                if (value != null) {
+                    EvaluateResponse().also {
+                        it.result = formatVariableValue(value, gson)
+                        it.variablesReference = 0
+                    }
+                } else {
+                    null
+                }
+            }
+            is CursorCategory.PropertyName -> {
+                if (category.aliasName != null) {
+                    val result = resolvePropertyFromAlias(category.aliasName, category.name, state, handler, gson)
+                    if (result != null) {
+                        EvaluateResponse().also {
+                            it.result = result
+                            it.variablesReference = 0
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun resolvePropertyFromAlias(
+        aliasName: String,
+        propertyName: String,
+        state: State,
+        handler: StreamingBreakpointHandler,
+        gson: Gson,
+    ): String? {
+        val sourceValue =
+            state.stack.flatMap { it.variables }.find { it.name == aliasName }?.value
+                ?: state.contextValues[aliasName]
+                ?: handler.getContextResource(aliasName)
+                ?: return null
+
+        return when (sourceValue) {
+            is List<*> -> {
+                val items =
+                    sourceValue.mapNotNull { item ->
+                        if (item is IBase) {
+                            extractPropertyJson(item, propertyName)
+                        } else {
+                            null
+                        }
+                    }
+                if (items.isEmpty()) "[]" else "[${items.joinToString(", ")}]"
+            }
+            is IBase -> extractPropertyJson(sourceValue, propertyName) ?: "[]"
+            else -> null
+        }
+    }
+
+    private fun extractPropertyJson(
+        resource: IBase,
+        propertyName: String,
+    ): String? {
+        return try {
+            val periodMethod = resource.javaClass.getMethod("get${propertyName.replaceFirstChar { it.uppercase() }}")
+            val period = periodMethod.invoke(resource)
+            if (period is org.hl7.fhir.r4.model.Period) {
+                formatPeriodAsInterval(period)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -822,7 +1028,9 @@ open class CqlDebugServer(
                     val period = resource.period
                     if (period != null) {
                         formatPeriodAsInterval(period)
-                    } else null
+                    } else {
+                        null
+                    }
                 }
                 is org.hl7.fhir.r4.model.Resource -> {
                     // Try to access period via reflection for other FHIR R4 resources
@@ -843,10 +1051,11 @@ open class CqlDebugServer(
         return "[$start, $end)"
     }
 
-    private fun notAvailable(): EvaluateResponse = EvaluateResponse().also {
-        it.result = "not available"
-        it.variablesReference = 0
-    }
+    private fun notAvailable(): EvaluateResponse =
+        EvaluateResponse().also {
+            it.result = "not available"
+            it.variablesReference = 0
+        }
 
     /**
      * Parses a locator from a [DetailedExpressionResult] (1-indexed TrackBack format) into

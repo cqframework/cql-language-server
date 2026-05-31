@@ -18,7 +18,10 @@ data class SubExpressionSnapshot(
     val endLine: Int,
     val endChar: Int,
 ) {
-    fun contains(line: Int, col: Int): Boolean {
+    fun contains(
+        line: Int,
+        col: Int,
+    ): Boolean {
         if (line < startLine || line > endLine) return false
         if (line == startLine && col < startChar) return false
         if (line == endLine && col > endChar) return false

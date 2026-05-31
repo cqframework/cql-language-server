@@ -6,6 +6,7 @@ import org.eclipse.lsp4j.launch.LSPLauncher
 import org.eclipse.lsp4j.services.LanguageClient
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Logger.JavaLogger
+import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.engine.execution.CqlEngine
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
@@ -16,7 +17,6 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.JsonLibraryResolutionConfigProvider
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
-import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
 import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider

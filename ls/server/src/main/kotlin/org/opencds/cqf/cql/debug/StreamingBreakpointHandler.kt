@@ -12,6 +12,9 @@ class StreamingBreakpointHandler : BreakpointHandler {
     private val breakpointLines = mutableSetOf<Int>()
 
     @Volatile
+    var cqlStepLines: Set<Int>? = null
+
+    @Volatile
     private var stepMode: StepMode = StepMode.CONTINUE
 
     @Volatile
@@ -72,6 +75,10 @@ class StreamingBreakpointHandler : BreakpointHandler {
         breakpointLines.addAll(lines)
     }
 
+    fun applyCqlStepLineFilter(lines: Set<Int>) {
+        cqlStepLines = lines
+    }
+
     fun stepIn() {
         stepMode = StepMode.STEP_IN
         lastPausedLine = -1
@@ -105,10 +112,11 @@ class StreamingBreakpointHandler : BreakpointHandler {
         val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
         val depth = state.stack.size
 
+        val cqlFilter = cqlStepLines
         val shouldPause =
             when (stepMode) {
-                StepMode.STEP_IN -> line != lastPausedLine
-                StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep
+                StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
+                StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
                 StepMode.STEP_OUT -> depth < depthAtStep
                 StepMode.CONTINUE -> line in breakpointLines && line != lastPausedLine
             }

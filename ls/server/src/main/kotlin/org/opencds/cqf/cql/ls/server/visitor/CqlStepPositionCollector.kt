@@ -1,0 +1,139 @@
+package org.opencds.cqf.cql.ls.server.visitor
+
+import org.cqframework.cql.gen.cqlParser
+import org.cqframework.cql.gen.cqlParser.AliasedQuerySourceContext
+import org.cqframework.cql.gen.cqlParser.LetClauseItemContext
+import org.cqframework.cql.gen.cqlParser.QueryContext
+import org.cqframework.cql.gen.cqlParser.WithClauseContext
+import org.cqframework.cql.gen.cqlParser.WithoutClauseContext
+
+object CqlStepPositionCollector {
+    fun collect(parseTree: cqlParser.LibraryContext): Set<Int> {
+        val lines = mutableSetOf<Int>()
+        collectFromContext(parseTree, lines)
+        return lines
+    }
+
+    private fun collectFromContext(
+        ctx: ParserRuleContext,
+        lines: MutableSet<Int>,
+    ) {
+        for (i in 0 until ctx.childCount) {
+            val child = ctx.getChild(i)
+            when (child) {
+                is cqlParser.StatementContext -> collectStatement(child, lines)
+                is cqlParser.ExpressionDefinitionContext -> collectExpressionDef(child, lines)
+                is cqlParser.FunctionDefinitionContext -> collectFunctionDef(child, lines)
+                is cqlParser.QueryContext -> collectQuery(child, lines)
+                is cqlParser.ExpressionContext -> collectExpression(child, lines)
+                is cqlParser.ExpressionTermContext -> collectExpressionTerm(child, lines)
+            }
+        }
+    }
+
+    private fun collectStatement(
+        stmt: cqlParser.StatementContext,
+        lines: MutableSet<Int>,
+    ) {
+        val exprDef = stmt.expressionDefinition()
+        if (exprDef != null) {
+            val body = exprDef.expression()
+            if (body != null) {
+                body.start?.line?.let { lines.add(it) }
+                collectExpression(body, lines)
+            }
+        }
+        val funcDef = stmt.functionDefinition()
+        if (funcDef != null) {
+            collectFunctionDef(funcDef, lines)
+        }
+        collectFromContext(stmt, lines)
+    }
+
+    private fun collectExpressionDef(
+        exprDef: cqlParser.ExpressionDefinitionContext,
+        lines: MutableSet<Int>,
+    ) {
+        val body = exprDef.expression()
+        if (body != null) {
+            body.start?.line?.let { lines.add(it) }
+            collectExpression(body, lines)
+        }
+    }
+
+    private fun collectFunctionDef(
+        funcDef: cqlParser.FunctionDefinitionContext,
+        lines: MutableSet<Int>,
+    ) {
+        for (i in 0 until funcDef.childCount) {
+            val child = funcDef.getChild(i)
+            if (child is cqlParser.ExpressionContext) {
+                child.start?.line?.let { lines.add(it) }
+                collectExpression(child, lines)
+            }
+        }
+    }
+
+    private fun collectExpression(
+        exprCtx: cqlParser.ExpressionContext,
+        lines: MutableSet<Int>,
+    ) {
+        for (i in 0 until exprCtx.childCount) {
+            val child = exprCtx.getChild(i)
+            if (child is cqlParser.ExpressionTermContext) {
+                collectExpressionTerm(child, lines)
+            } else if (child is cqlParser.ExpressionContext) {
+                collectExpression(child, lines)
+            }
+        }
+    }
+
+    private fun collectExpressionTerm(
+        termCtx: cqlParser.ExpressionTermContext,
+        lines: MutableSet<Int>,
+    ) {
+        collectFromContext(termCtx, lines)
+    }
+
+    private fun collectQuery(
+        queryCtx: QueryContext,
+        lines: MutableSet<Int>,
+    ) {
+        val sourceClause = queryCtx.sourceClause()
+        if (sourceClause != null) {
+            for (i in 0 until sourceClause.childCount) {
+                val child = sourceClause.getChild(i)
+                if (child is AliasedQuerySourceContext) {
+                    child.start?.line?.let { lines.add(it) }
+                }
+            }
+        }
+
+        queryCtx.whereClause()?.expression()?.start?.line?.let { lines.add(it) }
+        queryCtx.returnClause()?.expression()?.start?.line?.let { lines.add(it) }
+
+        val letClause = queryCtx.letClause()
+        if (letClause != null) {
+            for (i in 0 until letClause.childCount) {
+                val child = letClause.getChild(i)
+                if (child is LetClauseItemContext) {
+                    child.expression()?.start?.line?.let { lines.add(it) }
+                }
+            }
+        }
+
+        queryCtx.aggregateClause()?.expression()?.start?.line?.let { lines.add(it) }
+
+        for (i in 0 until queryCtx.childCount) {
+            val child = queryCtx.getChild(i)
+            when (child) {
+                is WithClauseContext -> child.expression()?.start?.line?.let { lines.add(it) }
+                is WithoutClauseContext -> child.expression()?.start?.line?.let { lines.add(it) }
+            }
+        }
+
+        collectFromContext(queryCtx, lines)
+    }
+}
+
+private typealias ParserRuleContext = org.antlr.v4.kotlinruntime.ParserRuleContext
