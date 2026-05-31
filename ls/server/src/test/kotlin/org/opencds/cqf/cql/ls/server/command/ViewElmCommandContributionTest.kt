@@ -135,6 +135,36 @@ class ViewElmCommandContributionTest {
         future.join()
     }
 
+    @Test
+    fun executeCommandWithAstElmType() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments =
+            listOf(
+                JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+                JsonParser.parseString("\"ast\""),
+            )
+        val future: CompletableFuture<Void> =
+            viewElmCommandContribution
+                .executeCommand(params)
+                .thenAccept { result ->
+                    try {
+                        val expectedAst =
+                            String(
+                                Files.readAllBytes(
+                                    Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.ast"),
+                                ),
+                            )
+                                .trim()
+                        assertEquals(expectedAst, result.toString().trim())
+                    } catch (e: IOException) {
+                        throw RuntimeException(e)
+                    }
+                }
+
+        future.join()
+    }
+
     // -----------------------------------------------------------------------
     // Early-return / null guard paths
     // -----------------------------------------------------------------------
