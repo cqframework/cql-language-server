@@ -60,4 +60,43 @@ class ExecuteCqlCommandContributionTest {
         )
         assertTrue(response.logs.isEmpty())
     }
+
+    @Test
+    fun `executeCommand passes parameter override to library`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Rate",
+                                        parameterType = "Decimal",
+                                        parameterValue = "2.5",
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+        val element = Gson().toJsonTree(request)
+        val params = ExecuteCommandParams("org.opencds.cqf.cql.ls.executeCql", listOf(element))
+        val response = contribution.executeCommand(params).join() as ExecuteCqlResponse
+
+        assertEquals(1, response.results.size)
+        assertEquals("WithParam", response.results[0].libraryName)
+        assertTrue(
+            response.results[0].expressions.any { it.name == "Using Rate" && it.value.contains("2.5") },
+            "Expected 'Using Rate' to reflect overridden value 2.5",
+        )
+    }
 }

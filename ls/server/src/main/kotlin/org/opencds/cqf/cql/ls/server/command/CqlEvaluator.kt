@@ -174,7 +174,7 @@ object CqlEvaluator {
         fhirContext: FhirContext,
         evaluationSettings: EvaluationSettings,
         parameters: List<ParameterRequest>,
-    ): MutableMap<String?, Any?>? {
+    ): MutableMap<String, Any?>? {
         if (parameters.isEmpty()) return null
 
         val defines =
@@ -201,9 +201,11 @@ object CqlEvaluator {
                         evalResults.getExceptionFor(identifier)
                             ?: RuntimeException("No result or exception found for library ${identifier.id}")
                     )
-            parameters.mapIndexed { i, p ->
-                (p.parameterName as String?) to libResult.expressionResults["__v${i}__"]?.value
-            }.toMap().toMutableMap()
+            val result = mutableMapOf<String, Any?>()
+            parameters.forEachIndexed { i, p ->
+                result[p.parameterName] = libResult.expressionResults["__v${i}__"]?.value
+            }
+            result
         } catch (e: Exception) {
             log.warn(
                 "Failed to evaluate parameter values for [${parameters.joinToString { it.parameterName }}]: ${e.message}",
@@ -449,7 +451,7 @@ object CqlEvaluator {
 
                 val identifier = VersionedIdentifier().withId(libraryRequest.libraryName)
 
-                val parameters = params?.filterKeys { it != null }?.mapKeys { it.key!! }
+                val parameters = params
                 val evaluationResults =
                     engine.evaluate {
                         if (!parameters.isNullOrEmpty()) this.parameters = parameters

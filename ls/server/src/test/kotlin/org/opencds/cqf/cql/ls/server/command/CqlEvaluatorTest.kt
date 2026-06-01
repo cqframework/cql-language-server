@@ -329,6 +329,44 @@ class CqlEvaluatorTest {
     }
 
     @Test
+    fun `evaluate passes date parameter override to library`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithDateParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = null,
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Date Range",
+                                        parameterType = "Interval<Date>",
+                                        parameterValue = "Interval[@2020-01-01, @2021-01-01)",
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+
+        assertEquals(1, response.results.size)
+        val expressions = response.results[0].expressions.associateBy { it.name }
+        assertTrue(
+            expressions["Range Start"]?.value?.contains("2020") == true,
+            "Expected 'Range Start' to reflect overridden value, got: ${expressions["Range Start"]?.value}",
+        )
+    }
+
+    @Test
     fun `evaluate uses CQL default when no parameter override provided`() {
         val request =
             ExecuteCqlRequest(

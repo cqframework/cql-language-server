@@ -14,7 +14,6 @@ data class LibraryRequest(
     val terminologyUri: String?,
     val model: ModelRequest?,
     val context: ContextRequest?,
-    // TODO: parameter passing deferred to PR #6 (Execute CQL optimization)
     val parameters: List<ParameterRequest>,
 )
 
