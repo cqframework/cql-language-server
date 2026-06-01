@@ -6,6 +6,7 @@ import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 
 class StreamingBreakpointHandler : BreakpointHandler {
@@ -42,7 +43,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
     val contextResourcesByName = ConcurrentHashMap<String, Any?>()
 
     /** Evaluated results by locator range, for position-based (@line:col) lookup. */
-    private val evaluatedValuesByLocator = mutableListOf<Pair<LocatorRange, Any?>>()
+    private val evaluatedValuesByLocator = CopyOnWriteArrayList<Pair<LocatorRange, Any?>>()
 
     data class LocatorRange(
         val startLine: Int,
@@ -97,6 +98,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
     fun stepOut(currentDepth: Int) {
         stepMode = StepMode.STEP_OUT
         depthAtStep = currentDepth
+        lastPausedLine = -1
         clearEvaluatedValues()
         resumeLatch.countDown()
     }

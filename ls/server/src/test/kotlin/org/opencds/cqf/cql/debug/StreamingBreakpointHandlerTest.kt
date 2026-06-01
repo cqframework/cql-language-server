@@ -335,6 +335,23 @@ class StreamingBreakpointHandlerTest {
     }
 
     @Test
+    fun `stepOut resets lastPausedLine to allow pausing on same line of caller frame`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        
+        val elm1 = makeElement("5:1-5:10")
+        val state1 = makeState(2)
+        
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state1))
+        
+        handler.stepOut(2) 
+        
+        val elm2 = makeElement("5:12-5:20")
+        val state2 = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state2))
+    }
+
+    @Test
     fun `getBreakpointLines returns the set lines`() {
         val handler = StreamingBreakpointHandler()
         handler.setBreakpoints(setOf(5, 10, 15))

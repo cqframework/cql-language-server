@@ -13,9 +13,13 @@ import java.util.concurrent.Executors
 class DebugSession(
     private val debugServer: CqlDebugServer,
 ) {
+    private val threadService: ExecutorService =
+        Executors.newCachedThreadPool { runnable ->
+            Thread(runnable).apply { isDaemon = true }
+        }
+
     companion object {
         private val log = LoggerFactory.getLogger(DebugSession::class.java)
-        private val threadService: ExecutorService = Executors.newCachedThreadPool()
     }
 
     @Volatile
@@ -43,6 +47,7 @@ class DebugSession(
 
     fun stop() {
         stopped = true
+        threadService.shutdownNow()
         try {
             serverSocket?.close()
         } catch (_: IOException) {

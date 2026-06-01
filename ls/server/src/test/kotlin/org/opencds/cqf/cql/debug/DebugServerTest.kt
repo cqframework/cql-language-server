@@ -879,4 +879,23 @@ class DebugServerTest {
         val frames2 = server.stackTrace(stackArgs).get()
         assertEquals("InitPop", frames2.stackFrames[0].name)
     }
+
+    @Test
+    fun `terminate delegates directly to disconnect and cleans up session`() {
+        val client = Mockito.mock(IDebugProtocolClient::class.java)
+        val cs = mock(ContentService::class.java)
+        val cm = mock(CqlCompilationManager::class.java)
+        val ig = mock(IgContextManager::class.java)
+        val lrm = mock(LibraryResolutionManager::class.java)
+        val server = CqlDebugServer(cm, cs, ig, lrm)
+        server.connect(client)
+        server.initialize(InitializeRequestArguments()).get()
+        server.configurationDone(ConfigurationDoneArguments()).get()
+        
+        val termArgs = org.eclipse.lsp4j.debug.TerminateArguments()
+        server.terminate(termArgs).get()
+        
+        Mockito.verify(client).exited(Mockito.any())
+        assertTrue(server.exited().isDone)
+    }
 }

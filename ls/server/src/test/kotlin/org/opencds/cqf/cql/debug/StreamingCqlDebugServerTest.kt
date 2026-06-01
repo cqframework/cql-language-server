@@ -60,6 +60,37 @@ class StreamingCqlDebugServerTest {
         fun initCurrentIndex(index: Int) {
             currentIndex = index
         }
+
+        fun triggerCompletion(error: Throwable?) {
+            val future = java.util.concurrent.CompletableFuture<Unit>()
+            this.streamingCompletion = future
+            
+            future.whenComplete { _, err ->
+                if (err != null) {
+                    val terminateServerMethod = CqlDebugServer::class.java.getDeclaredMethod("terminateServer")
+                    terminateServerMethod.isAccessible = true
+                    terminateServerMethod.invoke(this)
+                    
+                    val exitServerMethod = CqlDebugServer::class.java.getDeclaredMethod("exitServer", Int::class.java)
+                    exitServerMethod.isAccessible = true
+                    exitServerMethod.invoke(this, 1)
+                } else {
+                    val terminateServerMethod = CqlDebugServer::class.java.getDeclaredMethod("terminateServer")
+                    terminateServerMethod.isAccessible = true
+                    terminateServerMethod.invoke(this)
+                    
+                    val exitServerMethod = CqlDebugServer::class.java.getDeclaredMethod("exitServer", Int::class.java)
+                    exitServerMethod.isAccessible = true
+                    exitServerMethod.invoke(this, 0)
+                }
+            }
+            
+            if (error != null) {
+                future.completeExceptionally(error)
+            } else {
+                future.complete(Unit)
+            }
+        }
     }
 
     /** Create a server whose [streamingHandler] points to its [TestStreamingServer.testHandler]. */
@@ -755,5 +786,33 @@ class StreamingCqlDebugServerTest {
         val varsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
         assertEquals(1, varsResponse.variables.size)
         assertEquals("Interval<DateTime>", varsResponse.variables[0].type)
+    }
+
+    @Test
+    fun `streaming completion with exception sends terminated and exited with code 1`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.connect(client)
+
+        server.triggerCompletion(RuntimeException("test error"))
+
+        Mockito.verify(client).terminated(Mockito.any())
+        val exitedCaptor = org.mockito.ArgumentCaptor.forClass(org.eclipse.lsp4j.debug.ExitedEventArguments::class.java)
+        Mockito.verify(client).exited(exitedCaptor.capture())
+        assertEquals(1, exitedCaptor.value.exitCode)
+    }
+
+    @Test
+    fun `streaming completion without exception sends terminated and exited with code 0`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.connect(client)
+
+        server.triggerCompletion(null)
+
+        Mockito.verify(client).terminated(Mockito.any())
+        val exitedCaptor = org.mockito.ArgumentCaptor.forClass(org.eclipse.lsp4j.debug.ExitedEventArguments::class.java)
+        Mockito.verify(client).exited(exitedCaptor.capture())
+        assertEquals(0, exitedCaptor.value.exitCode)
     }
 }

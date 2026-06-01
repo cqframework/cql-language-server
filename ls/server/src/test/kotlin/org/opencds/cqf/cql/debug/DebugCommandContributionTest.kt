@@ -62,9 +62,12 @@ class DebugCommandContributionTest {
     }
 
     @Test
-    fun `executeCommand throws IllegalStateException when a session is already active`() {
+    fun `executeCommand returns failed future when a session is already active`() {
         val params = ExecuteCommandParams(START_DEBUG_COMMAND, emptyList())
         contribution.executeCommand(params).join()
-        assertThrows<IllegalStateException> { contribution.executeCommand(params) }
+        val ex = assertThrows<java.util.concurrent.ExecutionException> {
+            contribution.executeCommand(params).get()
+        }
+        assertTrue(ex.cause is IllegalStateException)
     }
 }

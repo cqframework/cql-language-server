@@ -28,6 +28,7 @@ import org.eclipse.lsp4j.debug.StackTraceResponse
 import org.eclipse.lsp4j.debug.StepInArguments
 import org.eclipse.lsp4j.debug.StepOutArguments
 import org.eclipse.lsp4j.debug.StoppedEventArguments
+import org.eclipse.lsp4j.debug.TerminateArguments
 import org.eclipse.lsp4j.debug.TerminatedEventArguments
 import org.eclipse.lsp4j.debug.Thread
 import org.eclipse.lsp4j.debug.ThreadsResponse
@@ -80,6 +81,8 @@ open class CqlDebugServer(
     }
 
     private var exited: CompletableFuture<Void> = CompletableFuture()
+
+    @Volatile
     private var serverState: ServerState = ServerState.STARTED
 
     // VS Code sends `launch` immediately after `configurationDone` without waiting for the
@@ -108,6 +111,8 @@ open class CqlDebugServer(
 
     protected var snapshots: List<ExpressionSnapshot> = emptyList()
     protected var subExpressionSnapshots: List<SubExpressionSnapshot> = emptyList()
+
+    @Volatile
     protected var currentIndex: Int = -1
     protected val breakpointLines = mutableSetOf<Int>()
 
@@ -129,6 +134,7 @@ open class CqlDebugServer(
         val capabilities = Capabilities()
         capabilities.supportsConfigurationDoneRequest = true
         capabilities.supportsEvaluateForHovers = true
+        capabilities.supportsTerminateRequest = true
 
         setState(ServerState.INITIALIZED)
         return CompletableFuture.completedFuture(capabilities)
@@ -143,9 +149,14 @@ open class CqlDebugServer(
     }
 
     override fun disconnect(args: DisconnectArguments): CompletableFuture<Void> {
+        if (getState() == ServerState.STOPPED) return CompletableFuture.completedFuture(null)
         streamingHandler?.release()
         streamingExecutor?.shutdownNow()
         return CompletableFuture.runAsync {}.whenCompleteAsync { _, _ -> this.exitServer() }
+    }
+
+    override fun terminate(args: TerminateArguments): CompletableFuture<Void> {
+        return disconnect(DisconnectArguments())
     }
 
     override fun setExceptionBreakpoints(args: SetExceptionBreakpointsArguments): CompletableFuture<SetExceptionBreakpointsResponse> =
@@ -329,9 +340,15 @@ open class CqlDebugServer(
             )
 
         streamingCompletion!!.whenComplete { _, error ->
-            log.debug("Streaming evaluation completed: error={}", error?.message)
-            terminateServer()
-            exitServer()
+            if (error != null) {
+                log.error("Streaming evaluation failed", error)
+                terminateServer()
+                exitServer(1)
+            } else {
+                log.debug("Streaming evaluation completed")
+                terminateServer()
+                exitServer()
+            }
         }
     }
 
@@ -634,10 +651,15 @@ open class CqlDebugServer(
                     // We can attempt to resolve the identifier from the paused ELM element.
                     val libId =
                         state.getCurrentLibrary()?.identifier
+                            ?: streamingLaunchUri?.let { uriStr ->
+                                try {
+                                    val uri = java.net.URI.create(uriStr)
+                                    compilationManager.compile(uri)?.compiledLibrary?.library?.identifier
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
                             ?: handler.lastPausedElm?.locator?.let { _ ->
-                                // If we are paused, the element's locator might provide context.
-                                // For now, allow a fallback if we can infer or if the state is incomplete.
-                                // This addresses the test case limitation.
                                 org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TestLib" }
                             }
 
@@ -1157,7 +1179,9 @@ open class CqlDebugServer(
         exitedEventArguments.exitCode = exitCode
         this.client.join().exited(exitedEventArguments)
         setState(ServerState.STOPPED)
-        this.exited.complete(null)
+        if (!this.exited.isDone) {
+            this.exited.complete(null)
+        }
     }
 
     fun exited(): CompletableFuture<Void> {

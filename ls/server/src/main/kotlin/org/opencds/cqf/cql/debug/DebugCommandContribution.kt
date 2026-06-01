@@ -37,17 +37,10 @@ class DebugCommandContribution(
                 debugServer.enableStreaming()
                 val newSession = DebugSession(debugServer)
                 debugSession = newSession
-                return try {
-                    CompletableFuture.completedFuture(newSession.start().get())
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    Futures.failed(e)
-                } catch (e: Exception) {
-                    Futures.failed(e)
-                }
+                return newSession.start().thenApply { it as Any }
             } else {
-                throw IllegalStateException(
-                    "Please wait for the current debug session to end before starting a new one.",
+                return Futures.failed(
+                    IllegalStateException("Please wait for the current debug session to end before starting a new one."),
                 )
             }
         } else {
