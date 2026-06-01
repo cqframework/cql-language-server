@@ -50,7 +50,7 @@ class StreamingCqlDebugServerTest {
             streamingLaunchUri = uri
         }
 
-        fun initParameterMetadata(metadata: Map<String, ParameterMetadata>) {
+        fun initParameterMetadata(metadata: Map<String, List<ParameterMetadata>>) {
             parameterMetadata = metadata
         }
 
@@ -556,11 +556,13 @@ class StreamingCqlDebugServerTest {
         val server = setupServer()
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Measurement Period",
-                        type = "Interval<DateTime>",
-                        defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                "TestLibrary" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Measurement Period",
+                            type = "Interval<DateTime>",
+                            defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                        ),
                     ),
             ),
         )
@@ -588,11 +590,13 @@ class StreamingCqlDebugServerTest {
 
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Measurement Period",
-                        type = "Interval<DateTime>",
-                        defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                "TestLibrary" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Measurement Period",
+                            type = "Interval<DateTime>",
+                            defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                        ),
                     ),
             ),
         )
@@ -637,38 +641,49 @@ class StreamingCqlDebugServerTest {
             }
         val state = State(Environment(null))
 
-        // Add parameters to state
+        // Add parameters to state - no library prefix means "(Global)"
         state.parameters["Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
         state.parameters["Patient Type"] = "HMO"
 
         handler.onBeforeExpression(elm, state)
 
+        // Metadata grouped by library - global params under "(Global)"
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Measurement Period",
-                        type = "Interval<DateTime>",
-                        defaultValue = null,
-                    ),
-                "Patient Type" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Patient Type",
-                        type = "String",
-                        defaultValue = "'HMO'",
+                "(Global)" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Measurement Period",
+                            type = "Interval<DateTime>",
+                            defaultValue = null,
+                        ),
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Patient Type",
+                            type = "String",
+                            defaultValue = "'HMO'",
+                        ),
                     ),
             ),
         )
 
-        val response = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
-        assertEquals(2, response.variables.size)
+        // variables(2) should return library groups
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        assertEquals(1, groupsResponse.variables.size)
 
-        val measurementPeriod = response.variables.firstOrNull { it.name == "Measurement Period" }
+        val globalGroup = groupsResponse.variables.firstOrNull { it.name == "(Global)" }
+        assertNotNull(globalGroup)
+        assertEquals("2 parameter(s)", globalGroup!!.value)
+
+        // Expanding the library group with its ref should return individual parameters
+        val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = globalGroup.variablesReference }).get()
+        assertEquals(2, paramsResponse.variables.size)
+
+        val measurementPeriod = paramsResponse.variables.firstOrNull { it.name == "Measurement Period" }
         assertNotNull(measurementPeriod)
         assertEquals("\"Interval[@2026-01-01, @2027-01-01)\"", measurementPeriod!!.value)
         assertEquals("Interval<DateTime>", measurementPeriod.type)
 
-        val patientType = response.variables.firstOrNull { it.name == "Patient Type" }
+        val patientType = paramsResponse.variables.firstOrNull { it.name == "Patient Type" }
         assertNotNull(patientType)
         assertEquals("\"HMO\"", patientType!!.value)
         assertEquals("String", patientType.type)
@@ -678,32 +693,43 @@ class StreamingCqlDebugServerTest {
     fun `variables returns parameter metadata with defaults in non-streaming mode`() {
         val server = setupServer()
 
+        // Metadata grouped by library - using TestLibrary as the library name
         server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Measurement Period",
-                        type = "Interval<DateTime>",
-                        defaultValue = "Interval[2026-01-01, 2027-01-01]",
-                    ),
-                "Rate" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Rate",
-                        type = "Decimal",
-                        defaultValue = "2.5",
+                "TestLibrary" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Measurement Period",
+                            type = "Interval<DateTime>",
+                            defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                        ),
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Rate",
+                            type = "Decimal",
+                            defaultValue = "2.5",
+                        ),
                     ),
             ),
         )
 
-        val response = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
-        assertEquals(2, response.variables.size)
+        // variables(2) should return library groups
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        assertEquals(1, groupsResponse.variables.size)
 
-        val measurementPeriod = response.variables.firstOrNull { it.name == "Measurement Period" }
+        val testLibraryGroup = groupsResponse.variables.firstOrNull { it.name == "TestLibrary" }
+        assertNotNull(testLibraryGroup)
+        assertEquals("2 parameter(s)", testLibraryGroup!!.value)
+
+        // Expanding the library group with its ref should return individual parameters
+        val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = testLibraryGroup.variablesReference }).get()
+        assertEquals(2, paramsResponse.variables.size)
+
+        val measurementPeriod = paramsResponse.variables.firstOrNull { it.name == "Measurement Period" }
         assertNotNull(measurementPeriod)
         assertEquals("Interval[2026-01-01, 2027-01-01]", measurementPeriod!!.value)
         assertEquals("Interval<DateTime>", measurementPeriod.type)
 
-        val rate = response.variables.firstOrNull { it.name == "Rate" }
+        val rate = paramsResponse.variables.firstOrNull { it.name == "Rate" }
         assertNotNull(rate)
         assertEquals("2.5", rate!!.value)
         assertEquals("Decimal", rate.type)
@@ -738,13 +764,15 @@ class StreamingCqlDebugServerTest {
     fun `scopes returns Parameters and Locals in streaming mode when parameters exist`() {
         val server = setupServer()
 
-        server.initParameterMetadata(
+server.initParameterMetadata(
             mapOf(
-                "TestParam" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "TestParam",
-                        type = "String",
-                        defaultValue = "'default'",
+                "TestLibrary" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Measurement Period",
+                            type = "Interval<DateTime>",
+                            defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                        ),
                     ),
             ),
         )
@@ -767,16 +795,18 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        state.parameters["Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
+        state.parameters["TestLibrary.Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
         handler.onBeforeExpression(elm, state)
 
-        server.initParameterMetadata(
+server.initParameterMetadata(
             mapOf(
-                "Measurement Period" to
-                    CqlDebugServer.ParameterMetadata(
-                        name = "Measurement Period",
-                        type = "Interval<DateTime>",
-                        defaultValue = null,
+                "TestLibrary" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata(
+                            name = "Measurement Period",
+                            type = "Interval<DateTime>",
+                            defaultValue = "Interval[2026-01-01, 2027-01-01]",
+                        ),
                     ),
             ),
         )
@@ -784,9 +814,17 @@ class StreamingCqlDebugServerTest {
         val scopesResponse = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
         assertNotNull(scopesResponse.scopes.firstOrNull { it.name == "Parameters" })
 
-        val varsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
-        assertEquals(1, varsResponse.variables.size)
-        assertEquals("Interval<DateTime>", varsResponse.variables[0].type)
+        // variables(2) returns library groups
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        assertEquals(1, groupsResponse.variables.size)
+        assertEquals("TestLibrary", groupsResponse.variables[0].name)
+        assertEquals(null, groupsResponse.variables[0].type) // Library group has no type
+
+        // Expanding the library group returns the actual parameters
+        val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = groupsResponse.variables[0].variablesReference }).get()
+        assertEquals(1, paramsResponse.variables.size)
+        assertEquals("Measurement Period", paramsResponse.variables[0].name)
+        assertEquals("Interval<DateTime>", paramsResponse.variables[0].type)
     }
 
     @Test

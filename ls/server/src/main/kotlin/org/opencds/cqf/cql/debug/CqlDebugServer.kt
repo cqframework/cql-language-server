@@ -136,7 +136,9 @@ open class CqlDebugServer(
     )
 
     @Volatile
-    protected var parameterMetadata: Map<String, ParameterMetadata> = emptyMap()
+    protected var parameterMetadata: Map<String, List<ParameterMetadata>> = emptyMap()
+
+    private var nextLibraryGroupRef = -1000
 
     override fun connect(client: IDebugProtocolClient) {
         this.client.complete(client)
@@ -189,21 +191,24 @@ open class CqlDebugServer(
         return CompletableFuture.completedFuture(SetBreakpointsResponse().also { it.breakpoints = bps })
     }
 
-    private fun extractParameterMetadata(libraryUri: URI): Map<String, ParameterMetadata> {
+    private fun extractParameterMetadata(libraryUri: URI): Map<String, List<ParameterMetadata>> {
         val compiler = compilationManager.compile(libraryUri)
-        val metadata = mutableMapOf<String, ParameterMetadata>()
+        val metadata = mutableMapOf<String, MutableList<ParameterMetadata>>()
+
+        val libraryName = compiler?.compiledLibrary?.library?.identifier?.id ?: "Unknown"
 
         compiler?.compiledLibrary?.library?.parameters?.def?.forEach { paramDef ->
             val name = paramDef.name ?: return@forEach
             val typeName = extractTypeName(paramDef)
             val defaultValueStr = extractDefaultValue(paramDef)
 
-            metadata[name] =
+            metadata.getOrPut(libraryName) { mutableListOf() }.add(
                 ParameterMetadata(
                     name = name,
                     type = typeName,
                     defaultValue = defaultValueStr,
-                )
+                ),
+            )
         }
 
         return metadata
@@ -539,30 +544,65 @@ open class CqlDebugServer(
         if (handler != null) {
             val state = handler.lastPausedState
 
+            // variablesReference == 2 is the Parameters scope container
             if (args.variablesReference == 2) {
+                // Reset library group refs for consistent tree rebuilding
+                nextLibraryGroupRef = -1000
+                libraryRefToName.clear()
+
                 if (state != null) {
-                    val gson = Gson()
-                    for ((name, value) in state.parameters) {
-                        val metadata = parameterMetadata[name]
-                        vars.add(
-                            Variable().also { v ->
-                                v.name = name
-                                v.value = formatVariableValue(value, gson)
-                                v.type = metadata?.type
-                                v.variablesReference = registerIfExpandable(value)
-                            },
-                        )
+                    // Group parameters by library prefix
+                    val groups = mutableMapOf<String, MutableList<Pair<String, Any?>>>()
+                    for ((fullName, value) in state.parameters) {
+                        val (library, paramName) = splitParameterName(fullName)
+                        groups.getOrPut(library) { mutableListOf() }.add(paramName to value)
                     }
+                    return CompletableFuture.completedFuture(
+                        VariablesResponse().also { it.variables = buildLibraryGroupVariables(groups).toTypedArray() },
+                    )
                 } else {
-                    for ((name, metadata) in parameterMetadata) {
-                        vars.add(
-                            Variable().also { v ->
-                                v.name = name
-                                v.value = metadata.defaultValue ?: "(no default)"
-                                v.type = metadata.type
-                                v.variablesReference = 0
-                            },
-                        )
+                    // No state yet - show parameter metadata grouped by library
+                    val groups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
+                    return CompletableFuture.completedFuture(
+                        VariablesResponse().also { it.variables = buildMetadataLibraryGroupVariables(groups).toTypedArray() },
+                    )
+                }
+            }
+
+            // Library group expansion (negative references starting from -1000)
+            if (args.variablesReference < 0) {
+                val libraryName = getLibraryNameForRef(args.variablesReference)
+                if (libraryName != null) {
+                    if (state != null) {
+                        val gson = Gson()
+                        val filteredParams = state.parameters.filter { (fullName, _) ->
+                            val (lib, _) = splitParameterName(fullName)
+                            lib == libraryName
+                        }
+                        for ((fullName, value) in filteredParams) {
+                            val (_, paramName) = splitParameterName(fullName)
+                            val metadata = findParameterMetadata(libraryName, paramName)
+                            vars.add(
+                                Variable().also { v ->
+                                    v.name = paramName
+                                    v.value = formatVariableValue(value, gson)
+                                    v.type = metadata?.type
+                                    v.variablesReference = registerIfExpandable(value)
+                                },
+                            )
+                        }
+                    } else {
+                        // Return metadata for this library
+                        parameterMetadata[libraryName]?.forEach { metadata ->
+                            vars.add(
+                                Variable().also { v ->
+                                    v.name = metadata.name
+                                    v.value = metadata.defaultValue ?: "(no default)"
+                                    v.type = metadata.type
+                                    v.variablesReference = 0
+                                },
+                            )
+                        }
                     }
                 }
                 return CompletableFuture.completedFuture(
@@ -614,19 +654,15 @@ open class CqlDebugServer(
             )
         }
 
+        // Non-streaming mode: variablesReference == 2 shows grouped parameter metadata
         if (args.variablesReference == 2) {
-            for ((name, metadata) in parameterMetadata) {
-                vars.add(
-                    Variable().also { v ->
-                        v.name = name
-                        v.value = metadata.defaultValue ?: "(no default)"
-                        v.type = metadata.type
-                        v.variablesReference = 0
-                    },
-                )
-            }
+            // Reset library group refs for consistent tree rebuilding
+            nextLibraryGroupRef = -1000
+            libraryRefToName.clear()
+
+            val groups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
             return CompletableFuture.completedFuture(
-                VariablesResponse().also { it.variables = vars.toTypedArray() },
+                VariablesResponse().also { it.variables = buildMetadataLibraryGroupVariables(groups).toTypedArray() },
             )
         }
 
@@ -642,6 +678,55 @@ open class CqlDebugServer(
         return CompletableFuture.completedFuture(
             VariablesResponse().also { it.variables = expressionVars },
         )
+    }
+
+    private fun splitParameterName(fullName: String): Pair<String, String> {
+        val dotIndex = fullName.indexOf('.')
+        return if (dotIndex > 0) {
+            fullName.substring(0, dotIndex) to fullName.substring(dotIndex + 1)
+        } else {
+            "(Global)" to fullName
+        }
+    }
+
+    private fun buildLibraryGroupVariables(groups: Map<String, List<Pair<String, Any?>>>): List<Variable> {
+        return groups.map { (library, params) ->
+            val ref = nextLibraryGroupRef++
+            libraryRefToName["ref_$ref"] = library
+            Variable().also { v ->
+                v.name = library
+                v.value = "${params.size} parameter(s)"
+                v.variablesReference = ref
+                v.type = null
+            }
+        }
+    }
+
+    private fun buildMetadataLibraryGroupVariables(groups: Map<String, List<Pair<String, Any?>>>): List<Variable> {
+        return groups.map { (library, _) ->
+            val ref = nextLibraryGroupRef++
+            libraryRefToName["ref_$ref"] = library
+            val paramCount = groups[library]?.size ?: 0
+            Variable().also { v ->
+                v.name = library
+                v.value = "$paramCount parameter(s)"
+                v.variablesReference = ref
+                v.type = null
+            }
+        }
+    }
+
+    private fun getLibraryNameForRef(ref: Int): String? {
+        // Reconstruct library name from ref by looking up in parameterMetadata keys
+        // We use a simple approach: store ref->libraryName mapping
+        val key = "ref_$ref"
+        return libraryRefToName[key]
+    }
+
+    private val libraryRefToName = mutableMapOf<String, String>()
+
+    private fun findParameterMetadata(libraryName: String, paramName: String): ParameterMetadata? {
+        return parameterMetadata[libraryName]?.find { it.name == paramName }
     }
 
     override fun evaluate(args: EvaluateArguments): CompletableFuture<EvaluateResponse> {
