@@ -39,6 +39,7 @@ data class DebugLaunchArgs(
     val rootDir: String? = null,
     val optionsPath: String? = null,
     val parameters: List<ParameterRequestData>? = null,
+    val stepGranularity: String? = null,
 )
 
 data class ParameterRequestData(

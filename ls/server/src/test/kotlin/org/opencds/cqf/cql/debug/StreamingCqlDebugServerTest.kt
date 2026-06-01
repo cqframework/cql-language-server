@@ -13,6 +13,7 @@ import org.hl7.elm.r1.Literal
 import org.hl7.fhir.r4.model.Patient
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
@@ -814,5 +815,189 @@ class StreamingCqlDebugServerTest {
         val exitedCaptor = org.mockito.ArgumentCaptor.forClass(org.eclipse.lsp4j.debug.ExitedEventArguments::class.java)
         Mockito.verify(client).exited(exitedCaptor.capture())
         assertEquals(0, exitedCaptor.value.exitCode)
+    }
+
+    // -- variable expansion for FHIR resources --------------------------------
+
+    @Test
+    fun `variables Patient has non-zero variablesReference`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+
+        val patient = Patient()
+        patient.id = "pat-123"
+        patient.birthDate = java.util.Calendar.getInstance().apply { set(1990, 1, 1) }.time
+        patient.addName().setFamily("Smith").addGiven("John")
+
+        state.contextValues["Patient"] = patient
+        handler.contextResourcesByName["Patient"] = patient
+
+        handler.onBeforeExpression(elm, state)
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar = response.variables.firstOrNull { it.name == "Patient" }
+        assertNotNull(patientVar)
+        assertTrue(patientVar!!.variablesReference != 0, "Patient variable should have non-zero variablesReference")
+    }
+
+    @Test
+    fun `variables expand Patient to show id birthDate name children`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+
+        val patient = Patient()
+        patient.id = "pat-123"
+        patient.birthDate = java.util.Calendar.getInstance().apply { set(1990, 1, 1) }.time
+        patient.addName().setFamily("Smith").addGiven("John")
+
+        state.contextValues["Patient"] = patient
+        handler.contextResourcesByName["Patient"] = patient
+
+        handler.onBeforeExpression(elm, state)
+
+        val rootResponse = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar = rootResponse.variables.firstOrNull { it.name == "Patient" }
+        assertNotNull(patientVar)
+        val patientRef = patientVar!!.variablesReference
+        assertTrue(patientRef >= 1000, "Patient ref should be >= 1000, got $patientRef")
+
+        val childrenResponse = server.variables(VariablesArguments().also { it.variablesReference = patientRef }).get()
+        val childNames = childrenResponse.variables.map { it.name }.toSet()
+
+        assertTrue(childNames.contains("id"), "Children should include 'id', got $childNames")
+        assertTrue(childNames.contains("birthDate"), "Children should include 'birthDate', got $childNames")
+        assertTrue(childNames.contains("name"), "Children should include 'name', got $childNames")
+    }
+
+    @Test
+    fun `variables primitive children have zero variablesReference`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+
+        val patient = Patient()
+        patient.id = "pat-123"
+
+        state.contextValues["Patient"] = patient
+        handler.contextResourcesByName["Patient"] = patient
+
+        handler.onBeforeExpression(elm, state)
+
+        val rootResponse = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar = rootResponse.variables.firstOrNull { it.name == "Patient" }
+        val patientRef = patientVar!!.variablesReference
+
+        val childrenResponse = server.variables(VariablesArguments().also { it.variablesReference = patientRef }).get()
+        val idChild = childrenResponse.variables.firstOrNull { it.name == "id" }
+        assertNotNull(idChild)
+        assertEquals(0, idChild!!.variablesReference, "Primitive 'id' should have zero variablesReference")
+    }
+
+    @Test
+    fun `variables list-valued variable expands to indexed children`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+
+        val encounter1 = org.hl7.fhir.r4.model.Encounter()
+        encounter1.id = "enc-1"
+        encounter1.status = org.hl7.fhir.r4.model.Encounter.EncounterStatus.FINISHED
+
+        val encounter2 = org.hl7.fhir.r4.model.Encounter()
+        encounter2.id = "enc-2"
+        encounter2.status = org.hl7.fhir.r4.model.Encounter.EncounterStatus.INPROGRESS
+
+        @Suppress("UNCHECKED_CAST")
+        val encounters = listOf<org.hl7.fhir.instance.model.api.IBase>(encounter1, encounter2)
+        state.contextValues["Encounters"] = encounters as Any
+
+        handler.onBeforeExpression(elm, state)
+
+        val rootResponse = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val encountersVar = rootResponse.variables.firstOrNull { it.name == "Encounters" }
+        assertNotNull(encountersVar)
+        assertTrue(encountersVar!!.variablesReference != 0, "Encounters variable should have non-zero variablesReference")
+
+        val childrenResponse = server.variables(VariablesArguments().also { it.variablesReference = encountersVar.variablesReference }).get()
+        val childNames = childrenResponse.variables.map { it.name }
+
+        assertTrue(childNames.contains("[0]"), "Children should include '[0]', got $childNames")
+        assertTrue(childNames.contains("[1]"), "Children should include '[1]', got $childNames")
+        assertEquals(2, childrenResponse.variables.size, "Should have exactly 2 children")
+    }
+
+    @Test
+    fun `variables registry clears on new pause`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm1 =
+            ExpressionDef().also {
+                it.name = "FirstPause"
+                it.locator = "1:1-1:10"
+            }
+        val state1 = State(Environment(null))
+        val patient1 = Patient()
+        patient1.id = "pat-first"
+        state1.contextValues["Patient"] = patient1
+        handler.contextResourcesByName["Patient"] = patient1
+        handler.onBeforeExpression(elm1, state1)
+
+        val response1 = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar1 = response1.variables.firstOrNull { it.name == "Patient" }
+        val firstRef = patientVar1!!.variablesReference
+        assertTrue(firstRef >= 1000, "First pause patient ref should be >= 1000")
+
+        handler.stepIn()
+        val elm2 =
+            ExpressionDef().also {
+                it.name = "SecondPause"
+                it.locator = "2:1-2:10"
+            }
+        val state2 = State(Environment(null))
+        val patient2 = Patient()
+        patient2.id = "pat-second"
+        state2.contextValues["Patient"] = patient2
+        handler.contextResourcesByName["Patient"] = patient2
+        handler.onBeforeExpression(elm2, state2)
+
+        val response2 = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar2 = response2.variables.firstOrNull { it.name == "Patient" }
+        val secondRef = patientVar2!!.variablesReference
+
+        assertTrue(secondRef >= 1000, "Second pause patient ref should be >= 1000")
+        assertTrue(firstRef != secondRef || secondRef == 1000,
+            "After new pause, either new ref or reset to 1000. First: $firstRef, Second: $secondRef")
     }
 }

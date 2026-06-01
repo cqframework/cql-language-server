@@ -1,5 +1,7 @@
 package org.opencds.cqf.cql.debug
 
+import ca.uhn.fhir.context.BaseRuntimeChildDefinition
+import ca.uhn.fhir.context.BaseRuntimeElementDefinition
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
 import org.eclipse.lsp4j.Position
@@ -37,6 +39,7 @@ import org.eclipse.lsp4j.debug.VariablesArguments
 import org.eclipse.lsp4j.debug.VariablesResponse
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
+import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.FunctionDef
@@ -48,6 +51,7 @@ import org.hl7.elm.r1.NamedTypeSpecifier
 import org.hl7.elm.r1.ParameterDef
 import org.hl7.elm.r1.Property
 import org.hl7.fhir.instance.model.api.IBase
+import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
@@ -62,9 +66,11 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
+import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
@@ -103,7 +109,14 @@ open class CqlDebugServer(
     @Volatile
     protected var streamingLaunchUri: String? = null
 
+    private var astText: String? = null
+    private var astElementLines: Map<Element, IntRange> = emptyMap()
+    private var astDocumentUri: URI? = null
+
     private val fhirContext: FhirContext by lazy { FhirContext.forR4() }
+
+    private val varRefs = mutableMapOf<Int, Any>()
+    private var nextVarRef = 1000
 
     fun enableStreaming() {
         streamingHandler = StreamingBreakpointHandler()
@@ -323,6 +336,26 @@ open class CqlDebugServer(
             handler.applyCqlStepLineFilter(CqlStepPositionCollector.collect(parseTree))
         }
 
+        val compiler = compilationManager.compile(libraryUri)
+        compiler?.library?.let { lib ->
+            val rendering = ElmAstLibraryWriter(compiler).render(lib)
+            astText = rendering.text
+            astElementLines = rendering.elementLines
+
+            val libName = lib.identifier?.id ?: "library"
+            val libVer = lib.identifier?.version ?: "unspecified"
+            val tmp = Files.createTempFile("$libName-$libVer-AST", ".txt")
+            Files.writeString(tmp, rendering.text)
+            astDocumentUri = tmp.toUri()
+        }
+
+        handler.stepGranularity =
+            if (args.stepGranularity?.equals("ast", ignoreCase = true) == true) {
+                StreamingBreakpointHandler.StepGranularity.AST
+            } else {
+                StreamingBreakpointHandler.StepGranularity.CQL
+            }
+
         parameterMetadata = extractParameterMetadata(libraryUri)
 
         val request = buildExecuteCqlRequest(args)
@@ -424,20 +457,10 @@ open class CqlDebugServer(
     override fun stackTrace(args: StackTraceArguments): CompletableFuture<StackTraceResponse> {
         val handler = streamingHandler
         if (handler != null) {
-            val elm = handler.lastPausedElm
-            val locator = elm?.locator
-            val bounds = parseLocatorLines(locator)
-            val name = extractExpressionName(elm)
-            val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
             val frame =
-                StackFrame().also { f ->
-                    f.id = 0
-                    f.name = name ?: "(unknown)"
-                    f.line = bounds.startLine + 1
-                    f.column = bounds.startChar + 1
-                    f.endLine = bounds.endLine + 1
-                    f.endColumn = bounds.endChar + 1 // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
-                    f.source = sourceUri?.let { Source().also { s -> s.path = it } }
+                when (handler.stepGranularity) {
+                    StreamingBreakpointHandler.StepGranularity.CQL -> buildCqlStackFrame(handler)
+                    StreamingBreakpointHandler.StepGranularity.AST -> buildAstStackFrame(handler)
                 }
             return CompletableFuture.completedFuture(
                 StackTraceResponse().also {
@@ -526,7 +549,7 @@ open class CqlDebugServer(
                                 v.name = name
                                 v.value = formatVariableValue(value, gson)
                                 v.type = metadata?.type
-                                v.variablesReference = 0
+                                v.variablesReference = registerIfExpandable(value)
                             },
                         )
                     }
@@ -547,17 +570,29 @@ open class CqlDebugServer(
                 )
             }
 
+            if (args.variablesReference >= 1000) {
+                val value = varRefs[args.variablesReference]
+                if (value != null) {
+                    vars.addAll(childrenOf(value))
+                }
+                return CompletableFuture.completedFuture(
+                    VariablesResponse().also { it.variables = vars.toTypedArray() },
+                )
+            }
+
             if (state != null) {
                 val gson = Gson()
 
                 if (args.variablesReference == 1) {
+                    varRefs.clear()
+                    nextVarRef = 1000
                     for (frame in state.stack) {
                         for (v in frame.variables) {
                             vars.add(
                                 Variable().also {
                                     it.name = v.name ?: "(unnamed)"
                                     it.value = formatVariableValue(v.value, gson)
-                                    it.variablesReference = 0
+                                    it.variablesReference = registerIfExpandable(v.value)
                                 },
                             )
                         }
@@ -568,7 +603,7 @@ open class CqlDebugServer(
                             Variable().also {
                                 it.name = key
                                 it.value = formatVariableValue(fullResource, gson)
-                                it.variablesReference = 0
+                                it.variablesReference = registerIfExpandable(fullResource)
                             },
                         )
                     }
@@ -622,7 +657,7 @@ open class CqlDebugServer(
                             if (v.name == args.expression) {
                                 return@supplyAsync EvaluateResponse().also {
                                     it.result = formatVariableValue(v.value, gson)
-                                    it.variablesReference = 0
+                                    it.variablesReference = registerIfExpandable(v.value)
                                 }
                             }
                         }
@@ -634,7 +669,7 @@ open class CqlDebugServer(
                         val fullResource = handler.getContextResource(args.expression) ?: contextVal
                         return@supplyAsync EvaluateResponse().also {
                             it.result = formatVariableValue(fullResource, gson)
-                            it.variablesReference = 0
+                            it.variablesReference = registerIfExpandable(fullResource)
                         }
                     }
                     // Search evaluated define results (stored by onAfterExpression)
@@ -642,7 +677,7 @@ open class CqlDebugServer(
                     if (defineValue != null) {
                         return@supplyAsync EvaluateResponse().also {
                             it.result = formatVariableValue(defineValue, gson)
-                            it.variablesReference = 0
+                            it.variablesReference = registerIfExpandable(defineValue)
                         }
                     }
 
@@ -669,7 +704,7 @@ open class CqlDebugServer(
                         if (cachedResult != null) {
                             return@supplyAsync EvaluateResponse().also {
                                 it.result = formatVariableValue(cachedResult.value, gson)
-                                it.variablesReference = 0
+                                it.variablesReference = registerIfExpandable(cachedResult.value)
                             }
                         }
                     }
@@ -695,7 +730,7 @@ open class CqlDebugServer(
                                 if (value != null) {
                                     return@supplyAsync EvaluateResponse().also {
                                         it.result = formatVariableValue(value, gson)
-                                        it.variablesReference = 0
+                                        it.variablesReference = registerIfExpandable(value)
                                     }
                                 }
                                 // Check if paused on a Property element - try to resolve its value
@@ -862,6 +897,75 @@ open class CqlDebugServer(
         }
     }
 
+    private fun isExpandable(value: Any?): Boolean {
+        if (value == null) return false
+        if (value is IPrimitiveType<*>) return false
+        if (value is IBase) return true
+        if (value is List<*> && value.isNotEmpty()) return true
+        return false
+    }
+
+    private fun registerIfExpandable(value: Any?): Int {
+        if (!isExpandable(value)) return 0
+        val ref = nextVarRef++
+        varRefs[ref] = value!!
+        return ref
+    }
+
+    private fun childrenOf(value: Any): List<Variable> {
+        val gson = Gson()
+        return when (value) {
+            is IBase -> {
+                if (value is IPrimitiveType<*>) {
+                    return emptyList()
+                }
+                val elementDef = fhirContext.getElementDefinition(value.javaClass) as? BaseRuntimeElementDefinition<*>
+                if (elementDef != null) {
+                    val children = elementDef?.children ?: emptyList()
+                    children.flatMap { child ->
+                        val accessor = child.getAccessor()
+                        val childValues: List<IBase> = try {
+                            @Suppress("UNCHECKED_CAST")
+                            accessor.getValues(value) as? List<IBase> ?: emptyList()
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                        val childName = child.elementName
+                        if (childValues.size == 1) {
+                            listOf(
+                                Variable().also {
+                                    it.name = childName
+                                    it.value = formatVariableValue(childValues[0], gson)
+                                    it.variablesReference = registerIfExpandable(childValues[0])
+                                },
+                            )
+                        } else {
+                            childValues.mapIndexed { index, childValue ->
+                                Variable().also {
+                                    it.name = "$childName[$index]"
+                                    it.value = formatVariableValue(childValue, gson)
+                                    it.variablesReference = registerIfExpandable(childValue)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+            }
+            is List<*> -> {
+                value.mapIndexed { index, item ->
+                    Variable().also {
+                        it.name = "[$index]"
+                        it.value = formatVariableValue(item, gson)
+                        it.variablesReference = registerIfExpandable(item)
+                    }
+                }
+            }
+            else -> emptyList()
+        }
+    }
+
     private fun resolvePropertyValue(
         property: Property,
         state: org.opencds.cqf.cql.engine.execution.State,
@@ -922,7 +1026,7 @@ open class CqlDebugServer(
                 if (value != null) {
                     EvaluateResponse().also {
                         it.result = formatVariableValue(value, gson)
-                        it.variablesReference = 0
+                        it.variablesReference = registerIfExpandable(value)
                     }
                 } else {
                     null
@@ -933,7 +1037,7 @@ open class CqlDebugServer(
                 if (value != null) {
                     EvaluateResponse().also {
                         it.result = formatVariableValue(value, gson)
-                        it.variablesReference = 0
+                        it.variablesReference = registerIfExpandable(value)
                     }
                 } else {
                     null
@@ -945,7 +1049,7 @@ open class CqlDebugServer(
                     if (value != null) {
                         EvaluateResponse().also {
                             it.result = formatVariableValue(value, gson)
-                            it.variablesReference = 0
+                            it.variablesReference = registerIfExpandable(value)
                         }
                     } else {
                         null
@@ -959,7 +1063,7 @@ open class CqlDebugServer(
                 if (value != null) {
                     EvaluateResponse().also {
                         it.result = formatVariableValue(value, gson)
-                        it.variablesReference = 0
+                        it.variablesReference = registerIfExpandable(value)
                     }
                 } else {
                     null
@@ -1202,5 +1306,60 @@ open class CqlDebugServer(
 
     fun getState(): ServerState {
         return this.serverState
+    }
+
+    private fun buildCqlStackFrame(handler: StreamingBreakpointHandler): StackFrame {
+        val elm = handler.lastPausedElm
+        val locator = elm?.locator
+        val bounds = parseLocatorLines(locator)
+        val name = extractExpressionName(elm)
+        val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
+        return StackFrame().also { f ->
+            f.id = 0
+            f.name = name ?: "(unknown)"
+            f.line = bounds.startLine + 1
+            f.column = bounds.startChar + 1
+            f.endLine = bounds.endLine + 1
+            f.endColumn = bounds.endChar + 1
+            f.source = sourceUri?.let { Source().also { s -> s.path = it } }
+        }
+    }
+
+    private fun buildAstStackFrame(handler: StreamingBreakpointHandler): StackFrame {
+        val elm = handler.lastPausedElm
+        val range = elm?.let { astElementLines[it] }
+        val docPath = astDocumentUri?.let { Paths.get(it).toString() }
+        return StackFrame().also { f ->
+            f.id = 0
+            f.name = elm?.javaClass?.simpleName ?: "(unknown)"
+            f.line = range?.first ?: 1
+            f.column = 1
+            f.endLine = range?.last ?: (range?.first ?: 1)
+            f.endColumn = Int.MAX_VALUE
+            f.source = docPath?.let { Source().also { s -> s.path = it } }
+        }
+    }
+
+    @JsonRequest("setStepGranularity")
+    fun setStepGranularity(args: Map<String, Any>): CompletableFuture<Void> {
+        val handler = streamingHandler ?: return CompletableFuture.completedFuture(null)
+        val granularity = args["granularity"] as? String
+        val g =
+            if (granularity?.equals("ast", ignoreCase = true) == true) {
+                StreamingBreakpointHandler.StepGranularity.AST
+            } else {
+                StreamingBreakpointHandler.StepGranularity.CQL
+            }
+        handler.stepGranularity = g
+        if (handler.lastPausedElm != null) {
+            client.join().stopped(
+                StoppedEventArguments().also {
+                    it.reason = "step"
+                    it.threadId = 1
+                    it.allThreadsStopped = true
+                },
+            )
+        }
+        return CompletableFuture.completedFuture(null)
     }
 }

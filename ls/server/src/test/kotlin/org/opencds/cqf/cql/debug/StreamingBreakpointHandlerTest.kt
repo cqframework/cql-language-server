@@ -357,4 +357,90 @@ class StreamingBreakpointHandlerTest {
         handler.setBreakpoints(setOf(5, 10, 15))
         assertEquals(setOf(5, 10, 15), handler.getBreakpointLines())
     }
+
+    // -- AST Granularity Tests -----------------------------------------------
+
+    @Test
+    fun `astGranularity pauses on each distinct element even on same line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val elm2 = makeElement("5:1-5:10") // same locator, different instance
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+        handler.stepIn()
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `astGranularity respects step over depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state1 = makeState(2)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state1))
+
+        handler.stepOver(2)
+
+        val deeperState = makeState(3)
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, deeperState))
+
+        val sameDepthState = makeState(2)
+        val elm3 = makeElement("7:1-7:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm3, sameDepthState))
+    }
+
+    @Test
+    fun `astGranularity step out unchanged`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state = makeState(3)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOut(3)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(makeElement("6:1-6:10"), state))
+
+        val shallowerState = makeState(2)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("7:1-7:10"), shallowerState))
+    }
+
+    @Test
+    fun `astGranularity breakpoint still fires on CQL line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.setBreakpoints(setOf(5))
+        handler.resume()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepIn()
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `cqlGranularity stepIn resumes and can pause on same line different element`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepIn()
+        val elm2 = makeElement("5:12-5:20") // same line, different element
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
 }

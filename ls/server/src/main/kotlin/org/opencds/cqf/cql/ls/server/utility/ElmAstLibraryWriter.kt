@@ -39,18 +39,33 @@ import org.hl7.elm.r1.UnaryExpression
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
 import org.hl7.elm.r1.Without
+import java.util.IdentityHashMap
 
 class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     private val sb = StringBuilder()
     private val indent = StringBuilder()
     private var isLast = false
 
-    fun writeAsString(library: org.hl7.elm.r1.Library): String {
+    private var currentLine: Int = 0
+    private val elementLines = IdentityHashMap<Element, IntRange>()
+
+    data class AstRendering(
+        val text: String,
+        val elementLines: Map<Element, IntRange>,
+    )
+
+    fun render(library: org.hl7.elm.r1.Library): AstRendering {
         sb.clear()
         indent.clear()
         isLast = false
+        currentLine = 0
+        elementLines.clear()
         renderLibrary(library)
-        return sb.toString()
+        return AstRendering(sb.toString(), elementLines.toMap())
+    }
+
+    fun writeAsString(library: org.hl7.elm.r1.Library): String {
+        return render(library).text
     }
 
     private fun renderLibrary(library: org.hl7.elm.r1.Library) {
@@ -133,12 +148,15 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val suffix = idSuffix(def.localId, def.locator)
         val typeSuffix = def.resultType?.toString()?.let { " returns ${formatType(it)}" } ?: ""
         nodeLine("define: ${label(name)}$typeSuffix$suffix")
+        val startLine = currentLine
+        recordElement(def)
         val expr = def.expression
         if (expr != null) {
             pushIndent()
             isLast = true
             renderExpression(expr)
             popIndent()
+            recordElementRange(def, startLine)
         }
     }
 
@@ -155,18 +173,23 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val typeSuffix = def.resultType?.toString()?.let { " returns ${formatType(it)}" } ?: ""
 
         nodeLine("define$fluent function: ${label(name)}($paramsStr)$typeSuffix$suffix")
+        val startLine = currentLine
+        recordElement(def)
         val expr = def.expression
         if (expr != null) {
             pushIndent()
             isLast = true
             renderExpression(expr)
             popIndent()
+            recordElementRange(def, startLine)
         }
     }
 
     private fun renderExpression(expr: Expression) {
         val typeName = expr.javaClass.simpleName
         nodeLine("$typeName${displayValue(expr)}${idSuffix(expr.localId, expr.locator)}")
+        val startLine = currentLine
+        recordElement(expr)
 
         val children = childrenOf(expr)
         if (children.isEmpty()) return
@@ -177,6 +200,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
             renderChild(child)
         }
         popIndent()
+        recordElementRange(expr, startLine)
     }
 
     private fun renderChild(child: ChildNode) {
@@ -197,6 +221,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
             else -> {
                 if (node is Element) {
                     nodeLine("${node.javaClass.simpleName}${idSuffix(node.localId, node.locator)}")
+                    recordElement(node)
                 } else {
                     nodeLine("${node.javaClass.simpleName}")
                 }
@@ -211,12 +236,15 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val alias = aqs.alias ?: "?"
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}AliasedQuerySource (alias=${label(alias)})${idSuffix(aqs.localId, aqs.locator)}")
+        val startLine = currentLine
+        recordElement(aqs)
         val expr = aqs.expression
         if (expr != null) {
             pushIndent()
             isLast = true
             renderExpression(expr)
             popIndent()
+            recordElementRange(aqs, startLine)
         }
     }
 
@@ -227,12 +255,15 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val ident = lc.identifier ?: "?"
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}LetClause (identifier=${label(ident)})${idSuffix(lc.localId, lc.locator)}")
+        val startLine = currentLine
+        recordElement(lc)
         val expr = lc.expression
         if (expr != null) {
             pushIndent()
             isLast = true
             renderExpression(expr)
             popIndent()
+            recordElementRange(lc, startLine)
         }
     }
 
@@ -244,12 +275,15 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val d = if (distinct != null && distinct) " (distinct)" else ""
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}ReturnClause$d${idSuffix(rc.localId, rc.locator)}")
+        val startLine = currentLine
+        recordElement(rc)
         val expr = rc.expression
         if (expr != null) {
             pushIndent()
             isLast = true
             renderExpression(expr)
             popIndent()
+            recordElementRange(rc, startLine)
         }
     }
 
@@ -262,6 +296,8 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val alias = (rc as? AliasedQuerySource)?.alias
         val aliasStr = if (alias != null) " (alias=${label(alias)})" else ""
         nodeLine("${rp}$typeName$aliasStr${idSuffix(rc.localId, rc.locator)}")
+        val startLine = currentLine
+        recordElement(rc)
 
         val children = mutableListOf<ChildNode>()
         val expr = (rc as? AliasedQuerySource)?.expression
@@ -277,6 +313,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
             renderChild(child)
         }
         popIndent()
+        recordElementRange(rc, startLine)
     }
 
     private fun renderSortClause(
@@ -285,6 +322,8 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     ) {
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}SortClause${idSuffix(sc.localId, sc.locator)}")
+        val startLine = currentLine
+        recordElement(sc)
         val by = sc.by
         if (by != null && by.isNotEmpty()) {
             pushIndent()
@@ -293,6 +332,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
                 renderSortByItem(item, null)
             }
             popIndent()
+            recordElementRange(sc, startLine)
         }
     }
 
@@ -303,12 +343,15 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val dir = item.direction
         val direction = if (dir != null) " (${dir.name.lowercase()})" else ""
         nodeLine("SortByItem$direction${idSuffix(item.localId, item.locator)}")
+        val startLine = currentLine
+        recordElement(item)
         val expr = (item as? ByExpression)?.expression
         if (expr != null) {
             pushIndent()
             isLast = true
             renderExpression(expr)
             popIndent()
+            recordElementRange(item, startLine)
         }
     }
 
@@ -319,6 +362,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val name = te.name ?: "?"
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}TupleElement (name=${label(name)})")
+        val startLine = currentLine
         val value = te.value
         if (value != null) {
             pushIndent()
@@ -335,6 +379,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val name = ie.name ?: "?"
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}InstanceElement (name=${label(name)})")
+        val startLine = currentLine
         val value = ie.value
         if (value != null) {
             pushIndent()
@@ -350,6 +395,8 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     ) {
         val rp = if (role != null) "$role: " else ""
         nodeLine("${rp}CaseItem${idSuffix(ci.localId, ci.locator)}")
+        val startLine = currentLine
+        recordElement(ci)
         pushIndent()
 
         val subItems = mutableListOf<Pair<Element, String?>>()
@@ -362,6 +409,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
             isLast = i == subItems.size - 1
             if (el is Expression) {
                 nodeLine("$r: ${el.javaClass.simpleName}${displayValue(el)}${idSuffix(el.localId, el.locator)}")
+                recordElement(el)
                 val children = childrenOf(el)
                 if (children.isNotEmpty()) {
                     pushIndent()
@@ -373,9 +421,11 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
                 }
             } else {
                 nodeLine("$r: ${el.javaClass.simpleName}${idSuffix(el.localId, el.locator)}")
+                recordElement(el)
             }
         }
         popIndent()
+        recordElementRange(ci, startLine)
     }
 
     private fun displayValue(expr: Expression): String {
@@ -614,7 +664,19 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         indent.setLength((indent.length - 2).coerceAtLeast(0))
     }
 
+    private fun recordElement(e: Element) {
+        elementLines[e] = currentLine..currentLine
+    }
+
+    private fun recordElementRange(
+        e: Element,
+        startLine: Int,
+    ) {
+        elementLines[e] = startLine..currentLine
+    }
+
     private fun line0(text: String) {
+        currentLine++
         sb.append(indent)
         sb.append(if (isLast) "└── " else "├── ")
         sb.append(text)
@@ -622,11 +684,13 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     }
 
     private fun lineNoPrefix(text: String) {
+        currentLine++
         sb.append(text)
         sb.append('\n')
     }
 
     private fun nodeLine(text: String) {
+        currentLine++
         sb.append(indent)
         sb.append(if (isLast) "└── " else "├── ")
         sb.append(text)

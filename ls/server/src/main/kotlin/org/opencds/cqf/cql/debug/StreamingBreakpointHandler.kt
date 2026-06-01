@@ -28,6 +28,9 @@ class StreamingBreakpointHandler : BreakpointHandler {
         private set
 
     @Volatile
+    private var lastPausedElmIdentity: Element? = null
+
+    @Volatile
     var lastPausedState: State? = null
         private set
 
@@ -67,6 +70,14 @@ class StreamingBreakpointHandler : BreakpointHandler {
         CONTINUE,
     }
 
+    enum class StepGranularity {
+        CQL,
+        AST,
+    }
+
+    @Volatile
+    var stepGranularity: StepGranularity = StepGranularity.CQL
+
     fun getStepMode(): StepMode = stepMode
 
     fun getBreakpointLines(): Set<Int> = breakpointLines.toSet()
@@ -83,6 +94,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
     fun stepIn() {
         stepMode = StepMode.STEP_IN
         lastPausedLine = -1
+        lastPausedElmIdentity = null
         clearEvaluatedValues()
         resumeLatch.countDown()
     }
@@ -91,6 +103,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
         stepMode = StepMode.STEP_OVER
         depthAtStep = currentDepth
         lastPausedLine = -1
+        lastPausedElmIdentity = null
         clearEvaluatedValues()
         resumeLatch.countDown()
     }
@@ -99,12 +112,14 @@ class StreamingBreakpointHandler : BreakpointHandler {
         stepMode = StepMode.STEP_OUT
         depthAtStep = currentDepth
         lastPausedLine = -1
+        lastPausedElmIdentity = null
         clearEvaluatedValues()
         resumeLatch.countDown()
     }
 
     fun resume() {
         stepMode = StepMode.CONTINUE
+        lastPausedElmIdentity = null
         clearEvaluatedValues()
         resumeLatch.countDown()
     }
@@ -119,15 +134,26 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
         val cqlFilter = cqlStepLines
         val shouldPause =
-            when (stepMode) {
-                StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-                StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
-                StepMode.STEP_OUT -> depth < depthAtStep
-                StepMode.CONTINUE -> line in breakpointLines && line != lastPausedLine
+            when (stepGranularity) {
+                StepGranularity.CQL ->
+                    when (stepMode) {
+                        StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
+                        StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+                        StepMode.STEP_OUT -> depth < depthAtStep
+                        StepMode.CONTINUE -> line in breakpointLines && line != lastPausedLine
+                    }
+                StepGranularity.AST ->
+                    when (stepMode) {
+                        StepMode.STEP_IN -> elm !== lastPausedElmIdentity
+                        StepMode.STEP_OVER -> elm !== lastPausedElmIdentity && depth <= depthAtStep
+                        StepMode.STEP_OUT -> depth < depthAtStep
+                        StepMode.CONTINUE -> line in breakpointLines && elm !== lastPausedElmIdentity
+                    }
             }
 
         if (shouldPause) {
             lastPausedLine = line
+            lastPausedElmIdentity = elm
             lastPausedElm = elm
             lastPausedState = state
 
