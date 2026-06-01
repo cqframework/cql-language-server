@@ -579,11 +579,11 @@ class ElmAstLibraryWriter {
         if (localId != null) " [id=$localId]" else ""
 
     private fun pushIndent() {
-        indent.append("    ")
+        indent.append("  ")
     }
 
     private fun popIndent() {
-        indent.setLength((indent.length - 4).coerceAtLeast(0))
+        indent.setLength((indent.length - 2).coerceAtLeast(0))
     }
 
     private fun line0(text: String) {
