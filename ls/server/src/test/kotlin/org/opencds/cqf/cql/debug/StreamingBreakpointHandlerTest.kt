@@ -81,7 +81,7 @@ class StreamingBreakpointHandlerTest {
         val state = makeState(1)
 
         // Switch to CONTINUE mode first
-        handler.continue_()
+        handler.resume()
         val elm = makeElement("5:1-5:10")
         assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
 
@@ -179,7 +179,7 @@ class StreamingBreakpointHandlerTest {
     fun `onBeforeExpression in CONTINUE pauses at breakpoint line`() {
         val handler = StreamingBreakpointHandler()
         handler.setBreakpoints(setOf(10))
-        handler.continue_()
+        handler.resume()
         val elm = makeElement("10:1-10:15")
         val state = makeState(1)
 
@@ -190,7 +190,7 @@ class StreamingBreakpointHandlerTest {
     fun `onBeforeExpression in CONTINUE continues at non-breakpoint line`() {
         val handler = StreamingBreakpointHandler()
         handler.setBreakpoints(setOf(10))
-        handler.continue_()
+        handler.resume()
         val elm = makeElement("11:1-11:10")
         val state = makeState(1)
 
@@ -201,14 +201,14 @@ class StreamingBreakpointHandlerTest {
     fun `onBeforeExpression in CONTINUE continues at same line after pause`() {
         val handler = StreamingBreakpointHandler()
         handler.setBreakpoints(setOf(10))
-        handler.continue_()
+        handler.resume()
         val state = makeState(1)
 
         val elm1 = makeElement("10:1-10:15")
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
 
         // Same breakpoint line after resume in CONTINUE mode should not re-pause
-        handler.continue_()
+        handler.resume()
         val elm2 = makeElement("10:20-10:25")
         assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
     }
@@ -217,7 +217,7 @@ class StreamingBreakpointHandlerTest {
     fun `onBeforeExpression in CONTINUE pauses at same breakpoint after stepping to new line and back`() {
         val handler = StreamingBreakpointHandler()
         handler.setBreakpoints(setOf(10, 11))
-        handler.continue_()
+        handler.resume()
         val state = makeState(1)
 
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("10:1-10:5"), state))
@@ -327,7 +327,7 @@ class StreamingBreakpointHandlerTest {
         handler.stepOut(1)
         assertEquals(StreamingBreakpointHandler.StepMode.STEP_OUT, handler.getStepMode())
 
-        handler.continue_()
+        handler.resume()
         assertEquals(StreamingBreakpointHandler.StepMode.CONTINUE, handler.getStepMode())
 
         handler.stepIn()
@@ -338,14 +338,14 @@ class StreamingBreakpointHandlerTest {
     fun `stepOut resets lastPausedLine to allow pausing on same line of caller frame`() {
         val handler = StreamingBreakpointHandler()
         handler.stepIn()
-        
+
         val elm1 = makeElement("5:1-5:10")
         val state1 = makeState(2)
-        
+
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state1))
-        
-        handler.stepOut(2) 
-        
+
+        handler.stepOut(2)
+
         val elm2 = makeElement("5:12-5:20")
         val state2 = makeState(1)
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state2))

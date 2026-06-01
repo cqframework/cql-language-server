@@ -103,13 +103,16 @@ class StreamingBreakpointHandler : BreakpointHandler {
         resumeLatch.countDown()
     }
 
-    fun continue_() {
+    fun resume() {
         stepMode = StepMode.CONTINUE
         clearEvaluatedValues()
         resumeLatch.countDown()
     }
 
-    override fun onBeforeExpression(elm: Element, state: State): BreakpointAction {
+    override fun onBeforeExpression(
+        elm: Element,
+        state: State,
+    ): BreakpointAction {
         val locator = elm.locator ?: return BreakpointAction.CONTINUE
         val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
         val depth = state.stack.size
@@ -127,7 +130,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
             lastPausedLine = line
             lastPausedElm = elm
             lastPausedState = state
-            
+
             // Capture full context resources
             state.contextValues.forEach { (key, value) ->
                 if (value is org.hl7.fhir.instance.model.api.IBase) {
@@ -142,7 +145,11 @@ class StreamingBreakpointHandler : BreakpointHandler {
         return BreakpointAction.CONTINUE
     }
 
-    override fun onAfterExpression(elm: Element, state: State, value: Any?) {
+    override fun onAfterExpression(
+        elm: Element,
+        state: State,
+        value: Any?,
+    ) {
         if (elm is ExpressionDef) {
             elm.name?.let { evaluatedValuesByName[it] = value }
         }
@@ -156,7 +163,10 @@ class StreamingBreakpointHandler : BreakpointHandler {
     }
 
     /** Look up an evaluated value by position (0-indexed line and column). */
-    fun findValueAtPosition(line: Int, col: Int): Any? {
+    fun findValueAtPosition(
+        line: Int,
+        col: Int,
+    ): Any? {
         // Check the last paused expression first
         val pausedElm = lastPausedElm
         val pausedLocator = pausedElm?.locator
@@ -186,7 +196,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
         }
         return elm?.javaClass?.simpleName
     }
-    
+
     fun getContextResource(contextName: String): Any? {
         return contextResourcesByName[contextName]
     }
@@ -240,5 +250,4 @@ class StreamingBreakpointHandler : BreakpointHandler {
     override fun release() {
         resumeLatch.countDown()
     }
-
 }

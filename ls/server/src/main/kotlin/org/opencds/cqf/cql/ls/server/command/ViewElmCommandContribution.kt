@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.command
 
 import com.google.gson.JsonElement
+import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.elm.serializing.ElmJsonLibraryWriter
 import org.cqframework.cql.elm.serializing.ElmXmlLibraryWriter
 import org.eclipse.lsp4j.ExecuteCommandParams
@@ -77,7 +78,7 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
             when (elmType.lowercase()) {
                 "xml" -> CompletableFuture.completedFuture(convertToXml(library))
                 "json" -> CompletableFuture.completedFuture(convertToJson(library))
-                "ast" -> CompletableFuture.completedFuture(convertToAst(library))
+                "ast" -> CompletableFuture.completedFuture(convertToAst(compiler))
                 else -> CompletableFuture.completedFuture(convertToXml(library))
             }
         } catch (e: Exception) {
@@ -90,5 +91,6 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
 
     private fun convertToJson(library: Library): String = ElmJsonLibraryWriter().writeAsString(library)
 
-    private fun convertToAst(library: Library): String = ElmAstLibraryWriter().writeAsString(library)
+    private fun convertToAst(compiler: CqlCompiler): String =
+        ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
 }

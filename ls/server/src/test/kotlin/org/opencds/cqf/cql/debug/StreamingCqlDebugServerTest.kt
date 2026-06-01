@@ -64,13 +64,13 @@ class StreamingCqlDebugServerTest {
         fun triggerCompletion(error: Throwable?) {
             val future = java.util.concurrent.CompletableFuture<Unit>()
             this.streamingCompletion = future
-            
+
             future.whenComplete { _, err ->
                 if (err != null) {
                     val terminateServerMethod = CqlDebugServer::class.java.getDeclaredMethod("terminateServer")
                     terminateServerMethod.isAccessible = true
                     terminateServerMethod.invoke(this)
-                    
+
                     val exitServerMethod = CqlDebugServer::class.java.getDeclaredMethod("exitServer", Int::class.java)
                     exitServerMethod.isAccessible = true
                     exitServerMethod.invoke(this, 1)
@@ -78,13 +78,13 @@ class StreamingCqlDebugServerTest {
                     val terminateServerMethod = CqlDebugServer::class.java.getDeclaredMethod("terminateServer")
                     terminateServerMethod.isAccessible = true
                     terminateServerMethod.invoke(this)
-                    
+
                     val exitServerMethod = CqlDebugServer::class.java.getDeclaredMethod("exitServer", Int::class.java)
                     exitServerMethod.isAccessible = true
                     exitServerMethod.invoke(this, 0)
                 }
             }
-            
+
             if (error != null) {
                 future.completeExceptionally(error)
             } else {
@@ -383,7 +383,7 @@ class StreamingCqlDebugServerTest {
         val server = setupServer()
         val handler = server.testHandler
 
-        handler.continue_()
+        handler.resume()
         assertEquals(StreamingBreakpointHandler.StepMode.CONTINUE, handler.getStepMode())
 
         server.stepIn(org.eclipse.lsp4j.debug.StepInArguments()).get()
@@ -397,7 +397,7 @@ class StreamingCqlDebugServerTest {
         val server = setupServer()
         val handler = server.testHandler
 
-        handler.continue_()
+        handler.resume()
         server.stepOut(org.eclipse.lsp4j.debug.StepOutArguments()).get()
         assertEquals(StreamingBreakpointHandler.StepMode.STEP_OUT, handler.getStepMode())
     }

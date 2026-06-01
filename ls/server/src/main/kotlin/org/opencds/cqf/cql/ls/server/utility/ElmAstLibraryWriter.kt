@@ -1,6 +1,8 @@
 package org.opencds.cqf.cql.ls.server.utility
 
+import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.CqlTranslator
+import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
 import org.hl7.elm.r1.AliasRef
 import org.hl7.elm.r1.AliasedQuerySource
 import org.hl7.elm.r1.BinaryExpression
@@ -38,7 +40,7 @@ import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
 import org.hl7.elm.r1.Without
 
-class ElmAstLibraryWriter {
+class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     private val sb = StringBuilder()
     private val indent = StringBuilder()
     private var isLast = false
@@ -129,7 +131,8 @@ class ElmAstLibraryWriter {
     private fun renderExpressionDef(def: ExpressionDef) {
         val name = def.name ?: "?"
         val suffix = idSuffix(def.localId, def.locator)
-        nodeLine("define: ${label(name)}$suffix")
+        val typeSuffix = def.resultType?.toString()?.let { " returns ${formatType(it)}" } ?: ""
+        nodeLine("define: ${label(name)}$typeSuffix$suffix")
         val expr = def.expression
         if (expr != null) {
             pushIndent()
@@ -149,8 +152,9 @@ class ElmAstLibraryWriter {
                 val typeName = op.operandType?.localPart ?: "?"
                 "${op.name ?: "_"} $typeName"
             } ?: ""
+        val typeSuffix = def.resultType?.toString()?.let { " returns ${formatType(it)}" } ?: ""
 
-        nodeLine("define$fluent function: ${label(name)}($paramsStr)$suffix")
+        nodeLine("define$fluent function: ${label(name)}($paramsStr)$typeSuffix$suffix")
         val expr = def.expression
         if (expr != null) {
             pushIndent()
@@ -406,7 +410,25 @@ class ElmAstLibraryWriter {
             is Retrieve -> {
                 val dt = expr.dataType
                 val dataType = dt?.localPart ?: dt?.toString() ?: "?"
-                " (dataType: $dataType)"
+                val codeProp = expr.codeProperty?.let { ", codeProperty: $it" } ?: ""
+                val codeComp = expr.codeComparator?.let { ", codeComparator: $it" } ?: ""
+                val codesSuffix =
+                    when (val codes = expr.codes) {
+                        is ValueSetRef -> codes.name?.let { ", codes: \"$it\"" } ?: ""
+                        is CodeRef -> codes.name?.let { ", codes: \"$it\"" } ?: ""
+                        is CodeSystemRef -> codes.name?.let { ", codes: \"$it\"" } ?: ""
+                        is org.hl7.elm.r1.ToList -> {
+                            val op = codes.operand
+                            when (op) {
+                                is ValueSetRef -> op.name?.let { ", codes: \"$it\"" } ?: ""
+                                is CodeRef -> op.name?.let { ", codes: \"$it\"" } ?: ""
+                                is CodeSystemRef -> op.name?.let { ", codes: \"$it\"" } ?: ""
+                                else -> ""
+                            }
+                        }
+                        else -> ""
+                    }
+                " (dataType: $dataType$codeProp$codeComp$codesSuffix)"
             }
             is org.hl7.elm.r1.Quantity -> {
                 val v = expr.value
@@ -562,6 +584,12 @@ class ElmAstLibraryWriter {
 
     private fun label(name: String): String =
         if (name.startsWith("\"")) name else "\"$name\""
+
+    private fun formatType(raw: String): String =
+        raw.replace("list<", "List<")
+            .replace("interval<", "Interval<")
+            .replace("tuple{", "Tuple{")
+            .replace("choice<", "Choice<")
 
     private fun idSuffix(
         localId: String?,

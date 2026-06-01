@@ -891,10 +891,10 @@ class DebugServerTest {
         server.connect(client)
         server.initialize(InitializeRequestArguments()).get()
         server.configurationDone(ConfigurationDoneArguments()).get()
-        
+
         val termArgs = org.eclipse.lsp4j.debug.TerminateArguments()
         server.terminate(termArgs).get()
-        
+
         Mockito.verify(client).exited(Mockito.any())
         assertTrue(server.exited().isDone)
     }

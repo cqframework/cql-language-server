@@ -1131,7 +1131,7 @@ open class CqlDebugServer(
         val handler = streamingHandler
         if (handler != null) {
             return CompletableFuture.supplyAsync {
-                handler.continue_()
+                handler.resume()
                 ContinueResponse().also { it.allThreadsContinued = true }
             }
         }
