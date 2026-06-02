@@ -8,6 +8,7 @@ import org.opencds.cqf.cql.engine.execution.State
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import org.slf4j.LoggerFactory
 
 class StreamingBreakpointHandler : BreakpointHandler {
     private val breakpointLines = mutableSetOf<Int>()
@@ -35,6 +36,9 @@ class StreamingBreakpointHandler : BreakpointHandler {
         private set
 
     private var resumeLatch = CountDownLatch(0)
+
+    @Volatile
+    private var released = false
 
     @Volatile
     var onPauseCallback: ((Element, State) -> Unit)? = null
@@ -234,6 +238,8 @@ class StreamingBreakpointHandler : BreakpointHandler {
     }
 
     companion object {
+        private val log = LoggerFactory.getLogger(StreamingBreakpointHandler::class.java)
+
         fun parseLine(locator: String): Int? {
             return locator.substringBefore(":").toIntOrNull()
         }
@@ -265,15 +271,27 @@ class StreamingBreakpointHandler : BreakpointHandler {
     }
 
     override fun waitForResume() {
-        val elm = lastPausedElm
-        val state = lastPausedState
-        if (elm != null && state != null) {
-            onPauseCallback?.invoke(elm, state)
+        val t0 = System.nanoTime()
+        log.debug("waitForResume: enter released={} [thread={}]", released, Thread.currentThread().name)
+        try {
+            if (!released) {
+                val elm = lastPausedElm
+                val state = lastPausedState
+                if (elm != null && state != null) {
+                    onPauseCallback?.invoke(elm, state)
+                    log.debug("waitForResume: onPauseCallback done [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
+                }
+            }
+            resumeLatch.await()
+            log.debug("waitForResume: latch released [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
+        } finally {
+            log.debug("waitForResume: exit released={} [thread={}]", released, Thread.currentThread().name)
         }
-        resumeLatch.await()
     }
 
     override fun release() {
+        log.debug("release: setting released=true, counting down latch [thread={}]", Thread.currentThread().name)
+        released = true
         resumeLatch.countDown()
     }
 }

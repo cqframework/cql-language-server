@@ -72,6 +72,7 @@ import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 open class CqlDebugServer(
     private val compilationManager: CqlCompilationManager,
@@ -83,6 +84,8 @@ open class CqlDebugServer(
         private val log = LoggerFactory.getLogger(CqlDebugServer::class.java)
     }
 
+    private val terminatedSent = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val exitedSent = java.util.concurrent.atomic.AtomicBoolean(false)
     private var exited: CompletableFuture<Void> = CompletableFuture()
 
     @Volatile
@@ -162,9 +165,18 @@ open class CqlDebugServer(
 
     override fun disconnect(args: DisconnectArguments): CompletableFuture<Void> {
         if (getState() == ServerState.STOPPED) return CompletableFuture.completedFuture(null)
+        val t0 = System.nanoTime()
+        log.debug("disconnect: start [thread={}]", java.lang.Thread.currentThread().name)
         streamingHandler?.release()
+        log.debug("disconnect: release() done [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
         streamingExecutor?.shutdownNow()
-        return CompletableFuture.runAsync {}.whenCompleteAsync { _, _ -> this.exitServer() }
+        streamingExecutor?.awaitTermination(1, TimeUnit.SECONDS)
+        log.debug("disconnect: shutdownNow()+awaitTermination done [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
+        terminateServer()
+        log.debug("disconnect: terminateServer() done [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
+        exitServer()
+        log.debug("disconnect: exitServer() done [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
+        return CompletableFuture.completedFuture(null)
     }
 
     override fun terminate(args: TerminateArguments): CompletableFuture<Void> {
@@ -365,11 +377,11 @@ open class CqlDebugServer(
 
         streamingCompletion!!.whenComplete { _, error ->
             if (error != null) {
-                log.error("Streaming evaluation failed", error)
+                log.debug("streamingCompletion: error/cancellation branch [thread={}]", java.lang.Thread.currentThread().name)
                 terminateServer()
                 exitServer(1)
             } else {
-                log.debug("Streaming evaluation completed")
+                log.debug("streamingCompletion: normal completion branch [thread={}]", java.lang.Thread.currentThread().name)
                 terminateServer()
                 exitServer()
             }
@@ -1371,9 +1383,11 @@ open class CqlDebugServer(
     }
 
     protected fun terminateServer(restart: Any?) {
-        val terminatedEventArguments = TerminatedEventArguments()
-        terminatedEventArguments.restart = restart
-        this.client.join().terminated(terminatedEventArguments)
+        if (terminatedSent.compareAndSet(false, true)) {
+            val terminatedEventArguments = TerminatedEventArguments()
+            terminatedEventArguments.restart = restart
+            this.client.join().terminated(terminatedEventArguments)
+        }
     }
 
     protected fun exitServer() {
@@ -1381,9 +1395,11 @@ open class CqlDebugServer(
     }
 
     protected fun exitServer(exitCode: Int) {
-        val exitedEventArguments = ExitedEventArguments()
-        exitedEventArguments.exitCode = exitCode
-        this.client.join().exited(exitedEventArguments)
+        if (exitedSent.compareAndSet(false, true)) {
+            val exitedEventArguments = ExitedEventArguments()
+            exitedEventArguments.exitCode = exitCode
+            this.client.join().exited(exitedEventArguments)
+        }
         setState(ServerState.STOPPED)
         if (!this.exited.isDone) {
             this.exited.complete(null)

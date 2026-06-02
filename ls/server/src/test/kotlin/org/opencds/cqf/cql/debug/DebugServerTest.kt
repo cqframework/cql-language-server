@@ -184,6 +184,9 @@ class DebugServerTest {
         server.connect(client)
         server.disconnect(DisconnectArguments()).get()
         assertEquals(ServerState.STOPPED, server.getState())
+        Mockito.verify(client).terminated(Mockito.any())
+        Mockito.verify(client, Mockito.times(1)).exited(Mockito.any())
+        assertEquals(ServerState.STOPPED, server.getState())
     }
 
     @Test
@@ -895,7 +898,68 @@ class DebugServerTest {
         val termArgs = org.eclipse.lsp4j.debug.TerminateArguments()
         server.terminate(termArgs).get()
 
+        Mockito.verify(client).terminated(Mockito.any())
         Mockito.verify(client).exited(Mockito.any())
         assertTrue(server.exited().isDone)
+    }
+
+    @Test
+    fun disconnect_whileInRunningState_sendsTerminatedBeforeExited() {
+        val client = Mockito.mock(IDebugProtocolClient::class.java)
+        val server = makeTestServer()
+        server.connect(client)
+        server.initialize(InitializeRequestArguments()).get()
+        server.configurationDone(ConfigurationDoneArguments()).get()
+        server.launch(HashMap()).get()
+        Mockito.verify(client).stopped(any())
+
+        server.disconnect(DisconnectArguments()).get()
+
+        Mockito.verify(client, Mockito.times(1)).terminated(Mockito.any())
+        Mockito.verify(client).exited(Mockito.any())
+        assertTrue(server.exited().isDone)
+    }
+
+    /** Exposes protected methods for idempotency testing. */
+    private class IdempotencyTestServer(
+        cm: CqlCompilationManager,
+        cs: ContentService,
+        ig: IgContextManager,
+        lrm: LibraryResolutionManager,
+    ) : CqlDebugServer(cm, cs, ig, lrm) {
+        fun callTerminateServer(restart: Any?) = terminateServer(restart)
+        fun callExitServer(exitCode: Int) = exitServer(exitCode)
+    }
+
+    @Test
+    fun terminateServer_calledTwice_sendsTerminatedOnlyOnce() {
+        val client = Mockito.mock(IDebugProtocolClient::class.java)
+        val cs = mock(ContentService::class.java)
+        val cm = mock(CqlCompilationManager::class.java)
+        val ig = mock(IgContextManager::class.java)
+        val lrm = mock(LibraryResolutionManager::class.java)
+        val server = IdempotencyTestServer(cm, cs, ig, lrm)
+        server.connect(client)
+
+        server.callTerminateServer(null)
+        server.callTerminateServer(null)
+
+        Mockito.verify(client, Mockito.times(1)).terminated(Mockito.any())
+    }
+
+    @Test
+    fun exitServer_calledTwice_sendsExitedOnlyOnce() {
+        val client = Mockito.mock(IDebugProtocolClient::class.java)
+        val cs = mock(ContentService::class.java)
+        val cm = mock(CqlCompilationManager::class.java)
+        val ig = mock(IgContextManager::class.java)
+        val lrm = mock(LibraryResolutionManager::class.java)
+        val server = IdempotencyTestServer(cm, cs, ig, lrm)
+        server.connect(client)
+
+        server.callExitServer(0)
+        server.callExitServer(1)
+
+        Mockito.verify(client, Mockito.times(1)).exited(Mockito.any())
     }
 }

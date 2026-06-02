@@ -24,6 +24,8 @@
         </encoder>
     </appender>
 
+    <!-- Debug logging for debug server / breakpoint handler diagnostics -->
+    <logger name="org.opencds.cqf.cql.debug" level="DEBUG" />
     <!-- Debug logging for View ELM / compilation diagnostics -->
     <logger name="org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution" level="DEBUG" />
     <logger name="org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager" level="DEBUG" />

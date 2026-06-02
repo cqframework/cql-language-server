@@ -286,6 +286,25 @@ class StreamingBreakpointHandlerTest {
     // -- onPauseCallback ---------------------------------------------------
 
     @Test
+    fun `release suppresses further pause callbacks`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm = makeElement("5:1-5:10")
+        val state = makeState(1)
+
+        var callbackCount = 0
+        handler.onPauseCallback = { _, _ -> callbackCount++ }
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+        // release() sets the released flag — subsequent waitForResume() must not fire the callback
+        handler.release()
+        handler.waitForResume()
+
+        assertEquals(0, callbackCount, "onPauseCallback must not fire after release()")
+    }
+
+    @Test
     fun `onPauseCallback is invoked on pause`() {
         val handler = StreamingBreakpointHandler()
         handler.stepIn()

@@ -72,8 +72,12 @@ class DebugSession(
                     this.debugServer.connect(launcher.remoteProxy)
 
                     val serverThread = launcher.startListening()
+                    log.debug("startListening: waiting for exited() future [thread={}]", Thread.currentThread().name)
+                    val t0 = System.nanoTime()
                     this.debugServer.exited().get()
+                    log.debug("startListening: exited() future completed [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
                     serverThread.cancel(true)
+                    log.debug("startListening: serverThread cancelled [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
                 }
             } catch (e: SocketTimeoutException) {
                 log.debug("debug session accept timed out (no client connected within {}ms)", 10000)
