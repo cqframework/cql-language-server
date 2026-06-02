@@ -1,6 +1,5 @@
 package org.opencds.cqf.cql.debug
 
-import ca.uhn.fhir.context.BaseRuntimeChildDefinition
 import ca.uhn.fhir.context.BaseRuntimeElementDefinition
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
@@ -66,11 +65,9 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
-import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
@@ -109,10 +106,6 @@ open class CqlDebugServer(
     @Volatile
     protected var streamingLaunchUri: String? = null
 
-    private var astText: String? = null
-    private var astElementLines: Map<Element, IntRange> = emptyMap()
-    private var astDocumentUri: URI? = null
-
     private val fhirContext: FhirContext by lazy { FhirContext.forR4() }
 
     private val varRefs = mutableMapOf<Int, Any>()
@@ -138,7 +131,11 @@ open class CqlDebugServer(
     @Volatile
     protected var parameterMetadata: Map<String, List<ParameterMetadata>> = emptyMap()
 
-    private var nextLibraryGroupRef = -1000
+    @Volatile
+    protected var launchParameters: List<ParameterRequestData>? = null
+
+    // >= 100000 reserved for library group refs (below that is the FHIR/Gson band >= 1000)
+    private var nextLibraryGroupRef = 100000
 
     override fun connect(client: IDebugProtocolClient) {
         this.client.complete(client)
@@ -286,6 +283,7 @@ open class CqlDebugServer(
         val libraryUri = URI.create(args.libraryUri)
 
         parameterMetadata = extractParameterMetadata(libraryUri)
+        launchParameters = args.parameters
 
         val request = buildExecuteCqlRequest(args)
         val detailedResult = CqlEvaluator.evaluateDetailed(request, contentService, igContextManager, libraryResolutionManager)
@@ -341,19 +339,6 @@ open class CqlDebugServer(
             handler.applyCqlStepLineFilter(CqlStepPositionCollector.collect(parseTree))
         }
 
-        val compiler = compilationManager.compile(libraryUri)
-        compiler?.library?.let { lib ->
-            val rendering = ElmAstLibraryWriter(compiler).render(lib)
-            astText = rendering.text
-            astElementLines = rendering.elementLines
-
-            val libName = lib.identifier?.id ?: "library"
-            val libVer = lib.identifier?.version ?: "unspecified"
-            val tmp = Files.createTempFile("$libName-$libVer-AST", ".txt")
-            Files.writeString(tmp, rendering.text)
-            astDocumentUri = tmp.toUri()
-        }
-
         handler.stepGranularity =
             if (args.stepGranularity?.equals("ast", ignoreCase = true) == true) {
                 StreamingBreakpointHandler.StepGranularity.AST
@@ -362,6 +347,7 @@ open class CqlDebugServer(
             }
 
         parameterMetadata = extractParameterMetadata(libraryUri)
+        launchParameters = args.parameters
 
         val request = buildExecuteCqlRequest(args)
 
@@ -547,7 +533,7 @@ open class CqlDebugServer(
             // variablesReference == 2 is the Parameters scope container
             if (args.variablesReference == 2) {
                 // Reset library group refs for consistent tree rebuilding
-                nextLibraryGroupRef = -1000
+                nextLibraryGroupRef = 100000
                 libraryRefToName.clear()
 
                 if (state != null) {
@@ -569,24 +555,27 @@ open class CqlDebugServer(
                 }
             }
 
-            // Library group expansion (negative references starting from -1000)
-            if (args.variablesReference < 0) {
+            // Library group expansion (positive refs >= 100000)
+            if (args.variablesReference >= 100000) {
                 val libraryName = getLibraryNameForRef(args.variablesReference)
                 if (libraryName != null) {
                     if (state != null) {
                         val gson = Gson()
-                        val filteredParams = state.parameters.filter { (fullName, _) ->
-                            val (lib, _) = splitParameterName(fullName)
-                            lib == libraryName
-                        }
+                        val filteredParams =
+                            state.parameters.filter { (fullName, _) ->
+                                val (lib, _) = splitParameterName(fullName)
+                                lib == libraryName
+                            }
                         for ((fullName, value) in filteredParams) {
                             val (_, paramName) = splitParameterName(fullName)
-                            val metadata = findParameterMetadata(libraryName, paramName)
+                            val paramType =
+                                findLaunchParameterType(paramName)
+                                    ?: findParameterMetadata(libraryName, paramName)?.type
                             vars.add(
                                 Variable().also { v ->
                                     v.name = paramName
                                     v.value = formatVariableValue(value, gson)
-                                    v.type = metadata?.type
+                                    v.type = paramType
                                     v.variablesReference = registerIfExpandable(value)
                                 },
                             )
@@ -657,12 +646,32 @@ open class CqlDebugServer(
         // Non-streaming mode: variablesReference == 2 shows grouped parameter metadata
         if (args.variablesReference == 2) {
             // Reset library group refs for consistent tree rebuilding
-            nextLibraryGroupRef = -1000
+            nextLibraryGroupRef = 100000
             libraryRefToName.clear()
 
             val groups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
             return CompletableFuture.completedFuture(
                 VariablesResponse().also { it.variables = buildMetadataLibraryGroupVariables(groups).toTypedArray() },
+            )
+        }
+
+        // Library group expansion in non-streaming mode (positive refs >= 100000)
+        if (args.variablesReference >= 100000) {
+            val libraryName = getLibraryNameForRef(args.variablesReference)
+            if (libraryName != null) {
+                parameterMetadata[libraryName]?.forEach { metadata ->
+                    vars.add(
+                        Variable().also { v ->
+                            v.name = metadata.name
+                            v.value = metadata.defaultValue ?: "(no default)"
+                            v.type = metadata.type
+                            v.variablesReference = 0
+                        },
+                    )
+                }
+            }
+            return CompletableFuture.completedFuture(
+                VariablesResponse().also { it.variables = vars.toTypedArray() },
             )
         }
 
@@ -725,8 +734,15 @@ open class CqlDebugServer(
 
     private val libraryRefToName = mutableMapOf<String, String>()
 
-    private fun findParameterMetadata(libraryName: String, paramName: String): ParameterMetadata? {
+    private fun findParameterMetadata(
+        libraryName: String,
+        paramName: String,
+    ): ParameterMetadata? {
         return parameterMetadata[libraryName]?.find { it.name == paramName }
+    }
+
+    private fun findLaunchParameterType(paramName: String): String? {
+        return launchParameters?.find { it.parameterName == paramName }?.parameterType
     }
 
     override fun evaluate(args: EvaluateArguments): CompletableFuture<EvaluateResponse> {
@@ -1009,12 +1025,13 @@ open class CqlDebugServer(
                     val children = elementDef?.children ?: emptyList()
                     children.flatMap { child ->
                         val accessor = child.getAccessor()
-                        val childValues: List<IBase> = try {
-                            @Suppress("UNCHECKED_CAST")
-                            accessor.getValues(value) as? List<IBase> ?: emptyList()
-                        } catch (_: Exception) {
-                            emptyList()
-                        }
+                        val childValues: List<IBase> =
+                            try {
+                                @Suppress("UNCHECKED_CAST")
+                                accessor.getValues(value) as? List<IBase> ?: emptyList()
+                            } catch (_: Exception) {
+                                emptyList()
+                            }
                         val childName = child.elementName
                         if (childValues.size == 1) {
                             listOf(
@@ -1412,16 +1429,17 @@ open class CqlDebugServer(
 
     private fun buildAstStackFrame(handler: StreamingBreakpointHandler): StackFrame {
         val elm = handler.lastPausedElm
-        val range = elm?.let { astElementLines[it] }
-        val docPath = astDocumentUri?.let { Paths.get(it).toString() }
+        val locator = elm?.locator
+        val bounds = parseLocatorLines(locator)
+        val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
         return StackFrame().also { f ->
             f.id = 0
             f.name = elm?.javaClass?.simpleName ?: "(unknown)"
-            f.line = range?.first ?: 1
-            f.column = 1
-            f.endLine = range?.last ?: (range?.first ?: 1)
-            f.endColumn = Int.MAX_VALUE
-            f.source = docPath?.let { Source().also { s -> s.path = it } }
+            f.line = bounds.startLine + 1
+            f.column = bounds.startChar + 1
+            f.endLine = bounds.endLine + 1
+            f.endColumn = bounds.endChar + 1
+            f.source = sourceUri?.let { Source().also { s -> s.path = it } }
         }
     }
 

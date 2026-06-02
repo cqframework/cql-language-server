@@ -673,6 +673,7 @@ class StreamingCqlDebugServerTest {
         val globalGroup = groupsResponse.variables.firstOrNull { it.name == "(Global)" }
         assertNotNull(globalGroup)
         assertEquals("2 parameter(s)", globalGroup!!.value)
+        assertTrue(globalGroup.variablesReference > 0, "Library group ref must be positive for DAP expandability")
 
         // Expanding the library group with its ref should return individual parameters
         val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = globalGroup.variablesReference }).get()
@@ -719,6 +720,7 @@ class StreamingCqlDebugServerTest {
         val testLibraryGroup = groupsResponse.variables.firstOrNull { it.name == "TestLibrary" }
         assertNotNull(testLibraryGroup)
         assertEquals("2 parameter(s)", testLibraryGroup!!.value)
+        assertTrue(testLibraryGroup.variablesReference > 0, "Library group ref must be positive for DAP expandability")
 
         // Expanding the library group with its ref should return individual parameters
         val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = testLibraryGroup.variablesReference }).get()
@@ -764,7 +766,7 @@ class StreamingCqlDebugServerTest {
     fun `scopes returns Parameters and Locals in streaming mode when parameters exist`() {
         val server = setupServer()
 
-server.initParameterMetadata(
+        server.initParameterMetadata(
             mapOf(
                 "TestLibrary" to
                     listOf(
@@ -798,7 +800,7 @@ server.initParameterMetadata(
         state.parameters["TestLibrary.Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
         handler.onBeforeExpression(elm, state)
 
-server.initParameterMetadata(
+        server.initParameterMetadata(
             mapOf(
                 "TestLibrary" to
                     listOf(
@@ -825,6 +827,78 @@ server.initParameterMetadata(
         assertEquals(1, paramsResponse.variables.size)
         assertEquals("Measurement Period", paramsResponse.variables[0].name)
         assertEquals("Interval<DateTime>", paramsResponse.variables[0].type)
+    }
+
+    @Test
+    fun `library groups get distinct positive refs and expansion yields correct params even when FHIR values present`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+
+        // Parameters from two libraries (using dot prefix to trigger library grouping)
+        state.parameters["LibA.Param1"] = "valueA1"
+        state.parameters["LibA.Param2"] = "valueA2"
+        state.parameters["LibB.Param1"] = "valueB1"
+
+        // FHIR Patient in context values — exercises >= 1000 branch
+        val patient = Patient()
+        patient.id = "collision-test"
+        state.contextValues["Patient"] = patient
+        handler.contextResourcesByName["Patient"] = patient
+
+        handler.onBeforeExpression(elm, state)
+
+        // variableReference == 2 returns library groups
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        assertEquals(2, groupsResponse.variables.size)
+
+        val libAGroup = groupsResponse.variables.firstOrNull { it.name == "LibA" }
+        val libBGroup = groupsResponse.variables.firstOrNull { it.name == "LibB" }
+        assertNotNull(libAGroup)
+        assertNotNull(libBGroup)
+
+        // Regression guard: library group refs must be positive for DAP expandability
+        assertTrue(libAGroup!!.variablesReference > 0, "LibA group ref must be positive")
+        assertTrue(libBGroup!!.variablesReference > 0, "LibB group ref must be positive")
+
+        // Distinct refs
+        assertTrue(libAGroup.variablesReference != libBGroup.variablesReference, "Library groups must have distinct refs")
+
+        // Verify refs are in the >= 100000 band (reserved for library groups)
+        assertTrue(libAGroup.variablesReference >= 100000, "LibA ref must be >= 100000, got ${libAGroup.variablesReference}")
+        assertTrue(libBGroup.variablesReference >= 100000, "LibB ref must be >= 100000, got ${libBGroup.variablesReference}")
+
+        // Expand LibA — should get Param1 and Param2
+        val libAParams = server.variables(VariablesArguments().also { it.variablesReference = libAGroup.variablesReference }).get()
+        assertEquals(2, libAParams.variables.size, "LibA should have 2 parameters")
+        assertNotNull(libAParams.variables.firstOrNull { it.name == "Param1" })
+        assertNotNull(libAParams.variables.firstOrNull { it.name == "Param2" })
+
+        // Expand LibB — should get Param1
+        val libBParams = server.variables(VariablesArguments().also { it.variablesReference = libBGroup.variablesReference }).get()
+        assertEquals(1, libBParams.variables.size, "LibB should have 1 parameter")
+        assertNotNull(libBParams.variables.firstOrNull { it.name == "Param1" })
+
+        // Expand the FHIR Patient via its ref (>= 1000) — verify it still returns FHIR children,
+        // proving the >= 100000 branch didn't capture it
+        val localsResponse = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar = localsResponse.variables.firstOrNull { it.name == "Patient" }
+        assertNotNull(patientVar)
+        assertTrue(
+            patientVar!!.variablesReference in 1000 until 100000,
+            "FHIR Patient ref should be in the 1000-99999 band, got ${patientVar.variablesReference}",
+        )
+
+        val patientChildren = server.variables(VariablesArguments().also { it.variablesReference = patientVar.variablesReference }).get()
+        val childNames = patientChildren.variables.map { it.name }.toSet()
+        assertTrue(childNames.contains("id"), "FHIR expansion should yield 'id', got $childNames")
     }
 
     @Test
@@ -1035,7 +1109,9 @@ server.initParameterMetadata(
         val secondRef = patientVar2!!.variablesReference
 
         assertTrue(secondRef >= 1000, "Second pause patient ref should be >= 1000")
-        assertTrue(firstRef != secondRef || secondRef == 1000,
-            "After new pause, either new ref or reset to 1000. First: $firstRef, Second: $secondRef")
+        assertTrue(
+            firstRef != secondRef || secondRef == 1000,
+            "After new pause, either new ref or reset to 1000. First: $firstRef, Second: $secondRef",
+        )
     }
 }
