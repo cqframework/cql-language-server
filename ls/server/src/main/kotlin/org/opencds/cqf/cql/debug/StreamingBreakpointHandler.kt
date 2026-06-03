@@ -14,6 +14,9 @@ class StreamingBreakpointHandler : BreakpointHandler {
     private val breakpointLines = mutableSetOf<Int>()
 
     @Volatile
+    var primaryLibraryId: String? = null
+
+    @Volatile
     var cqlStepLines: Set<Int>? = null
 
     @Volatile
@@ -132,6 +135,10 @@ class StreamingBreakpointHandler : BreakpointHandler {
         elm: Element,
         state: State,
     ): BreakpointAction {
+        val currentLibId = state.getCurrentLibrary()?.identifier?.id
+        if (primaryLibraryId != null && currentLibId != null && currentLibId != primaryLibraryId) {
+            return BreakpointAction.CONTINUE
+        }
         val locator = elm.locator ?: return BreakpointAction.CONTINUE
         val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
         val depth = state.stack.size
@@ -279,7 +286,11 @@ class StreamingBreakpointHandler : BreakpointHandler {
                 val state = lastPausedState
                 if (elm != null && state != null) {
                     onPauseCallback?.invoke(elm, state)
-                    log.debug("waitForResume: onPauseCallback done [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
+                    log.debug("waitForResume: onPauseCallback done [+{}ms] lastPausedElm.localId [{}] lastPausedElm.locator[{}] lastPausedState[{}]",
+                        (System.nanoTime() - t0) / 1_000_000,
+                        lastPausedElm?.localId,
+                        lastPausedElm?.locator,
+                        lastPausedState)
                 }
             }
             resumeLatch.await()

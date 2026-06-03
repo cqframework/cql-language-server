@@ -1,7 +1,9 @@
 package org.opencds.cqf.cql.debug
 
 import org.hl7.elm.r1.Element
+import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
+import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -461,5 +463,37 @@ class StreamingBreakpointHandlerTest {
         handler.stepIn()
         val elm2 = makeElement("5:12-5:20") // same line, different element
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `onBeforeExpression continues for elements from non-primary library`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepIn()
+
+        val fhirHelpersLib = Library().also {
+            it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+        }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `onBeforeExpression pauses for elements from the primary library`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepIn()
+
+        val primaryLib = Library().also {
+            it.identifier = VersionedIdentifier().also { vi -> vi.id = "MyPrimaryLib" }
+        }
+        val state = State(Environment(null)).also { it.init(primaryLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
     }
 }

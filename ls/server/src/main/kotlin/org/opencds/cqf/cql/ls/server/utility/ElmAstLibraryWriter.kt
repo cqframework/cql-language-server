@@ -525,6 +525,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
             is org.hl7.elm.r1.In -> operandListChild(expr.operand)
             is org.hl7.elm.r1.Contains -> operandListChild(expr.operand)
             is org.hl7.elm.r1.Exists -> singleOperandChild(expr.operand)
+            is Retrieve -> retrieveChildren(expr)
             else -> emptyList()
         }
     }
@@ -608,6 +609,13 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         if (src != null) list.add(ChildNode(src, "source"))
         val el = r.element
         if (el != null) list.add(ChildNode(el, "element"))
+        return list
+    }
+
+    private fun retrieveChildren(r: Retrieve): List<ChildNode> {
+        val list = mutableListOf<ChildNode>()
+        val codes = r.codes
+        if (codes != null) list.add(ChildNode(codes, "codes"))
         return list
     }
 

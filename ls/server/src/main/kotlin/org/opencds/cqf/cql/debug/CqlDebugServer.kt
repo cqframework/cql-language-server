@@ -351,6 +351,8 @@ open class CqlDebugServer(
             handler.applyCqlStepLineFilter(CqlStepPositionCollector.collect(parseTree))
         }
 
+        handler.primaryLibraryId = compilationManager.compile(libraryUri)?.library?.identifier?.id
+
         handler.stepGranularity =
             if (args.stepGranularity?.equals("ast", ignoreCase = true) == true) {
                 StreamingBreakpointHandler.StepGranularity.AST
@@ -520,6 +522,13 @@ open class CqlDebugServer(
                     s.isExpensive = false
                 },
             )
+            scopes.add(
+                Scope().also { s ->
+                    s.name = "Included Functions"
+                    s.variablesReference = 3
+                    s.isExpensive = false
+                },
+            )
         } else {
             scopes.add(
                 Scope().also { s ->
@@ -645,6 +654,17 @@ open class CqlDebugServer(
                                 it.name = key
                                 it.value = formatVariableValue(fullResource, gson)
                                 it.variablesReference = registerIfExpandable(fullResource)
+                            },
+                        )
+                    }
+                }
+                if (args.variablesReference == 3) {
+                    for ((name, value) in handler.evaluatedValuesByName.entries.sortedBy { it.key }) {
+                        vars.add(
+                            Variable().also {
+                                it.name = name
+                                it.value = formatVariableValue(value, gson)
+                                it.variablesReference = registerIfExpandable(value)
                             },
                         )
                     }
@@ -1455,6 +1475,7 @@ open class CqlDebugServer(
             f.column = bounds.startChar + 1
             f.endLine = bounds.endLine + 1
             f.endColumn = bounds.endChar + 1
+            f.instructionPointerReference = elm?.localId
             f.source = sourceUri?.let { Source().also { s -> s.path = it } }
         }
     }

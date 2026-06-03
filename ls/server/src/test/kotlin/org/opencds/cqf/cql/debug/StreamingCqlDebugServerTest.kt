@@ -171,9 +171,11 @@ class StreamingCqlDebugServerTest {
     fun `scopes returns Locals scope in streaming mode`() {
         val server = setupServer()
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
-        assertEquals(1, response.scopes.size)
+        assertEquals(2, response.scopes.size)
         assertEquals("Locals", response.scopes[0].name)
         assertEquals(1, response.scopes[0].variablesReference)
+        assertEquals("Included Functions", response.scopes[1].name)
+        assertEquals(3, response.scopes[1].variablesReference)
     }
 
     // -- variables -----------------------------------------------------------
@@ -568,10 +570,11 @@ class StreamingCqlDebugServerTest {
         )
 
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
-        assertEquals(2, response.scopes.size)
+        assertEquals(3, response.scopes.size)
         val paramScope = response.scopes.firstOrNull { it.name == "Parameters" }
         assertNotNull(paramScope)
         assertEquals(2, paramScope!!.variablesReference)
+        assertNotNull(response.scopes.firstOrNull { it.name == "Included Functions" })
     }
 
     @Test
@@ -602,9 +605,10 @@ class StreamingCqlDebugServerTest {
         )
 
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
-        assertEquals(2, response.scopes.size)
+        assertEquals(3, response.scopes.size)
         assertNotNull(response.scopes.firstOrNull { it.name == "Parameters" })
         assertNotNull(response.scopes.firstOrNull { it.name == "Locals" })
+        assertNotNull(response.scopes.firstOrNull { it.name == "Included Functions" })
     }
 
     @Test
@@ -623,8 +627,11 @@ class StreamingCqlDebugServerTest {
 
         // parameterMetadata is empty by default
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
-        assertEquals(1, response.scopes.size)
+        assertEquals(2, response.scopes.size)
         assertEquals("Locals", response.scopes[0].name)
+        assertEquals(1, response.scopes[0].variablesReference)
+        assertEquals("Included Functions", response.scopes[1].name)
+        assertEquals(3, response.scopes[1].variablesReference)
         assertEquals(null, response.scopes.firstOrNull { it.name == "Parameters" })
     }
 
@@ -780,9 +787,10 @@ class StreamingCqlDebugServerTest {
         )
 
         val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
-        assertEquals(2, response.scopes.size)
+        assertEquals(3, response.scopes.size)
         assertNotNull(response.scopes.firstOrNull { it.name == "Parameters" })
         assertNotNull(response.scopes.firstOrNull { it.name == "Locals" })
+        assertNotNull(response.scopes.firstOrNull { it.name == "Included Functions" })
     }
 
     @Test

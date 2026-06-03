@@ -65,6 +65,25 @@ class ElmAstLibraryWriterTest {
     }
 
     @Test
+    fun writeAsString_withFhirQuery_retrieveCodesChildAppearsWithLocalId() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithFhirQuery.cql")!!
+        val compiler =
+            compilationManager.compile(uri)
+                ?: throw AssertionError("compile returned null for WithFhirQuery")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        // codes child (ValueSetRef) should appear as a child node in the AST tree
+        assertTrue(result.contains("ValueSetRef (name="), "Expected ValueSetRef child node: $result")
+        assertTrue(result.contains("[id="), "Expected localId on child node: $result")
+
+        // Parent label should still include the codes: summary (displayValue() guard)
+        val retrieveLines = result.lines().filter { it.contains("Retrieve") }
+        val codesRetrieve = retrieveLines.firstOrNull { it.contains("codes:") }
+            ?: throw AssertionError("No Retrieve with codes: found in AST. All Retrieves:\n${retrieveLines.joinToString("\n")}")
+        assertTrue(codesRetrieve.contains("codes:"), "Parent label should retain codes: summary: $codesRetrieve")
+    }
+
+    @Test
     fun render_textMatchesWriteAsString() {
         val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
         val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
