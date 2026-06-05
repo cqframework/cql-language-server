@@ -16,7 +16,7 @@ class CqlEvaluatorDefineOrderTest {
             VersionedIdentifier().withId("TestLib"),
             ExpressionDef().also { it.name = name },
             emptyList(),
-            "Patient" to ("test-patient" as Any),
+            "Patient" to "test-patient",
             null,
             children.toList(),
         )
@@ -75,7 +75,7 @@ class CqlEvaluatorDefineOrderTest {
                 VersionedIdentifier().withId("TestLib"),
                 ExpressionDef(), // name not set -> null
                 emptyList(),
-                "Patient" to ("test" as Any),
+                "Patient" to "test",
                 null,
                 emptyList(),
             )

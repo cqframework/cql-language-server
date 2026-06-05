@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.debug
 
+import ca.uhn.fhir.context.FhirContext
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
 import org.eclipse.lsp4j.debug.NextArguments
@@ -9,12 +10,16 @@ import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
 import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
+import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.r4.model.Patient
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
 import org.opencds.cqf.cql.engine.execution.Environment
@@ -23,6 +28,8 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import java.nio.file.Files
+import java.nio.file.Path
 
 class StreamingCqlDebugServerTest {
     /**
@@ -60,6 +67,10 @@ class StreamingCqlDebugServerTest {
 
         fun initCurrentIndex(index: Int) {
             currentIndex = index
+        }
+
+        fun initLaunchArgs(args: DebugLaunchArgs) {
+            launchArgs = args
         }
 
         fun triggerCompletion(error: Throwable?) {
@@ -174,7 +185,7 @@ class StreamingCqlDebugServerTest {
         assertEquals(2, response.scopes.size)
         assertEquals("Locals", response.scopes[0].name)
         assertEquals(1, response.scopes[0].variablesReference)
-        assertEquals("Included Functions", response.scopes[1].name)
+        assertEquals("Resolved Defines", response.scopes[1].name)
         assertEquals(3, response.scopes[1].variablesReference)
     }
 
@@ -201,13 +212,13 @@ class StreamingCqlDebugServerTest {
             }
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
-        // Add a variable with a complex value
+        // Add a variable without a value (the engine Value API doesn't support maps directly)
         state.topActivationFrame.variables.addFirst(
-            org.opencds.cqf.cql.engine.execution.Variable("patientId").withValue(
-                mapOf("id" to "1111", "name" to listOf(mapOf("family" to "Chalmers"))),
-            ),
+            org.opencds.cqf.cql.engine.execution.Variable("patientId"),
         )
         handler.onBeforeExpression(elm, state)
+        // Inject the map value into the registry after onBeforeExpression clears stack vars
+        handler.runtimeRegistry.putStackVariable("patientId", mapOf("id" to "1111", "name" to listOf(mapOf("family" to "Chalmers"))), null)
 
         val response = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
         assertNotNull(response.variables)
@@ -246,11 +257,10 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
-            org.opencds.cqf.cql.engine.execution.Variable("patientId").withValue(
-                mapOf("id" to "1111"),
-            ),
+            org.opencds.cqf.cql.engine.execution.Variable("patientId"),
         )
         handler.onBeforeExpression(elm, state)
+        handler.runtimeRegistry.putStackVariable("patientId", mapOf("id" to "1111"), null)
 
         val response =
             server.evaluate(
@@ -275,7 +285,8 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        state.contextValues["Patient"] = mapOf("id" to "pat-1", "name" to listOf(mapOf("family" to "Smith")))
+        state.setContextValue("Patient", "pat-1")
+        handler.contextResourcesByName["Patient"] = mapOf("id" to "pat-1", "name" to listOf(mapOf("family" to "Smith")))
         handler.onBeforeExpression(elm, state)
 
         val response =
@@ -461,7 +472,7 @@ class StreamingCqlDebugServerTest {
         patient.addName().setFamily("Smith").addGiven("John")
 
         // This is where engine stores the ID as string
-        state.contextValues["Patient"] = "pat-1"
+        state.setContextValue("Patient", "pat-1")
 
         // This is where we now store the full resource
         handler.contextResourcesByName["Patient"] = patient
@@ -500,7 +511,7 @@ class StreamingCqlDebugServerTest {
         patient.id = "pat-1"
         patient.addName().setFamily("Smith")
 
-        state.contextValues["Patient"] = "pat-1"
+        state.setContextValue("Patient", "pat-1")
         handler.contextResourcesByName["Patient"] = patient
 
         handler.onBeforeExpression(elm, state)
@@ -534,7 +545,7 @@ class StreamingCqlDebugServerTest {
             }
         val state = State(Environment(null))
 
-        state.contextValues["Patient"] = "pat-1"
+        state.setContextValue("Patient", "pat-1")
         // handler.contextResourcesByName NOT populated
 
         handler.onBeforeExpression(elm, state)
@@ -574,7 +585,7 @@ class StreamingCqlDebugServerTest {
         val paramScope = response.scopes.firstOrNull { it.name == "Parameters" }
         assertNotNull(paramScope)
         assertEquals(2, paramScope!!.variablesReference)
-        assertNotNull(response.scopes.firstOrNull { it.name == "Included Functions" })
+        assertNotNull(response.scopes.firstOrNull { it.name == "Resolved Defines" })
     }
 
     @Test
@@ -608,7 +619,7 @@ class StreamingCqlDebugServerTest {
         assertEquals(3, response.scopes.size)
         assertNotNull(response.scopes.firstOrNull { it.name == "Parameters" })
         assertNotNull(response.scopes.firstOrNull { it.name == "Locals" })
-        assertNotNull(response.scopes.firstOrNull { it.name == "Included Functions" })
+        assertNotNull(response.scopes.firstOrNull { it.name == "Resolved Defines" })
     }
 
     @Test
@@ -630,7 +641,7 @@ class StreamingCqlDebugServerTest {
         assertEquals(2, response.scopes.size)
         assertEquals("Locals", response.scopes[0].name)
         assertEquals(1, response.scopes[0].variablesReference)
-        assertEquals("Included Functions", response.scopes[1].name)
+        assertEquals("Resolved Defines", response.scopes[1].name)
         assertEquals(3, response.scopes[1].variablesReference)
         assertEquals(null, response.scopes.firstOrNull { it.name == "Parameters" })
     }
@@ -649,29 +660,14 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
 
         // Add parameters to state - no library prefix means "(Global)"
-        state.parameters["Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
-        state.parameters["Patient Type"] = "HMO"
+        state.setParameter(null, "Measurement Period", "Interval[@2026-01-01, @2027-01-01)")
+        state.setParameter(null, "Patient Type", "HMO")
 
         handler.onBeforeExpression(elm, state)
 
-        // Metadata grouped by library - global params under "(Global)"
-        server.initParameterMetadata(
-            mapOf(
-                "(Global)" to
-                    listOf(
-                        CqlDebugServer.ParameterMetadata(
-                            name = "Measurement Period",
-                            type = "Interval<DateTime>",
-                            defaultValue = null,
-                        ),
-                        CqlDebugServer.ParameterMetadata(
-                            name = "Patient Type",
-                            type = "String",
-                            defaultValue = "'HMO'",
-                        ),
-                    ),
-            ),
-        )
+        // Load parameters into registry (mimics server's onPauseCallback)
+        val paramTypes = mapOf("(Global)" to mapOf("Measurement Period" to "Interval<DateTime>", "Patient Type" to "String"))
+        handler.runtimeRegistry.loadParameters(state, paramTypes)
 
         // variables(2) should return library groups
         val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
@@ -790,7 +786,146 @@ class StreamingCqlDebugServerTest {
         assertEquals(3, response.scopes.size)
         assertNotNull(response.scopes.firstOrNull { it.name == "Parameters" })
         assertNotNull(response.scopes.firstOrNull { it.name == "Locals" })
-        assertNotNull(response.scopes.firstOrNull { it.name == "Included Functions" })
+        assertNotNull(response.scopes.firstOrNull { it.name == "Resolved Defines" })
+    }
+
+    @Test
+    fun `scopes returns Test Case scope when launchArgs are present`() {
+        val server = setupServer()
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test/TestLib.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "TestPatient",
+                testCaseUri = "file:///test/testCases/TestPatient",
+            ),
+        )
+
+        val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
+        assertEquals(3, response.scopes.size)
+        assertEquals("Locals", response.scopes[0].name)
+        assertEquals(1, response.scopes[0].variablesReference)
+        assertEquals("Resolved Defines", response.scopes[1].name)
+        assertEquals(3, response.scopes[1].variablesReference)
+        val testCaseScope = response.scopes.firstOrNull { it.name == "Test Case" }
+        assertNotNull(testCaseScope)
+        assertEquals(4, testCaseScope!!.variablesReference)
+    }
+
+    @Test
+    fun `variables returns Test Case resources when variablesReference is 4`(
+        @TempDir tempDir: Path,
+    ) {
+        val server = setupServer()
+        val patient = Patient().also { it.id = "example" }
+        val json = FhirContext.forR4().newJsonParser().encodeToString(patient)
+        Files.writeString(tempDir.resolve("patient.json"), json)
+
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test/TestLib.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "TestPatient",
+                testCaseUri = tempDir.toUri().toString(),
+            ),
+        )
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 4 }).get()
+        assertNotNull(response.variables)
+        assertEquals(1, response.variables.size)
+        assertEquals("Patient/example", response.variables[0].name)
+        assertEquals("Patient", response.variables[0].type)
+        assertTrue(response.variables[0].variablesReference > 0)
+    }
+
+    @Test
+    fun `variables uses filename fallback for anonymous resource`(
+        @TempDir tempDir: Path,
+    ) {
+        val server = setupServer()
+        val patient = Patient()
+        val json = FhirContext.forR4().newJsonParser().encodeToString(patient)
+        Files.writeString(tempDir.resolve("anonymous_patient.json"), json)
+
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test/TestLib.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "TestPatient",
+                testCaseUri = tempDir.toUri().toString(),
+            ),
+        )
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 4 }).get()
+        assertNotNull(response.variables)
+        assertEquals(1, response.variables.size)
+        assertEquals("anonymous_patient", response.variables[0].name)
+    }
+
+    @Test
+    fun `variables swallows malformed files gracefully`(
+        @TempDir tempDir: Path,
+    ) {
+        val server = setupServer()
+        val patient = Patient().also { it.id = "valid" }
+        val json = FhirContext.forR4().newJsonParser().encodeToString(patient)
+        Files.writeString(tempDir.resolve("valid-patient.json"), json)
+        Files.writeString(tempDir.resolve("malformed.json"), "{invalid json content")
+
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test/TestLib.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "TestPatient",
+                testCaseUri = tempDir.toUri().toString(),
+            ),
+        )
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 4 }).get()
+        assertNotNull(response.variables)
+        assertEquals(1, response.variables.size)
+        assertEquals("Patient/valid", response.variables[0].name)
+    }
+
+    @Test
+    fun `variables sorts Test Case values alphabetically`(
+        @TempDir tempDir: Path,
+    ) {
+        val server = setupServer()
+        val patientB = Patient().also { it.id = "BPatient" }
+        val patientA = Patient().also { it.id = "APatient" }
+        val context = FhirContext.forR4()
+        Files.writeString(tempDir.resolve("b-patient.json"), context.newJsonParser().encodeToString(patientB))
+        Files.writeString(tempDir.resolve("a-patient.json"), context.newJsonParser().encodeToString(patientA))
+
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test/TestLib.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "TestPatient",
+                testCaseUri = tempDir.toUri().toString(),
+            ),
+        )
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 4 }).get()
+        assertNotNull(response.variables)
+        assertEquals(2, response.variables.size)
+        assertEquals("Patient/APatient", response.variables[0].name)
+        assertEquals("Patient/BPatient", response.variables[1].name)
+    }
+
+    @Test
+    fun `test case scope is absent when no launchArgs are set`() {
+        val server = setupServer()
+
+        val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
+        assertEquals(2, response.scopes.size)
+        assertEquals(null, response.scopes.firstOrNull { it.name == "Test Case" })
     }
 
     @Test
@@ -805,7 +940,7 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        state.parameters["TestLibrary.Measurement Period"] = "Interval[@2026-01-01, @2027-01-01)"
+        state.setParameters(null, mapOf("TestLibrary.Measurement Period" to "Interval[@2026-01-01, @2027-01-01)"))
         handler.onBeforeExpression(elm, state)
 
         server.initParameterMetadata(
@@ -851,17 +986,30 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
 
         // Parameters from two libraries (using dot prefix to trigger library grouping)
-        state.parameters["LibA.Param1"] = "valueA1"
-        state.parameters["LibA.Param2"] = "valueA2"
-        state.parameters["LibB.Param1"] = "valueB1"
+        state.setParameters(
+            null,
+            mapOf(
+                "LibA.Param1" to "valueA1",
+                "LibA.Param2" to "valueA2",
+                "LibB.Param1" to "valueB1",
+            ),
+        )
 
         // FHIR Patient in context values — exercises >= 1000 branch
         val patient = Patient()
         patient.id = "collision-test"
-        state.contextValues["Patient"] = patient
+        state.setContextValue("Patient", "collision-test")
         handler.contextResourcesByName["Patient"] = patient
 
         handler.onBeforeExpression(elm, state)
+
+        // Load parameters into registry (mimics server's onPauseCallback)
+        val paramTypes =
+            mapOf(
+                "LibA" to mapOf("Param1" to "String", "Param2" to "String"),
+                "LibB" to mapOf("Param1" to "String"),
+            )
+        handler.runtimeRegistry.loadParameters(state, paramTypes)
 
         // variableReference == 2 returns library groups
         val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
@@ -957,7 +1105,7 @@ class StreamingCqlDebugServerTest {
         patient.birthDate = java.util.Calendar.getInstance().apply { set(1990, 1, 1) }.time
         patient.addName().setFamily("Smith").addGiven("John")
 
-        state.contextValues["Patient"] = patient
+        state.setContextValue("Patient", patient.id!!)
         handler.contextResourcesByName["Patient"] = patient
 
         handler.onBeforeExpression(elm, state)
@@ -986,12 +1134,13 @@ class StreamingCqlDebugServerTest {
         patient.birthDate = java.util.Calendar.getInstance().apply { set(1990, 1, 1) }.time
         patient.addName().setFamily("Smith").addGiven("John")
 
-        state.contextValues["Patient"] = patient
+        state.setContextValue("Patient", patient.id!!)
         handler.contextResourcesByName["Patient"] = patient
 
         handler.onBeforeExpression(elm, state)
 
-        val rootResponse = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val rootResponse =
+            server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
         val patientVar = rootResponse.variables.firstOrNull { it.name == "Patient" }
         assertNotNull(patientVar)
         val patientRef = patientVar!!.variablesReference
@@ -1021,7 +1170,7 @@ class StreamingCqlDebugServerTest {
         val patient = Patient()
         patient.id = "pat-123"
 
-        state.contextValues["Patient"] = patient
+        state.setContextValue("Patient", patient.id!!)
         handler.contextResourcesByName["Patient"] = patient
 
         handler.onBeforeExpression(elm, state)
@@ -1059,7 +1208,8 @@ class StreamingCqlDebugServerTest {
 
         @Suppress("UNCHECKED_CAST")
         val encounters = listOf<org.hl7.fhir.instance.model.api.IBase>(encounter1, encounter2)
-        state.contextValues["Encounters"] = encounters as Any
+        state.setContextValue("Encounters", "Encounter/enc-1")
+        handler.contextResourcesByName["Encounters"] = encounters
 
         handler.onBeforeExpression(elm, state)
 
@@ -1090,7 +1240,7 @@ class StreamingCqlDebugServerTest {
         val state1 = State(Environment(null))
         val patient1 = Patient()
         patient1.id = "pat-first"
-        state1.contextValues["Patient"] = patient1
+        state1.setContextValue("Patient", patient1.id!!)
         handler.contextResourcesByName["Patient"] = patient1
         handler.onBeforeExpression(elm1, state1)
 
@@ -1108,7 +1258,7 @@ class StreamingCqlDebugServerTest {
         val state2 = State(Environment(null))
         val patient2 = Patient()
         patient2.id = "pat-second"
-        state2.contextValues["Patient"] = patient2
+        state2.setContextValue("Patient", patient2.id!!)
         handler.contextResourcesByName["Patient"] = patient2
         handler.onBeforeExpression(elm2, state2)
 
@@ -1116,10 +1266,538 @@ class StreamingCqlDebugServerTest {
         val patientVar2 = response2.variables.firstOrNull { it.name == "Patient" }
         val secondRef = patientVar2!!.variablesReference
 
-        assertTrue(secondRef >= 1000, "Second pause patient ref should be >= 1000")
-        assertTrue(
-            firstRef != secondRef || secondRef == 1000,
-            "After new pause, either new ref or reset to 1000. First: $firstRef, Second: $secondRef",
+        assertEquals(1000, secondRef, "variables() resets nextVarRef to 1000 for each ref=1 call")
+    }
+
+    // -- RuntimeValueRegistry: key collision ---------------------------------
+
+    @Test
+    fun `registry allows same-name entries in different categories`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        val reg = handler.runtimeRegistry
+
+        // Same name, different categories
+        reg.loadContextResource("Patient", "ctx-value", null)
+        reg.putDefine("Patient", "define-value", null, null)
+
+        // Both retrievable via find (stack variable priority > define > context > param)
+        val found = reg.find("Patient")
+        assertNotNull(found)
+        assertEquals("define-value", found!!.value)
+        assertEquals(RuntimeValueCategory.DEFINE, found.category)
+    }
+
+    // -- RuntimeValueRegistry: defines persist across steps ------------------
+
+    @Test
+    fun `defines persist across step boundary`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        // Step 1: evaluate a define
+        handler.stepIn()
+        val elm1 =
+            ExpressionDef().also {
+                it.name = "InitialPopulation"
+                it.locator = "1:1-1:10"
+            }
+        val state1 = State(Environment(null))
+        handler.onBeforeExpression(elm1, state1)
+        handler.onExpressionDefEvaluated(elm1, state1, 42)
+
+        // Step 2: step forward — define should still be available
+        handler.stepIn()
+        val elm2 =
+            ExpressionDef().also {
+                it.name = "SecondExpr"
+                it.locator = "2:1-2:10"
+            }
+        val state2 = State(Environment(null))
+        handler.onBeforeExpression(elm2, state2)
+
+        val reg = handler.runtimeRegistry
+        val found = reg.find("InitialPopulation")
+        assertNotNull(found, "Define should persist across steps")
+        assertEquals(42, found!!.value)
+    }
+
+    @Test
+    fun `onExpressionDefEvaluated captures define in registry`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        val elm =
+            ExpressionDef().also {
+                it.name = "MyDefine"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onExpressionDefEvaluated(elm, state, "define-value")
+
+        val found = handler.runtimeRegistry.find("MyDefine")
+        assertNotNull(found)
+        assertEquals("define-value", found!!.value)
+        assertEquals(RuntimeValueCategory.DEFINE, found.category)
+    }
+
+    @Test
+    fun `onAfterExpression does not capture ExpressionDef results`() {
+        // Regression: the old dead branch in onAfterExpression that checked
+        // `elm is ExpressionDef` was removed. Define results must now flow
+        // through onExpressionDefEvaluated.
+        val server = setupServer()
+        val handler = server.testHandler
+
+        val elm =
+            ExpressionDef().also {
+                it.name = "ShouldNotCapture"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onAfterExpression(elm, state, "some-value")
+
+        assertNull(handler.runtimeRegistry.find("ShouldNotCapture"))
+    }
+
+    // -- RuntimeValueRegistry: context resources persist across steps --------
+
+    @Test
+    fun `context resources persist across step boundary`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        // Step 1: pause with a Patient context resource
+        handler.stepIn()
+        val elm1 =
+            ExpressionDef().also {
+                it.name = "FirstPause"
+                it.locator = "1:1-1:10"
+            }
+        val state1 = State(Environment(null))
+        val patient = Patient()
+        patient.id = "persist-patient"
+        state1.setContextValue("Patient", patient.id!!)
+        handler.onBeforeExpression(elm1, state1)
+
+        // Step 2: step forward — context resource should still be in registry
+        handler.stepIn()
+        val elm2 =
+            ExpressionDef().also {
+                it.name = "SecondPause"
+                it.locator = "2:1-2:10"
+            }
+        val state2 = State(Environment(null))
+        handler.onBeforeExpression(elm2, state2)
+
+        val reg = handler.runtimeRegistry
+        val found = reg.find("Patient")
+        assertNotNull(found, "Context resource should persist across steps")
+    }
+
+    // -- Copy-value: clipboard evaluate for each category --------------------
+
+    @Test
+    fun `clipboard evaluate finds stack variable`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+        state.topActivationFrame.variables.addFirst(
+            org.opencds.cqf.cql.engine.execution.Variable("myVar").withValue("hello"),
         )
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "myVar"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertEquals("\"hello\"", response.result)
+    }
+
+    @Test
+    fun `clipboard evaluate finds define`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "Numerator"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onBeforeExpression(elm, state)
+        handler.onExpressionDefEvaluated(elm, state, 100)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Numerator"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertEquals("100", response.result)
+    }
+
+    @Test
+    fun `clipboard evaluate finds context resource`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        val patient = Patient()
+        patient.id = "pat-copy"
+        state.setContextValue("Patient", patient.id!!)
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Patient"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertNotNull(response.result)
+        assert(response.result.contains("pat-copy"))
+    }
+
+    @Test
+    fun `clipboard evaluate returns notAvailable for unknown`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "nonExistent"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertEquals("not available", response.result)
+    }
+
+    // -- Copy-value: nested FHIR child variable ------------------------------
+
+    @Test
+    fun `clipboard evaluate finds expanded FHIR child variable via varRefs tree`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+
+        val patient = Patient()
+        patient.id = "pat-123"
+        patient.addName().setFamily("Smith").addGiven("John")
+
+        state.setContextValue("Patient", patient.id!!)
+        handler.contextResourcesByName["Patient"] = patient
+        handler.onBeforeExpression(elm, state)
+
+        // First, variables(ref=1) populates varRefs for the Patient
+        val rootResponse = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        val patientVar = rootResponse.variables.firstOrNull { it.name == "Patient" }
+        assertNotNull(patientVar)
+        val patientRef = patientVar!!.variablesReference
+        assertTrue(patientRef >= 1000)
+
+        // Expand Patient to populate varRefs with children
+        server.variables(VariablesArguments().also { it.variablesReference = patientRef }).get()
+
+        // Now clipboard evaluate should find "name" as a child of Patient
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "name"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertNotNull(response.result)
+        assert(response.result.contains("Smith"))
+    }
+
+    // -- Registry reset ------------------------------------------------------
+
+    @Test
+    fun `registry reset clears all values`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        val reg = handler.runtimeRegistry
+
+        reg.putDefine("SomeDefine", 42, null, null)
+        reg.loadContextResource("Patient", "value", null)
+
+        reg.reset()
+
+        assertNull(reg.find("SomeDefine"))
+        assertNull(reg.find("Patient"))
+        assertTrue(reg.getDefines().isEmpty())
+        assertTrue(reg.getContextResources().isEmpty())
+    }
+
+    // -- clearStackVariables preserves persistent values ----------------------
+
+    @Test
+    fun `clearStackVariables clears only stack variables`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        val reg = handler.runtimeRegistry
+
+        reg.putStackVariable("tempVar", "temp", null)
+        reg.putDefine("persistentDefine", "def-value", null, null)
+        reg.loadContextResource("Patient", "res-value", null)
+
+        reg.clearStackVariables()
+
+        assertNull(reg.find("tempVar"), "Stack variable should be cleared")
+        assertEquals("def-value", reg.find("persistentDefine")!!.value, "Define should persist")
+        assertEquals("res-value", reg.find("Patient")!!.value, "Context resource should persist")
+    }
+
+    // -- Registry: parameter persistence across steps ------------------------
+
+    @Test
+    fun `parameters persist across step boundary when state has no parameters on second pause`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        val reg = handler.runtimeRegistry
+
+        // First pause: state with parameters
+        handler.stepIn()
+        val elm1 =
+            ExpressionDef().also {
+                it.name = "FirstPause"
+                it.locator = "1:1-1:10"
+            }
+        val state1 = State(Environment(null))
+        state1.setParameters(
+            null,
+            mapOf(
+                "MyLib.MeasurementPeriod" to "Interval[2026-01-01, 2027-01-01]",
+                "MyLib.Threshold" to 50,
+            ),
+        )
+        // Simulate what the server's onPauseCallback does
+        val paramTypes1 = mapOf("MyLib" to mapOf("MeasurementPeriod" to "Interval<DateTime>", "Threshold" to "Integer"))
+        reg.loadParameters(state1, paramTypes1)
+
+        val paramsByLib = reg.getParametersByLibrary()
+        assertEquals(1, paramsByLib.size, "Should have one library group")
+        val myLibParams = paramsByLib["MyLib"]
+        assertNotNull(myLibParams)
+        assertEquals(2, myLibParams!!.size)
+
+        val mp = myLibParams.find { it.name == "MeasurementPeriod" }
+        assertNotNull(mp)
+        assertEquals("Interval<DateTime>", mp!!.type)
+        assertEquals("Interval[2026-01-01, 2027-01-01]", mp.value)
+
+        val threshold = myLibParams.find { it.name == "Threshold" }
+        assertNotNull(threshold)
+        assertEquals(50, threshold!!.value)
+        assertEquals("Integer", threshold.type)
+
+        // Second pause: state with NO parameters — loadParameters should be no-op
+        handler.stepIn()
+        val elm2 =
+            ExpressionDef().also {
+                it.name = "SecondPause"
+                it.locator = "2:1-2:10"
+            }
+        val state2 = State(Environment(null))
+        // state2.parameters is empty
+        reg.loadParameters(state2) // no type map — idempotent, no-op
+
+        // Parameters must still be present
+        val paramsAfter = reg.getParametersByLibrary()
+        assertEquals(1, paramsAfter.size, "Parameters should persist after second pause")
+        assertEquals(50, paramsAfter["MyLib"]!!.find { it.name == "Threshold" }!!.value)
+    }
+
+    @Test
+    fun `loadParameters is idempotent`() {
+        val reg = RuntimeValueRegistry()
+
+        val state = State(Environment(null))
+        state.setParameters(null, mapOf("Lib.Param1" to "firstValue"))
+        val types = mapOf("Lib" to mapOf("Param1" to "String"))
+
+        // First load
+        reg.loadParameters(state, types)
+        val afterFirst = reg.getParametersByLibrary()
+        assertEquals(1, afterFirst.size)
+        assertEquals("firstValue", afterFirst["Lib"]!!.first().value)
+
+        // Second load with different values — must be ignored
+        state.setParameters(null, mapOf("Lib.Param1" to "overwritten"))
+        reg.loadParameters(state, types)
+        val afterSecond = reg.getParametersByLibrary()
+        assertEquals(1, afterSecond.size, "Should still be one parameter")
+        assertEquals(
+            "firstValue",
+            afterSecond["Lib"]!!.first().value,
+            "Second load should be ignored (idempotent)",
+        )
+    }
+
+    @Test
+    fun `parameter and stack variable with same name are independent`() {
+        val reg = RuntimeValueRegistry()
+
+        // Load a parameter named "Patient"
+        val state = State(Environment(null))
+        state.setParameters(null, mapOf("Lib.Patient" to "param-patient-value"))
+        val types = mapOf("Lib" to mapOf("Patient" to "String"))
+        reg.loadParameters(state, types)
+
+        // Add a stack variable with the same name
+        reg.putStackVariable("Patient", "stack-patient-value", null)
+
+        // find() should return stack variable (highest priority)
+        val found = reg.find("Patient")
+        assertNotNull(found)
+        assertEquals("stack-patient-value", found!!.value)
+        assertEquals(RuntimeValueCategory.STACK_VARIABLE, found.category)
+
+        // Each category should still contain their own entry
+        val stackVars = reg.getStackVariables()
+        assertEquals(1, stackVars.size)
+        assertEquals("stack-patient-value", stackVars.first().value)
+
+        val params = reg.getParametersByLibrary()
+        assertEquals("param-patient-value", params["Lib"]!!.first().value)
+    }
+
+    @Test
+    fun `find with library name returns correct library-scoped define`() {
+        val reg = RuntimeValueRegistry()
+
+        val libAId = VersionedIdentifier().also { it.id = "LibA" }
+        val libBId = VersionedIdentifier().also { it.id = "LibB" }
+        reg.putDefine("Foo", "valueA", null, libAId)
+        reg.putDefine("Foo", "valueB", null, libBId)
+
+        val foundA = reg.find("Foo", "LibA")
+        assertNotNull(foundA)
+        assertEquals("valueA", foundA!!.value)
+        assertEquals("LibA", foundA.libraryName)
+
+        val foundB = reg.find("Foo", "LibB")
+        assertNotNull(foundB)
+        assertEquals("valueB", foundB!!.value)
+        assertEquals("LibB", foundB.libraryName)
+    }
+
+    @Test
+    fun `find with library name returns null for wrong library`() {
+        val reg = RuntimeValueRegistry()
+
+        val libId = VersionedIdentifier().also { it.id = "MyLib" }
+        reg.putDefine("Target", "present", null, libId)
+
+        assertNull(reg.find("Target", "OtherLib"))
+    }
+
+    @Test
+    fun `onExpressionDefEvaluated captures define under correct library`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        val reg = handler.runtimeRegistry
+
+        val elm =
+            ExpressionDef().also {
+                it.name = "LibDefine"
+                it.locator = "1:1-1:10"
+            }
+        val libId =
+            VersionedIdentifier().also {
+                it.id = "Common"
+                it.version = "1.0.0"
+            }
+        val library = Library().also { it.identifier = libId }
+        val state = State(Environment(null))
+        state.init(library)
+        handler.onExpressionDefEvaluated(elm, state, "cross-lib-value")
+
+        // Unqualified find should work
+        assertEquals("cross-lib-value", reg.find("LibDefine")!!.value)
+        // Library-qualified find should also work
+        assertEquals("cross-lib-value", reg.find("LibDefine", "Common")!!.value)
+    }
+
+    @Test
+    fun `onExpressionDefEvaluated does not interfere with stack variables`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        val reg = handler.runtimeRegistry
+
+        reg.putStackVariable("tempVar", "stack-value", null)
+
+        val elm =
+            ExpressionDef().also {
+                it.name = "SomeDefine"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onExpressionDefEvaluated(elm, state, "define-value")
+
+        // Stack variable should still be findable
+        assertEquals("stack-value", reg.find("tempVar")!!.value)
+        // Define should also be findable
+        assertEquals("define-value", reg.find("SomeDefine")!!.value)
+    }
+
+    @Test
+    fun `find with library name falls back to unqualified when libraryName is null`() {
+        val reg = RuntimeValueRegistry()
+
+        val libId = VersionedIdentifier().also { it.id = "MyLib" }
+        reg.putDefine("MyDefine", "lib-value", null, libId)
+
+        // Find without library should still work (backward compat)
+        val found = reg.find("MyDefine")
+        assertNotNull(found)
+        assertEquals("lib-value", found!!.value)
     }
 }

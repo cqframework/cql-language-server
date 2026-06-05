@@ -928,6 +928,7 @@ class DebugServerTest {
         lrm: LibraryResolutionManager,
     ) : CqlDebugServer(cm, cs, ig, lrm) {
         fun callTerminateServer(restart: Any?) = terminateServer(restart)
+
         fun callExitServer(exitCode: Int) = exitServer(exitCode)
     }
 

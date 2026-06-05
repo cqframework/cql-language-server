@@ -178,7 +178,7 @@ object CqlEvaluator {
         fhirContext: FhirContext,
         evaluationSettings: EvaluationSettings,
         parameters: List<ParameterRequest>,
-    ): MutableMap<String, Any?>? {
+    ): Map<String, Any?>? {
         if (parameters.isEmpty()) return null
 
         val defines =
@@ -207,7 +207,7 @@ object CqlEvaluator {
                     )
             val result = mutableMapOf<String, Any?>()
             parameters.forEachIndexed { i, p ->
-                result[p.parameterName] = libResult.expressionResults["__v${i}__"]?.value
+                libResult.expressionResults["__v${i}__"]?.value?.let { result[p.parameterName] = it }
             }
             result
         } catch (e: Exception) {
@@ -474,7 +474,7 @@ object CqlEvaluator {
                             contextParameter =
                                 Pair(
                                     libraryRequest.context.contextName,
-                                    libraryRequest.context.contextValue as Any,
+                                    libraryRequest.context.contextValue,
                                 )
                         }
                         library(identifier)

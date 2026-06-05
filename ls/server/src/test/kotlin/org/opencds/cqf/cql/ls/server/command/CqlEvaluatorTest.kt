@@ -179,7 +179,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(42, result!!["MyInt"])
+        assertEquals("42", result!!["MyInt"].toString())
     }
 
     @Test
@@ -190,7 +190,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals("HMO", result!!["Plan"])
+        assertEquals("HMO", result!!["Plan"].toString())
     }
 
     @Test
@@ -201,7 +201,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(true, result!!["Flag"])
+        assertEquals("true", result!!["Flag"].toString())
     }
 
     @Test
@@ -212,7 +212,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(java.math.BigDecimal("3.14"), result!!["Rate"])
+        assertEquals("3.14", result!!["Rate"].toString())
     }
 
     @Test
@@ -225,9 +225,9 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(1, result!!["A"])
-        assertEquals("hello", result["B"])
-        assertEquals(false, result["C"])
+        assertEquals("1", result!!["A"].toString())
+        assertEquals("hello", result["B"].toString())
+        assertEquals("false", result["C"].toString())
     }
 
     @Test

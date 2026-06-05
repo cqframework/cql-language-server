@@ -471,9 +471,10 @@ class StreamingBreakpointHandlerTest {
         handler.primaryLibraryId = "MyPrimaryLib"
         handler.stepIn()
 
-        val fhirHelpersLib = Library().also {
-            it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
-        }
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
         val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
         repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
 
@@ -487,9 +488,10 @@ class StreamingBreakpointHandlerTest {
         handler.primaryLibraryId = "MyPrimaryLib"
         handler.stepIn()
 
-        val primaryLib = Library().also {
-            it.identifier = VersionedIdentifier().also { vi -> vi.id = "MyPrimaryLib" }
-        }
+        val primaryLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "MyPrimaryLib" }
+            }
         val state = State(Environment(null)).also { it.init(primaryLib) }
         repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
 

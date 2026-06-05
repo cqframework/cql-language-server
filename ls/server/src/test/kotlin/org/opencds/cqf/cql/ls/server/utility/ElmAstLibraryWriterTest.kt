@@ -78,8 +78,9 @@ class ElmAstLibraryWriterTest {
 
         // Parent label should still include the codes: summary (displayValue() guard)
         val retrieveLines = result.lines().filter { it.contains("Retrieve") }
-        val codesRetrieve = retrieveLines.firstOrNull { it.contains("codes:") }
-            ?: throw AssertionError("No Retrieve with codes: found in AST. All Retrieves:\n${retrieveLines.joinToString("\n")}")
+        val codesRetrieve =
+            retrieveLines.firstOrNull { it.contains("codes:") }
+                ?: throw AssertionError("No Retrieve with codes: found in AST. All Retrieves:\n${retrieveLines.joinToString("\n")}")
         assertTrue(codesRetrieve.contains("codes:"), "Parent label should retain codes: summary: $codesRetrieve")
     }
 

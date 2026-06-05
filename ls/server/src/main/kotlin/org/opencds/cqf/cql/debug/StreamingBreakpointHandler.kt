@@ -5,10 +5,10 @@ import org.hl7.elm.r1.ExpressionDef
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
+import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import org.slf4j.LoggerFactory
 
 class StreamingBreakpointHandler : BreakpointHandler {
     private val breakpointLines = mutableSetOf<Int>()
@@ -46,8 +46,10 @@ class StreamingBreakpointHandler : BreakpointHandler {
     @Volatile
     var onPauseCallback: ((Element, State) -> Unit)? = null
 
-    /** ExpressionDef results from completed evaluations, keyed by define name. */
-    val evaluatedValuesByName = ConcurrentHashMap<String, Any?>()
+    val runtimeRegistry = RuntimeValueRegistry()
+
+    /** Maps define / stack variable names to their CQL type strings, populated by the server at launch. */
+    var variableTypeMap: Map<String, String> = emptyMap()
 
     /** Full FHIR resources for contexts, keyed by context name (e.g., "Patient"). */
     val contextResourcesByName = ConcurrentHashMap<String, Any?>()
@@ -168,10 +170,28 @@ class StreamingBreakpointHandler : BreakpointHandler {
             lastPausedElm = elm
             lastPausedState = state
 
-            // Capture full context resources
+            runtimeRegistry.clearStackVariables()
+
+            // Parameters are loaded by CqlDebugServer.onPauseCallback (which has access to
+            // parameterMetadata for type info). Nothing to do here.
+
+            // Capture context values — prefer full resource from contextResourcesByName (if pre-populated
+            // externally or from a previous capture), fall back to the raw state context value.
             state.contextValues.forEach { (key, value) ->
                 if (value is org.hl7.fhir.instance.model.api.IBase) {
                     contextResourcesByName[key] = value
+                }
+            }
+            state.contextValues.forEach { (key, value) ->
+                val displayValue = contextResourcesByName[key] ?: value
+                runtimeRegistry.loadContextResource(key, displayValue, null)
+            }
+
+            // Capture stack variables (frame locals, aliases, let clauses)
+            for (frame in state.stack) {
+                for (v in frame.variables) {
+                    val name = v.name ?: "(unnamed)"
+                    runtimeRegistry.putStackVariable(name, v.value, null)
                 }
             }
 
@@ -182,14 +202,22 @@ class StreamingBreakpointHandler : BreakpointHandler {
         return BreakpointAction.CONTINUE
     }
 
+    override fun onExpressionDefEvaluated(
+        elm: ExpressionDef,
+        state: State,
+        value: Any?,
+    ) {
+        elm.name?.let {
+            val defineType = variableTypeMap[it]
+            runtimeRegistry.putDefine(it, value, defineType, state.getCurrentLibrary()?.identifier)
+        }
+    }
+
     override fun onAfterExpression(
         elm: Element,
         state: State,
         value: Any?,
     ) {
-        if (elm is ExpressionDef) {
-            elm.name?.let { evaluatedValuesByName[it] = value }
-        }
         val locator = elm.locator
         if (locator != null) {
             val range = parseLocatorRange(locator)
@@ -212,7 +240,8 @@ class StreamingBreakpointHandler : BreakpointHandler {
             if (range != null && (line + 1 to col) in range) {
                 // If the paused expression is an ExpressionDef, return its value if available
                 if (pausedElm is ExpressionDef) {
-                    return evaluatedValuesByName[pausedElm.name]
+                    val rv = runtimeRegistry.find(pausedElm.name ?: "")
+                    if (rv != null) return rv.value
                 }
             }
         }
@@ -239,9 +268,17 @@ class StreamingBreakpointHandler : BreakpointHandler {
     }
 
     private fun clearEvaluatedValues() {
-        evaluatedValuesByName.clear()
+        evaluatedValuesByLocator.clear()
+    }
+
+    fun reset() {
+        runtimeRegistry.reset()
         contextResourcesByName.clear()
         evaluatedValuesByLocator.clear()
+        lastPausedLine = -1
+        lastPausedElm = null
+        lastPausedElmIdentity = null
+        lastPausedState = null
     }
 
     companion object {
@@ -286,11 +323,13 @@ class StreamingBreakpointHandler : BreakpointHandler {
                 val state = lastPausedState
                 if (elm != null && state != null) {
                     onPauseCallback?.invoke(elm, state)
-                    log.debug("waitForResume: onPauseCallback done [+{}ms] lastPausedElm.localId [{}] lastPausedElm.locator[{}] lastPausedState[{}]",
+                    log.debug(
+                        "waitForResume: onPauseCallback done [+{}ms] lastPausedElm.localId [{}] lastPausedElm.locator[{}] lastPausedState[{}]",
                         (System.nanoTime() - t0) / 1_000_000,
                         lastPausedElm?.localId,
                         lastPausedElm?.locator,
-                        lastPausedState)
+                        lastPausedState,
+                    )
                 }
             }
             resumeLatch.await()

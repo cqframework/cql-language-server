@@ -1,8 +1,11 @@
 package org.opencds.cqf.cql.debug
 
+import ca.uhn.fhir.context.BaseRuntimeChildDefinition
 import ca.uhn.fhir.context.BaseRuntimeElementDefinition
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
+import org.cqframework.cql.cql2elm.CqlCompiler
+import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
 import org.eclipse.lsp4j.debug.Capabilities
@@ -39,16 +42,34 @@ import org.eclipse.lsp4j.debug.VariablesResponse
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
+import org.hl7.cql.model.ClassType
+import org.hl7.elm.r1.AggregateExpression
+import org.hl7.elm.r1.AliasedQuerySource
+import org.hl7.elm.r1.BinaryExpression
+import org.hl7.elm.r1.Case
+import org.hl7.elm.r1.Combine
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.First
 import org.hl7.elm.r1.FunctionDef
+import org.hl7.elm.r1.FunctionRef
+import org.hl7.elm.r1.If
 import org.hl7.elm.r1.Interval
 import org.hl7.elm.r1.IntervalTypeSpecifier
+import org.hl7.elm.r1.Last
+import org.hl7.elm.r1.LetClause
 import org.hl7.elm.r1.ListTypeSpecifier
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.NamedTypeSpecifier
+import org.hl7.elm.r1.NaryExpression
 import org.hl7.elm.r1.ParameterDef
 import org.hl7.elm.r1.Property
+import org.hl7.elm.r1.Query
+import org.hl7.elm.r1.Repeat
+import org.hl7.elm.r1.Slice
+import org.hl7.elm.r1.Sort
+import org.hl7.elm.r1.TernaryExpression
+import org.hl7.elm.r1.UnaryExpression
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.opencds.cqf.cql.engine.execution.State
@@ -68,6 +89,7 @@ import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
@@ -112,7 +134,17 @@ open class CqlDebugServer(
     private val fhirContext: FhirContext by lazy { FhirContext.forR4() }
 
     private val varRefs = mutableMapOf<Int, Any>()
+    private val varRefTypes = mutableMapOf<Int, String>()
     private var nextVarRef = 1000
+
+    @Volatile
+    private var launchCompiler: CqlCompiler? = null
+
+    @Volatile
+    private var variableTypeMap: Map<String, String> = emptyMap()
+
+    @Volatile
+    protected var launchArgs: DebugLaunchArgs? = null
 
     fun enableStreaming() {
         streamingHandler = StreamingBreakpointHandler()
@@ -276,11 +308,12 @@ open class CqlDebugServer(
             setState(ServerState.RUNNING)
             CompletableFuture.runAsync {
                 try {
-                    val launchArgs = Gson().fromJson(Gson().toJson(args), DebugLaunchArgs::class.java)
+                    val parsedArgs = Gson().fromJson(Gson().toJson(args), DebugLaunchArgs::class.java)
+                    this.launchArgs = parsedArgs
                     if (streamingHandler != null) {
-                        executeLaunchStreaming(launchArgs)
+                        executeLaunchStreaming(parsedArgs)
                     } else {
-                        executeLaunch(launchArgs)
+                        executeLaunch(parsedArgs)
                     }
                 } catch (e: Exception) {
                     log.error("CQL debug launch failed", e)
@@ -302,6 +335,8 @@ open class CqlDebugServer(
         val expressions = detailedResult.response.results.firstOrNull()?.expressions ?: emptyList()
 
         val compiler = compilationManager.compile(libraryUri)
+        launchCompiler = compiler
+        variableTypeMap = buildVariableTypeMap(compiler)
         val locatorMap: Map<String, String?> =
             compiler?.compiledLibrary?.library
                 ?.statements?.def
@@ -330,7 +365,14 @@ open class CqlDebugServer(
     protected open fun executeLaunchStreaming(args: DebugLaunchArgs) {
         val handler = streamingHandler ?: error("Streaming handler not initialized")
 
-        handler.onPauseCallback = { elm, _ ->
+        handler.reset()
+
+        handler.onPauseCallback = { elm, state ->
+            val paramTypes =
+                parameterMetadata.mapValues { (_, metadata) ->
+                    metadata.associate { it.name to it.type }
+                }
+            handler.runtimeRegistry.loadParameters(state, paramTypes)
             val locator = elm.locator
             if (locator != null && StreamingBreakpointHandler.parseLine(locator) != null) {
                 this.client.join().stopped(
@@ -351,7 +393,11 @@ open class CqlDebugServer(
             handler.applyCqlStepLineFilter(CqlStepPositionCollector.collect(parseTree))
         }
 
-        handler.primaryLibraryId = compilationManager.compile(libraryUri)?.library?.identifier?.id
+        val compiler = compilationManager.compile(libraryUri)
+        handler.primaryLibraryId = compiler?.library?.identifier?.id
+        launchCompiler = compiler
+        variableTypeMap = buildVariableTypeMap(compiler)
+        handler.variableTypeMap = variableTypeMap
 
         handler.stepGranularity =
             if (args.stepGranularity?.equals("ast", ignoreCase = true) == true) {
@@ -503,18 +549,18 @@ open class CqlDebugServer(
         val scopes = mutableListOf<Scope>()
 
         val hasParameters = parameterMetadata.isNotEmpty() || (state?.parameters?.isNotEmpty() == true)
-
-        if (hasParameters) {
-            scopes.add(
-                Scope().also { s ->
-                    s.name = "Parameters"
-                    s.variablesReference = 2
-                    s.isExpensive = false
-                },
-            )
-        }
+        val hasTestCase = launchArgs?.testCaseUri != null || launchArgs?.testCaseName != null
 
         if (handler != null) {
+            if (hasParameters) {
+                scopes.add(
+                    Scope().also { s ->
+                        s.name = "Parameters"
+                        s.variablesReference = 2
+                        s.isExpensive = false
+                    },
+                )
+            }
             scopes.add(
                 Scope().also { s ->
                     s.name = "Locals"
@@ -524,11 +570,20 @@ open class CqlDebugServer(
             )
             scopes.add(
                 Scope().also { s ->
-                    s.name = "Included Functions"
+                    s.name = "Resolved Defines"
                     s.variablesReference = 3
                     s.isExpensive = false
                 },
             )
+            if (hasTestCase) {
+                scopes.add(
+                    Scope().also { s ->
+                        s.name = "Test Case"
+                        s.variablesReference = 4
+                        s.isExpensive = false
+                    },
+                )
+            }
         } else {
             scopes.add(
                 Scope().also { s ->
@@ -537,6 +592,15 @@ open class CqlDebugServer(
                     s.isExpensive = false
                 },
             )
+            if (hasTestCase) {
+                scopes.add(
+                    Scope().also { s ->
+                        s.name = "Test Case"
+                        s.variablesReference = 4
+                        s.isExpensive = false
+                    },
+                )
+            }
         }
 
         return CompletableFuture.completedFuture(
@@ -557,21 +621,16 @@ open class CqlDebugServer(
                 nextLibraryGroupRef = 100000
                 libraryRefToName.clear()
 
-                if (state != null) {
-                    // Group parameters by library prefix
-                    val groups = mutableMapOf<String, MutableList<Pair<String, Any?>>>()
-                    for ((fullName, value) in state.parameters) {
-                        val (library, paramName) = splitParameterName(fullName)
-                        groups.getOrPut(library) { mutableListOf() }.add(paramName to value)
-                    }
+                val groups = handler.runtimeRegistry.getParametersByLibrary()
+                if (groups.isNotEmpty()) {
                     return CompletableFuture.completedFuture(
                         VariablesResponse().also { it.variables = buildLibraryGroupVariables(groups).toTypedArray() },
                     )
                 } else {
-                    // No state yet - show parameter metadata grouped by library
-                    val groups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
+                    // No parameters loaded yet - show metadata grouped by library
+                    val metadataGroups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
                     return CompletableFuture.completedFuture(
-                        VariablesResponse().also { it.variables = buildMetadataLibraryGroupVariables(groups).toTypedArray() },
+                        VariablesResponse().also { it.variables = buildMetadataLibraryGroupVariables(metadataGroups).toTypedArray() },
                     )
                 }
             }
@@ -580,30 +639,25 @@ open class CqlDebugServer(
             if (args.variablesReference >= 100000) {
                 val libraryName = getLibraryNameForRef(args.variablesReference)
                 if (libraryName != null) {
-                    if (state != null) {
-                        val gson = Gson()
-                        val filteredParams =
-                            state.parameters.filter { (fullName, _) ->
-                                val (lib, _) = splitParameterName(fullName)
-                                lib == libraryName
-                            }
-                        for ((fullName, value) in filteredParams) {
-                            val (_, paramName) = splitParameterName(fullName)
+                    val gson = Gson()
+                    val libParams = handler.runtimeRegistry.getParametersByLibrary()[libraryName]
+                    if (libParams != null) {
+                        for (param in libParams.sortedBy { it.name }) {
                             val paramType =
-                                findLaunchParameterType(paramName)
-                                    ?: findParameterMetadata(libraryName, paramName)?.type
+                                param.type
+                                    ?: findParameterMetadata(libraryName, param.name)?.type
                             vars.add(
                                 Variable().also { v ->
-                                    v.name = paramName
-                                    v.value = formatVariableValue(value, gson)
+                                    v.name = param.name
+                                    v.value = formatVariableValue(param.value, gson)
                                     v.type = paramType
-                                    v.variablesReference = registerIfExpandable(value)
+                                    v.variablesReference = registerIfExpandable(param.value)
                                 },
                             )
                         }
                     } else {
-                        // Return metadata for this library
-                        parameterMetadata[libraryName]?.forEach { metadata ->
+                        // No runtime values yet - show metadata defaults
+                        parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
                             vars.add(
                                 Variable().also { v ->
                                     v.name = metadata.name
@@ -623,48 +677,58 @@ open class CqlDebugServer(
             if (args.variablesReference >= 1000) {
                 val value = varRefs[args.variablesReference]
                 if (value != null) {
-                    vars.addAll(childrenOf(value))
+                    vars.addAll(childrenOf(value, varRefTypes[args.variablesReference]))
                 }
                 return CompletableFuture.completedFuture(
                     VariablesResponse().also { it.variables = vars.toTypedArray() },
                 )
             }
 
+            // Test Case scope
+            if (args.variablesReference == 4) {
+                val testCaseList = buildTestCaseVariables()
+                return CompletableFuture.completedFuture(
+                    VariablesResponse().also { it.variables = testCaseList.toTypedArray() },
+                )
+            }
+
             if (state != null) {
                 val gson = Gson()
+                val registry = handler.runtimeRegistry
 
                 if (args.variablesReference == 1) {
                     varRefs.clear()
+                    varRefTypes.clear()
                     nextVarRef = 1000
-                    for (frame in state.stack) {
-                        for (v in frame.variables) {
-                            vars.add(
-                                Variable().also {
-                                    it.name = v.name ?: "(unnamed)"
-                                    it.value = formatVariableValue(v.value, gson)
-                                    it.variablesReference = registerIfExpandable(v.value)
-                                },
-                            )
-                        }
-                    }
-                    for ((key, value) in state.contextValues) {
-                        val fullResource = handler.getContextResource(key) ?: value
+                    for (sv in registry.getStackVariables().sortedBy { it.name }) {
                         vars.add(
                             Variable().also {
-                                it.name = key
-                                it.value = formatVariableValue(fullResource, gson)
-                                it.variablesReference = registerIfExpandable(fullResource)
+                                it.name = sv.name
+                                it.value = formatVariableValue(sv.value, gson)
+                                it.type = variableTypeMap[sv.name]
+                                it.variablesReference = registerIfExpandable(sv.value, variableTypeMap[sv.name])
+                            },
+                        )
+                    }
+                    for (cr in registry.getContextResources().sortedBy { it.name }) {
+                        vars.add(
+                            Variable().also {
+                                it.name = cr.name
+                                it.value = formatVariableValue(cr.value, gson)
+                                it.type = variableTypeMap[cr.name]
+                                it.variablesReference = registerIfExpandable(cr.value, variableTypeMap[cr.name])
                             },
                         )
                     }
                 }
                 if (args.variablesReference == 3) {
-                    for ((name, value) in handler.evaluatedValuesByName.entries.sortedBy { it.key }) {
+                    for (d in registry.getDefines().sortedBy { it.name }) {
                         vars.add(
                             Variable().also {
-                                it.name = name
-                                it.value = formatVariableValue(value, gson)
-                                it.variablesReference = registerIfExpandable(value)
+                                it.name = d.name
+                                it.value = formatVariableValue(d.value, gson)
+                                it.type = variableTypeMap[d.name]
+                                it.variablesReference = registerIfExpandable(d.value, variableTypeMap[d.name])
                             },
                         )
                     }
@@ -691,7 +755,7 @@ open class CqlDebugServer(
         if (args.variablesReference >= 100000) {
             val libraryName = getLibraryNameForRef(args.variablesReference)
             if (libraryName != null) {
-                parameterMetadata[libraryName]?.forEach { metadata ->
+                parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
                     vars.add(
                         Variable().also { v ->
                             v.name = metadata.name
@@ -707,11 +771,20 @@ open class CqlDebugServer(
             )
         }
 
+        // Non-streaming mode: Test Case scope
+        if (args.variablesReference == 4) {
+            val testCaseList = buildTestCaseVariables()
+            return CompletableFuture.completedFuture(
+                VariablesResponse().also { it.variables = testCaseList.toTypedArray() },
+            )
+        }
+
         val expressionVars =
             snapshots.take(currentIndex + 1).map { snap ->
                 Variable().also {
                     it.name = snap.name
                     it.value = snap.value
+                    it.type = variableTypeMap[snap.name]
                     it.evaluateName = snap.name
                     it.variablesReference = 0
                 }
@@ -730,8 +803,8 @@ open class CqlDebugServer(
         }
     }
 
-    private fun buildLibraryGroupVariables(groups: Map<String, List<Pair<String, Any?>>>): List<Variable> {
-        return groups.map { (library, params) ->
+    private fun buildLibraryGroupVariables(groups: Map<String, List<RuntimeValue>>): List<Variable> {
+        return groups.toSortedMap().map { (library, params) ->
             val ref = nextLibraryGroupRef++
             libraryRefToName["ref_$ref"] = library
             Variable().also { v ->
@@ -744,7 +817,7 @@ open class CqlDebugServer(
     }
 
     private fun buildMetadataLibraryGroupVariables(groups: Map<String, List<Pair<String, Any?>>>): List<Variable> {
-        return groups.map { (library, _) ->
+        return groups.toSortedMap().map { (library, _) ->
             val ref = nextLibraryGroupRef++
             libraryRefToName["ref_$ref"] = library
             val paramCount = groups[library]?.size ?: 0
@@ -784,33 +857,14 @@ open class CqlDebugServer(
                 val state = handler.lastPausedState
                 if (state != null) {
                     val gson = Gson()
-                    // Search stack variables by name
-                    for (frame in state.stack) {
-                        for (v in frame.variables) {
-                            if (v.name == args.expression) {
-                                return@supplyAsync EvaluateResponse().also {
-                                    it.result = formatVariableValue(v.value, gson)
-                                    it.variablesReference = registerIfExpandable(v.value)
-                                }
-                            }
-                        }
-                    }
-                    // Search context values
-                    val contextVal = state.contextValues[args.expression]
-                    if (contextVal != null) {
-                        // Try to get full resource from handler first
-                        val fullResource = handler.getContextResource(args.expression) ?: contextVal
+                    val registry = handler.runtimeRegistry
+
+                    // Unified registry lookup (stack vars → defines → context resources → parameters)
+                    val registryResult = registry.find(args.expression)
+                    if (registryResult != null) {
                         return@supplyAsync EvaluateResponse().also {
-                            it.result = formatVariableValue(fullResource, gson)
-                            it.variablesReference = registerIfExpandable(fullResource)
-                        }
-                    }
-                    // Search evaluated define results (stored by onAfterExpression)
-                    val defineValue = handler.evaluatedValuesByName[args.expression]
-                    if (defineValue != null) {
-                        return@supplyAsync EvaluateResponse().also {
-                            it.result = formatVariableValue(defineValue, gson)
-                            it.variablesReference = registerIfExpandable(defineValue)
+                            it.result = formatVariableValue(registryResult.value, gson)
+                            it.variablesReference = registerIfExpandable(registryResult.value)
                         }
                     }
 
@@ -869,11 +923,11 @@ open class CqlDebugServer(
                                 // Check if paused on a Property element - try to resolve its value
                                 val pausedElm = handler.lastPausedElm
                                 if (pausedElm is Property && state != null) {
-                                    val propertyValue = resolvePropertyValue(pausedElm, state, gson)
-                                    if (propertyValue != null) {
+                                    val propertyResult = resolvePropertyValue(pausedElm, state, gson)
+                                    if (propertyResult != null) {
                                         return@supplyAsync EvaluateResponse().also {
-                                            it.result = propertyValue
-                                            it.variablesReference = 0
+                                            it.result = propertyResult.displayString
+                                            it.variablesReference = registerIfExpandable(propertyResult.expandableValue)
                                         }
                                     }
                                 }
@@ -889,6 +943,9 @@ open class CqlDebugServer(
                         }
                     }
                 }
+                // VarRefs tree fallback for expanded FHIR/list child variables (e.g. name[0], given[0])
+                val varRefResult = findInVarRefs(args.expression)
+                if (varRefResult != null) return@supplyAsync varRefResult
                 notAvailable()
             }
         }
@@ -1011,6 +1068,8 @@ open class CqlDebugServer(
         value: Any?,
         gson: Gson,
     ): String {
+        val unwrapped = value
+        if (unwrapped !== value) return formatVariableValue(unwrapped, gson)
         return when (value) {
             null -> "null"
             is String -> "\"$value\""
@@ -1030,6 +1089,16 @@ open class CqlDebugServer(
         }
     }
 
+    private fun formatPropertyValue(
+        value: Any?,
+        gson: Gson,
+    ): String {
+        if (value is org.hl7.fhir.r4.model.Period) {
+            return formatPeriodAsInterval(value)
+        }
+        return formatVariableValue(value, gson)
+    }
+
     private fun isExpandable(value: Any?): Boolean {
         if (value == null) return false
         if (value is IPrimitiveType<*>) return false
@@ -1038,14 +1107,21 @@ open class CqlDebugServer(
         return false
     }
 
-    private fun registerIfExpandable(value: Any?): Int {
+    private fun registerIfExpandable(
+        value: Any?,
+        typeName: String? = null,
+    ): Int {
         if (!isExpandable(value)) return 0
         val ref = nextVarRef++
         varRefs[ref] = value!!
+        if (typeName != null) varRefTypes[ref] = typeName
         return ref
     }
 
-    private fun childrenOf(value: Any): List<Variable> {
+    private fun childrenOf(
+        value: Any,
+        typeName: String? = null,
+    ): List<Variable> {
         val gson = Gson()
         return when (value) {
             is IBase -> {
@@ -1054,7 +1130,12 @@ open class CqlDebugServer(
                 }
                 val elementDef = fhirContext.getElementDefinition(value.javaClass) as? BaseRuntimeElementDefinition<*>
                 if (elementDef != null) {
-                    val children = elementDef?.children ?: emptyList()
+                    val children: List<BaseRuntimeChildDefinition> =
+                        if (typeName != null) {
+                            profileChildrenOf(typeName, elementDef)
+                        } else {
+                            elementDef.children ?: emptyList()
+                        }
                     children.flatMap { child ->
                         val accessor = child.getAccessor()
                         val childValues: List<IBase> =
@@ -1100,47 +1181,83 @@ open class CqlDebugServer(
         }
     }
 
+    /**
+     * Searches the expanded variable tree (varRefs) for a child variable whose display
+     * name matches [name]. This handles copy-value for expanded FHIR resource children
+     * (e.g., "name[0]", "given[0]") that are not top-level stack/context/define values.
+     */
+    private fun findInVarRefs(name: String): EvaluateResponse? {
+        for ((ref, value) in varRefs) {
+            val result = findInVarRefsChildren(name, value, varRefTypes[ref])
+            if (result != null) return result
+        }
+        return null
+    }
+
+    private fun findInVarRefsChildren(
+        name: String,
+        value: Any,
+        typeName: String?,
+    ): EvaluateResponse? {
+        val children = childrenOf(value, typeName)
+        for (child in children) {
+            if (child.name == name) {
+                return EvaluateResponse().also {
+                    it.result = child.value
+                    it.variablesReference = child.variablesReference
+                }
+            }
+            if (child.variablesReference > 0) {
+                val childValue = varRefs[child.variablesReference] ?: continue
+                val childType = varRefTypes[child.variablesReference]
+                val result = findInVarRefsChildren(name, childValue, childType)
+                if (result != null) return result
+            }
+        }
+        return null
+    }
+
     private fun resolvePropertyValue(
         property: Property,
         state: org.opencds.cqf.cql.engine.execution.State,
         gson: Gson,
-    ): String? {
-        // property.source is an Element (often ExpressionRef), property.path is the property name
-        val sourceName = (property.source as? org.hl7.elm.r1.ExpressionRef)?.name ?: return null
+    ): PropertyResult? {
+        val sourceRef = property.source as? org.hl7.elm.r1.ExpressionRef ?: return null
+        val sourceName = sourceRef.name ?: return null
+        val sourceLibrary = sourceRef.libraryName
+        val propertyName = property.path ?: return null
 
-        // Look up source from contextValues
         val sourceValue =
-            state.contextValues[sourceName]
+            streamingHandler?.runtimeRegistry?.find(sourceName, sourceLibrary)?.value
+                ?: state.contextValues[sourceName]
                 ?: state.stack.flatMap { frame -> frame.variables }.find { v -> v.name == sourceName }?.value
                 ?: return null
 
         return when (sourceValue) {
             is List<*> -> {
-                val items =
+                val pairs =
                     sourceValue.mapNotNull { item ->
                         if (item is IBase) {
                             val id = getResourceId(item)
-                            val period = extractPeriodFromResource(item)
-                            if (period != null) {
-                                """{"id": "$id", "period": "$period"}"""
-                            } else {
-                                null
-                            }
+                            val pv = extractPropertyValue(item, propertyName)
+                            if (pv != null) id to pv else null
                         } else {
                             null
                         }
                     }
-                if (items.isEmpty()) "[]" else "[${items.joinToString(", ")}]"
+                if (pairs.isEmpty()) {
+                    null
+                } else {
+                    val display =
+                        pairs.joinToString(", ") { (id, pv) ->
+                            "$id: ${formatPropertyValue(pv, gson)}"
+                        }
+                    PropertyResult("[$display]", sourceValue as List<*>)
+                }
             }
             is IBase -> {
-                // Always return as list for consistency
-                val id = getResourceId(sourceValue)
-                val period = extractPeriodFromResource(sourceValue)
-                if (period != null) {
-                    """[{"id": "$id", "period": "$period"}]"""
-                } else {
-                    "[]"
-                }
+                val pv = extractPropertyValue(sourceValue, propertyName) ?: return null
+                PropertyResult(formatPropertyValue(pv, gson), pv)
             }
             else -> null
         }
@@ -1154,50 +1271,49 @@ open class CqlDebugServer(
     ): EvaluateResponse? {
         return when (category) {
             is CursorCategory.AliasReference -> {
-                val value =
-                    state.stack.flatMap { it.variables }.find { it.name == category.name }?.value
-                        ?: handler.getContextResource(category.name)
-                if (value != null) {
+                val rv = handler.runtimeRegistry.find(category.name)
+                if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = formatVariableValue(value, gson)
-                        it.variablesReference = registerIfExpandable(value)
+                        it.result = formatVariableValue(rv.value, gson)
+                        it.variablesReference = registerIfExpandable(rv.value)
                     }
                 } else {
                     null
                 }
             }
             is CursorCategory.OperandRef -> {
-                val value = state.stack.flatMap { it.variables }.find { it.name == category.name }?.value
-                if (value != null) {
+                val rv = handler.runtimeRegistry.find(category.name)
+                if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = formatVariableValue(value, gson)
-                        it.variablesReference = registerIfExpandable(value)
+                        it.result = formatVariableValue(rv.value, gson)
+                        it.variablesReference = registerIfExpandable(rv.value)
                     }
                 } else {
                     null
                 }
             }
             is CursorCategory.ExpressionRef -> {
-                if (category.libraryName == null) {
-                    val value = handler.evaluatedValuesByName[category.name]
-                    if (value != null) {
-                        EvaluateResponse().also {
-                            it.result = formatVariableValue(value, gson)
-                            it.variablesReference = registerIfExpandable(value)
-                        }
+                val rv =
+                    if (category.libraryName != null) {
+                        handler.runtimeRegistry.find(category.name, category.libraryName)
                     } else {
-                        null
+                        handler.runtimeRegistry.find(category.name)
+                    }
+                if (rv != null) {
+                    EvaluateResponse().also {
+                        it.result = formatVariableValue(rv.value, gson)
+                        it.variablesReference = registerIfExpandable(rv.value)
                     }
                 } else {
                     null
                 }
             }
             is CursorCategory.ParameterRef -> {
-                val value = state.parameters[category.name]
-                if (value != null) {
+                val rv = handler.runtimeRegistry.find(category.name)
+                if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = formatVariableValue(value, gson)
-                        it.variablesReference = registerIfExpandable(value)
+                        it.result = formatVariableValue(rv.value, gson)
+                        it.variablesReference = registerIfExpandable(rv.value)
                     }
                 } else {
                     null
@@ -1208,8 +1324,8 @@ open class CqlDebugServer(
                     val result = resolvePropertyFromAlias(category.aliasName, category.name, state, handler, gson)
                     if (result != null) {
                         EvaluateResponse().also {
-                            it.result = result
-                            it.variablesReference = 0
+                            it.result = result.displayString
+                            it.variablesReference = registerIfExpandable(result.expandableValue)
                         }
                     } else {
                         null
@@ -1222,48 +1338,56 @@ open class CqlDebugServer(
         }
     }
 
+    private data class PropertyResult(val displayString: String, val expandableValue: Any?)
+
     private fun resolvePropertyFromAlias(
         aliasName: String,
         propertyName: String,
         state: State,
         handler: StreamingBreakpointHandler,
         gson: Gson,
-    ): String? {
+    ): PropertyResult? {
         val sourceValue =
-            state.stack.flatMap { it.variables }.find { it.name == aliasName }?.value
-                ?: state.contextValues[aliasName]
-                ?: handler.getContextResource(aliasName)
+            handler.runtimeRegistry.find(aliasName)?.value
                 ?: return null
 
         return when (sourceValue) {
             is List<*> -> {
-                val items =
+                val pairs =
                     sourceValue.mapNotNull { item ->
                         if (item is IBase) {
-                            extractPropertyJson(item, propertyName)
+                            val id = getResourceId(item)
+                            val pv = extractPropertyValue(item, propertyName)
+                            if (pv != null) id to pv else null
                         } else {
                             null
                         }
                     }
-                if (items.isEmpty()) "[]" else "[${items.joinToString(", ")}]"
+                if (pairs.isEmpty()) {
+                    null
+                } else {
+                    val display =
+                        pairs.joinToString(", ") { (id, pv) ->
+                            "$id: ${formatPropertyValue(pv, gson)}"
+                        }
+                    PropertyResult("[$display]", sourceValue as List<*>)
+                }
             }
-            is IBase -> extractPropertyJson(sourceValue, propertyName) ?: "[]"
+            is IBase -> {
+                val pv = extractPropertyValue(sourceValue, propertyName) ?: return null
+                PropertyResult(formatPropertyValue(pv, gson), pv)
+            }
             else -> null
         }
     }
 
-    private fun extractPropertyJson(
+    private fun extractPropertyValue(
         resource: IBase,
         propertyName: String,
-    ): String? {
+    ): Any? {
         return try {
-            val periodMethod = resource.javaClass.getMethod("get${propertyName.replaceFirstChar { it.uppercase() }}")
-            val period = periodMethod.invoke(resource)
-            if (period is org.hl7.fhir.r4.model.Period) {
-                formatPeriodAsInterval(period)
-            } else {
-                null
-            }
+            val getter = resource.javaClass.getMethod("get${propertyName.replaceFirstChar { it.uppercase() }}")
+            getter.invoke(resource)
         } catch (_: Exception) {
             null
         }
@@ -1281,33 +1405,68 @@ open class CqlDebugServer(
         }
     }
 
-    private fun extractPeriodFromResource(resource: IBase): String? {
-        return try {
-            when (resource) {
-                is org.hl7.fhir.r4.model.Encounter -> {
-                    val period = resource.period
-                    if (period != null) {
-                        formatPeriodAsInterval(period)
-                    } else {
-                        null
-                    }
-                }
-                is org.hl7.fhir.r4.model.Resource -> {
-                    // Try to access period via reflection for other FHIR R4 resources
-                    val periodField = resource.javaClass.getMethod("getPeriod")
-                    val period = periodField.invoke(resource) as? org.hl7.fhir.r4.model.Period
-                    if (period != null) formatPeriodAsInterval(period) else null
-                }
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
+    private fun getFhirContextForVersion(version: String?): FhirContext {
+        return when (version?.uppercase()) {
+            "DSTU3", "STU3" -> FhirContext.forDstu3()
+            "R5" -> FhirContext.forR5()
+            else -> fhirContext
         }
     }
 
+    private fun buildTestCaseVariables(): List<Variable> {
+        val testCaseList = mutableListOf<Variable>()
+        val testCaseUri = launchArgs?.testCaseUri
+        if (!testCaseUri.isNullOrEmpty()) {
+            try {
+                // testCaseUri is a well-formed file: URI from VS Code launch args
+                val testCasePath = Paths.get(URI.create(testCaseUri))
+                if (Files.exists(testCasePath) && Files.isDirectory(testCasePath)) {
+                    val context = getFhirContextForVersion(launchArgs?.fhirVersion)
+                    val gson = Gson()
+                    Files.newDirectoryStream(testCasePath) { path ->
+                        val name = path.fileName.toString().lowercase()
+                        name.endsWith(".json") || name.endsWith(".xml")
+                    }.use { stream ->
+                        for (file in stream) {
+                            try {
+                                val content = Files.readString(file)
+                                val fileName = file.fileName.toString().lowercase()
+                                val parser = if (fileName.endsWith(".json")) context.newJsonParser() else context.newXmlParser()
+                                val resource = parser.parseResource(content)
+                                val resourceType = resource.fhirType()
+                                val idPart = resource.idElement?.idPart
+                                val varName =
+                                    if (!idPart.isNullOrEmpty()) {
+                                        "$resourceType/$idPart"
+                                    } else {
+                                        file.fileName.toString().removeSuffix(".json").removeSuffix(".xml")
+                                    }
+                                testCaseList.add(
+                                    Variable().also {
+                                        it.name = varName
+                                        it.value = formatVariableValue(resource, gson)
+                                        it.type = resourceType
+                                        it.variablesReference = registerIfExpandable(resource)
+                                    },
+                                )
+                            } catch (_: Exception) {
+                                // Ignore malformed files
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Ignore path resolution errors
+            }
+        }
+        testCaseList.sortBy { it.name }
+        return testCaseList
+    }
+
     private fun formatPeriodAsInterval(period: org.hl7.fhir.r4.model.Period): String {
-        val start = period.start?.toString() ?: "null"
-        val end = period.end?.toString() ?: "null"
+        val gson = Gson()
+        val start = period.start?.let { formatVariableValue(it, gson) } ?: "null"
+        val end = period.end?.let { formatVariableValue(it, gson) } ?: "null"
         return "[$start, $end)"
     }
 
@@ -1501,5 +1660,117 @@ open class CqlDebugServer(
             )
         }
         return CompletableFuture.completedFuture(null)
+    }
+
+    // ---- Type resolution helpers ----
+
+    /**
+     * Builds a map of variable/alias name to fully qualified type name from the ELM library.
+     * Covers expression definitions and aliased query sources in the primary library.
+     * TODO: resolve types from included libraries.
+     */
+    private fun buildVariableTypeMap(compiler: CqlCompiler?): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        val library = compiler?.library ?: return map
+        val defs = library.statements?.def ?: return map
+        for (def in defs) {
+            if (def.name != null && def.resultType != null) {
+                map[def.name!!] = def.resultType.toString()
+            }
+            collectAliasTypes(def.expression, map)
+        }
+        return map
+    }
+
+    private fun collectAliasTypes(
+        elm: Element?,
+        map: MutableMap<String, String>,
+    ) {
+        if (elm == null) return
+        when (elm) {
+            is AliasedQuerySource -> {
+                if (elm.alias != null && elm.resultType != null) {
+                    map[elm.alias!!] = elm.resultType.toString()
+                }
+                collectAliasTypes(elm.expression, map)
+            }
+            is LetClause -> {
+                if (elm.identifier != null && elm.resultType != null) {
+                    map[elm.identifier!!] = elm.resultType.toString()
+                }
+            }
+            is Query -> {
+                elm.source.forEach { collectAliasTypes(it, map) }
+                elm.relationship.forEach { collectAliasTypes(it, map) }
+                elm.let?.forEach { collectAliasTypes(it, map) }
+            }
+            is UnaryExpression -> collectAliasTypes(elm.operand, map)
+            is BinaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
+            is TernaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
+            is NaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
+            is AggregateExpression -> collectAliasTypes(elm.source, map)
+            is Last -> collectAliasTypes(elm.source, map)
+            is First -> collectAliasTypes(elm.source, map)
+            is If -> {
+                collectAliasTypes(elm.then, map)
+                collectAliasTypes(elm.`else`, map)
+                collectAliasTypes(elm.condition, map)
+            }
+            is FunctionRef -> elm.operand.forEach { collectAliasTypes(it, map) }
+            is Sort -> collectAliasTypes(elm.source, map)
+            is Slice -> collectAliasTypes(elm.source, map)
+            is Case -> {
+                collectAliasTypes(elm.comparand, map)
+                elm.caseItem?.forEach { item ->
+                    collectAliasTypes(item.then, map)
+                    collectAliasTypes(item.`when`, map)
+                }
+                collectAliasTypes(elm.`else`, map)
+            }
+            is Repeat -> {
+                collectAliasTypes(elm.source, map)
+                collectAliasTypes(elm.element, map)
+            }
+            is Property -> collectAliasTypes(elm.source, map)
+            is Combine -> collectAliasTypes(elm.source, map)
+        }
+    }
+
+    /**
+     * Strips a "list<...>" wrapper from a type name for profile resolution.
+     * "list<QICore.ObservationCancelled>" → "QICore.ObservationCancelled"
+     * "QICore.ObservationCancelled" → "QICore.ObservationCancelled"
+     */
+    private fun unwrapListType(typeName: String): String {
+        val trimmed = typeName.trim()
+        return if (trimmed.startsWith("list<", ignoreCase = true) && trimmed.endsWith(">")) {
+            trimmed.removePrefix("list<").removeSuffix(">").trim()
+        } else {
+            trimmed
+        }
+    }
+
+    /**
+     * Resolves a profile's ClassType from the cached compiler and returns the
+     * HAPI child definitions in profile-specified order. Falls back to HAPI's
+     * own child list when the type is not a known profile.
+     */
+    private fun profileChildrenOf(
+        typeName: String,
+        elementDef: BaseRuntimeElementDefinition<*>,
+    ): List<BaseRuntimeChildDefinition> {
+        val compiler = launchCompiler ?: return elementDef.children ?: emptyList()
+        val modelManager = compiler.libraryManager?.modelManager ?: return elementDef.children ?: emptyList()
+        val profileName = unwrapListType(typeName)
+        val model =
+            modelManager.globalCache.values.firstOrNull { it.resolveTypeName(profileName) != null }
+                ?: return elementDef.children ?: emptyList()
+        val classType =
+            model.resolveTypeName(profileName) as? ClassType
+                ?: return elementDef.children ?: emptyList()
+        val allChildren = elementDef.children ?: emptyList()
+        return classType.sortedElements.mapNotNull { element ->
+            allChildren.firstOrNull { it.elementName == element.name }
+        }
     }
 }
