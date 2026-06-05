@@ -3,7 +3,7 @@
          xmlns:a="urn:hl7-org:cql-annotations:r1"
          xmlns:t="urn:hl7-org:elm-types:r1"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" localId="0">
-    <annotation signatureLevel="All" translatorOptions="EnableAnnotations,EnableLocators,DisableListDemotion,DisableListPromotion,EnableResultTypes" translatorVersion="4.8.1" xsi:type="a:CqlToElmInfo"/>
+    <annotation signatureLevel="All" translatorOptions="EnableAnnotations,EnableLocators,DisableListDemotion,DisableListPromotion,EnableResultTypes" translatorVersion="4.8.2" xsi:type="a:CqlToElmInfo"/>
     <annotation xsi:type="a:Annotation">
         <a:s r="208">
             <a:s>library One</a:s>

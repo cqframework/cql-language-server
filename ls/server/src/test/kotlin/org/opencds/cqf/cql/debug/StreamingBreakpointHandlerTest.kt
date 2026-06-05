@@ -1,11 +1,16 @@
 package org.opencds.cqf.cql.debug
 
 import org.hl7.elm.r1.Element
+import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.ExpressionRef
+import org.hl7.elm.r1.FunctionRef
 import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.execution.Environment
@@ -209,10 +214,12 @@ class StreamingBreakpointHandlerTest {
         val elm1 = makeElement("10:1-10:15")
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
 
-        // Same breakpoint line after resume in CONTINUE mode should not re-pause
+        // Same breakpoint line after resume in CONTINUE mode should re-pause
+        // because resume resets lastPausedLine, allowing the breakpoint to fire
+        // again (the call stack context may have changed).
         handler.resume()
         val elm2 = makeElement("10:20-10:25")
-        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
     }
 
     @Test
@@ -497,5 +504,134 @@ class StreamingBreakpointHandlerTest {
 
         val elm = makeElement("10:1-10:20")
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    // -- defineCallStack / lastPausedCallStack ------------------------------
+
+    @Test
+    fun `onExpressionDefEntered pushes to defineCallStack`() {
+        val handler = StreamingBreakpointHandler()
+        val def = ExpressionDef().also { it.name = "Foo" }
+        val ref = ExpressionRef().also { it.name = "Foo" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(def, ref, state)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<Pair<ExpressionDef, Element?>>
+        assertEquals(1, stack.size)
+        assertEquals("Foo", stack.last().first.name)
+        assertSame(ref, stack.last().second)
+    }
+
+    @Test
+    fun `onExpressionDefEvaluated pops from defineCallStack`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val defB = ExpressionDef().also { it.name = "B" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, null, state)
+        handler.onExpressionDefEvaluated(defB, state, null)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<Pair<ExpressionDef, Element?>>
+        assertEquals(1, stack.size)
+        assertEquals("A", stack.last().first.name)
+    }
+
+    @Test
+    fun `defineCallStack empty after full evaluation`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val defB = ExpressionDef().also { it.name = "B" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, null, state)
+        handler.onExpressionDefEvaluated(defB, state, null)
+        handler.onExpressionDefEvaluated(defA, state, null)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<Pair<ExpressionDef, Element?>>
+        assertTrue(stack.isEmpty())
+    }
+
+    @Test
+    fun `lastPausedCallStack captured at pause`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val defB = ExpressionDef().also { it.name = "B" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, null, state)
+
+        // Pause on an element
+        val elm = makeElement("10:1-10:20")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        val snapshot = handler.lastPausedCallStack
+        assertEquals(2, snapshot.size)
+        assertEquals("A", snapshot[0]?.first?.name)
+        assertEquals("B", snapshot[1]?.first?.name)
+    }
+
+    @Test
+    fun `lastPausedCallStack not mutated by subsequent steps`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+
+        val elm = makeElement("10:1-10:20")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        val snapshot = handler.lastPausedCallStack
+        assertEquals(1, snapshot.size)
+
+        // After snapshot, pop — snapshot should be unchanged
+        handler.onExpressionDefEvaluated(defA, state, null)
+        assertEquals(1, handler.lastPausedCallStack.size, "snapshot should not change when stack mutates")
+    }
+
+    @Test
+    fun `lastPausedCallStack is empty when paused outside any define`() {
+        val handler = StreamingBreakpointHandler()
+        val state = makeState()
+
+        val elm = makeElement("5:1-5:10")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        assertTrue(handler.lastPausedCallStack.isEmpty())
+    }
+
+    @Test
+    fun `callSite captured in lastPausedCallStack`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val ref = ExpressionRef().also { it.name = "A"; it.locator = "1:1-1:10" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, ref, state)
+
+        val elm = makeElement("5:1-5:10")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        val snapshot = handler.lastPausedCallStack
+        assertEquals(1, snapshot.size)
+        assertSame(ref, snapshot[0].second)
     }
 }

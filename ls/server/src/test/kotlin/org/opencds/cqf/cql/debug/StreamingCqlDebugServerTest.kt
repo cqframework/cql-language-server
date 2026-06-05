@@ -10,10 +10,16 @@ import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
 import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.ExpressionRef
+import org.hl7.elm.r1.FunctionRef
 import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.VersionedIdentifier
+import org.hl7.fhir.instance.model.api.IBase
+import org.hl7.fhir.r4.model.Meta
 import org.hl7.fhir.r4.model.Patient
+import org.hl7.fhir.r4.model.Encounter
+import com.google.gson.Gson
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -174,6 +180,103 @@ class StreamingCqlDebugServerTest {
         val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
         assertEquals(1, response.totalFrames)
         assertEquals(1, response.stackFrames[0].line) // default 0 → DAP line 1
+    }
+
+    @Test
+    fun `stackTrace single define returns 1 frame`() {
+        val server = setupServer()
+        server.setLaunchUri("file:///test.cql")
+        val handler = server.testHandler
+
+        val def = ExpressionDef().also { it.name = "Initial Population"; it.locator = "5:1-5:30" }
+        val state = State(Environment(null))
+        handler.onExpressionDefEntered(def, null, state)
+
+        pauseAt(handler, 5, 1, 5, 30, "Initial Population")
+
+        val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
+        assertEquals(1, response.totalFrames)
+        assertEquals("Initial Population", response.stackFrames[0].name)
+        assertEquals(5, response.stackFrames[0].line)
+    }
+
+    @Test
+    fun `stackTrace nested defines returns 2 frames`() {
+        val server = setupServer()
+        server.setLaunchUri("file:///test.cql")
+        val handler = server.testHandler
+
+        val outerDef = ExpressionDef().also { it.name = "Outer"; it.locator = "1:1-1:30" }
+        val innerDef = ExpressionDef().also { it.name = "Inner"; it.locator = "2:1-2:30" }
+        val ref = ExpressionRef().also { it.name = "Inner"; it.locator = "1:15-1:20" }
+        val state = State(Environment(null))
+
+        handler.onExpressionDefEntered(outerDef, null, state)
+        handler.onExpressionDefEntered(innerDef, ref, state)
+
+        handler.stepIn()
+        val pausedElm = ExpressionDef().also { it.name = "Inner"; it.locator = "2:5-2:20" }
+        handler.onBeforeExpression(pausedElm, state)
+
+        val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
+        assertEquals(2, response.totalFrames)
+
+        // Frame 0 = innermost (Inner)
+        assertEquals("Inner", response.stackFrames[0].name)
+        assertEquals(2, response.stackFrames[0].line)
+        assertEquals(5, response.stackFrames[0].column)
+
+        // Frame 1 = caller (Outer), position at call site
+        assertEquals("Outer", response.stackFrames[1].name)
+        assertEquals(1, response.stackFrames[1].line)  // call site line from expression ref
+        assertEquals(15, response.stackFrames[1].column)  // call site col from expression ref
+    }
+
+    @Test
+    fun `stackTrace function call frame`() {
+        val server = setupServer()
+        server.setLaunchUri("file:///test.cql")
+        val handler = server.testHandler
+
+        val funcDef = ExpressionDef().also { it.name = "MyFunc"; it.locator = "3:1-3:30" }
+        val funcRef = FunctionRef().also { it.name = "MyFunc"; it.locator = "1:20-1:25" }
+        val state = State(Environment(null))
+
+        handler.onExpressionDefEntered(funcDef, funcRef, state)
+
+        handler.stepIn()
+        val pausedElm = Literal().also { it.locator = "3:10-3:15" }
+        handler.onBeforeExpression(pausedElm, state)
+
+        val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
+        assertEquals(1, response.totalFrames)
+        assertEquals("MyFunc", response.stackFrames[0].name)
+    }
+
+    @Test
+    fun `stackTrace totalFrames matches stackFrames length`() {
+        val server = setupServer()
+        server.setLaunchUri("file:///test.cql")
+        val handler = server.testHandler
+
+        val defA = ExpressionDef().also { it.name = "A"; it.locator = "1:1-1:30" }
+        val defB = ExpressionDef().also { it.name = "B"; it.locator = "2:1-2:30" }
+        val defC = ExpressionDef().also { it.name = "C"; it.locator = "3:1-3:30" }
+        val refB = ExpressionRef().also { it.name = "B"; it.locator = "1:10-1:11" }
+        val refC = ExpressionRef().also { it.name = "C"; it.locator = "2:10-2:11" }
+        val state = State(Environment(null))
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, refB, state)
+        handler.onExpressionDefEntered(defC, refC, state)
+
+        handler.stepIn()
+        val pausedElm = Literal().also { it.locator = "3:10-3:15" }
+        handler.onBeforeExpression(pausedElm, state)
+
+        val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
+        assertEquals(3, response.totalFrames)
+        assertEquals(response.totalFrames, response.stackFrames.size)
     }
 
     // -- scopes -------------------------------------------------------------
@@ -1117,7 +1220,13 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
-    fun `variables expand Patient to show id birthDate name children`() {
+    fun `variables expand Patient to show id birthDate name meta children`() {
+        // Note: this test exercises the typeName=null (fallback) path because the test
+        // server has no real CQL compiler, so variableTypeMap["Patient"] is null and
+        // profileChildrenOf is not invoked. The profiled path (typeName="Patient") is
+        // covered by integration tests where a real CQL library with a Patient define
+        // is compiled. This test verifies that inherited FHIR fields (id, meta) are
+        // visible when they are populated on the resource.
         val server = setupServer()
         val handler = server.testHandler
 
@@ -1133,6 +1242,7 @@ class StreamingCqlDebugServerTest {
         patient.id = "pat-123"
         patient.birthDate = java.util.Calendar.getInstance().apply { set(1990, 1, 1) }.time
         patient.addName().setFamily("Smith").addGiven("John")
+        patient.meta = Meta().also { it.versionId = "1" }
 
         state.setContextValue("Patient", patient.id!!)
         handler.contextResourcesByName["Patient"] = patient
@@ -1152,6 +1262,7 @@ class StreamingCqlDebugServerTest {
         assertTrue(childNames.contains("id"), "Children should include 'id', got $childNames")
         assertTrue(childNames.contains("birthDate"), "Children should include 'birthDate', got $childNames")
         assertTrue(childNames.contains("name"), "Children should include 'name', got $childNames")
+        assertTrue(childNames.contains("meta"), "Children should include inherited 'meta', got $childNames")
     }
 
     @Test
@@ -1799,5 +1910,53 @@ class StreamingCqlDebugServerTest {
         val found = reg.find("MyDefine")
         assertNotNull(found)
         assertEquals("lib-value", found!!.value)
+    }
+
+    @Test
+    fun `formatVariableValue on Enumeration returns lowercased FHIR code`() {
+        val server = makeServer()
+        val gson = Gson()
+
+        // Use getStatusElement() which returns the Enumeration<EncounterStatus> wrapper
+        // (an IPrimitiveType), not the raw Java enum.
+        val encounter = Encounter()
+        encounter.status = Encounter.EncounterStatus.FINISHED
+        val statusValue = encounter.getStatusElement()
+
+        val method = CqlDebugServer::class.java.getDeclaredMethod(
+            "formatVariableValue", Any::class.java, Gson::class.java
+        )
+        method.isAccessible = true
+        val result = method.invoke(server, statusValue, gson) as String
+
+        assertEquals("finished", result)
+    }
+
+    @Test
+    fun `extractPropertyValue returns IPrimitiveType wrapper not raw enum`() {
+        val server = makeServer()
+        val gson = Gson()
+
+        val encounter = Encounter()
+        encounter.status = Encounter.EncounterStatus.FINISHED
+
+        val extractMethod = CqlDebugServer::class.java.getDeclaredMethod(
+            "extractPropertyValue", IBase::class.java, String::class.java
+        )
+        extractMethod.isAccessible = true
+        val result = extractMethod.invoke(server, encounter, "status")
+
+        // Should return Enumeration<EncounterStatus> (an IPrimitiveType), not EncounterStatus.FINISHED
+        assertTrue(result is org.hl7.fhir.instance.model.api.IPrimitiveType<*>,
+            "Expected IPrimitiveType wrapper, got ${result?.javaClass?.name}")
+
+        // Verify it formats as lowercase FHIR code
+        val formatMethod = CqlDebugServer::class.java.getDeclaredMethod(
+            "formatVariableValue", Any::class.java, Gson::class.java
+        )
+        formatMethod.isAccessible = true
+        val formatted = formatMethod.invoke(server, result, gson) as String
+
+        assertEquals("finished", formatted)
     }
 }

@@ -508,15 +508,15 @@ open class CqlDebugServer(
     override fun stackTrace(args: StackTraceArguments): CompletableFuture<StackTraceResponse> {
         val handler = streamingHandler
         if (handler != null) {
-            val frame =
+            val frames =
                 when (handler.stepGranularity) {
-                    StreamingBreakpointHandler.StepGranularity.CQL -> buildCqlStackFrame(handler)
-                    StreamingBreakpointHandler.StepGranularity.AST -> buildAstStackFrame(handler)
+                    StreamingBreakpointHandler.StepGranularity.CQL -> buildCqlStackFrames(handler)
+                    StreamingBreakpointHandler.StepGranularity.AST -> buildCqlStackFrames(handler)
                 }
             return CompletableFuture.completedFuture(
                 StackTraceResponse().also {
-                    it.stackFrames = arrayOf(frame)
-                    it.totalFrames = 1
+                    it.stackFrames = frames.toTypedArray()
+                    it.totalFrames = frames.size
                 },
             )
         }
@@ -1074,6 +1074,7 @@ open class CqlDebugServer(
             null -> "null"
             is String -> "\"$value\""
             is Boolean, is Number -> value.toString()
+            is IPrimitiveType<*> -> value.getValueAsString() ?: "null"
             is IBase ->
                 try {
                     fhirContext.newJsonParser().encodeToString(value)
@@ -1385,11 +1386,22 @@ open class CqlDebugServer(
         resource: IBase,
         propertyName: String,
     ): Any? {
+        val capitalized = propertyName.replaceFirstChar { it.uppercase() }
         return try {
-            val getter = resource.javaClass.getMethod("get${propertyName.replaceFirstChar { it.uppercase() }}")
-            getter.invoke(resource)
+            // Prefer get<Name>Element() which returns the IPrimitiveType wrapper
+            // (e.g. Enumeration<EncounterStatus>) rather than the raw Java enum.
+            // This ensures formatVariableValue can use getValueAsString() to get
+            // the canonical FHIR code string (lowercase) instead of gson serializing
+            // the Java enum name (UPPERCASE).
+            val elementGetter = resource.javaClass.getMethod("get${capitalized}Element")
+            elementGetter.invoke(resource)
         } catch (_: Exception) {
-            null
+            try {
+                val getter = resource.javaClass.getMethod("get$capitalized")
+                getter.invoke(resource)
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 
@@ -1605,39 +1617,42 @@ open class CqlDebugServer(
         return this.serverState
     }
 
-    private fun buildCqlStackFrame(handler: StreamingBreakpointHandler): StackFrame {
-        val elm = handler.lastPausedElm
-        val locator = elm?.locator
-        val bounds = parseLocatorLines(locator)
-        val name = extractExpressionName(elm)
+    private fun buildCqlStackFrames(handler: StreamingBreakpointHandler): List<StackFrame> {
         val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
-        return StackFrame().also { f ->
+        val source = sourceUri?.let { Source().also { s -> s.path = it } }
+        val reversed = handler.lastPausedCallStack.asReversed()
+        val frames = mutableListOf<StackFrame>()
+
+        val topElm = handler.lastPausedElm
+        val topBounds = parseLocatorLines(topElm?.locator)
+        frames.add(StackFrame().also { f ->
             f.id = 0
-            f.name = name ?: "(unknown)"
-            f.line = bounds.startLine + 1
-            f.column = bounds.startChar + 1
-            f.endLine = bounds.endLine + 1
-            f.endColumn = bounds.endChar + 1
-            f.source = sourceUri?.let { Source().also { s -> s.path = it } }
+            f.name = reversed.firstOrNull()?.first?.name ?: extractExpressionName(topElm) ?: "(unknown)"
+            f.line = topBounds.startLine + 1
+            f.column = topBounds.startChar + 1
+            f.endLine = topBounds.endLine + 1
+            f.endColumn = topBounds.endChar + 1
+            f.instructionPointerReference = topElm?.localId
+            f.source = source
+        })
+
+        for (i in 1 until reversed.size) {
+            val def = reversed[i].first
+            val callSiteElm = reversed[i - 1].second ?: def
+            val bounds = parseLocatorLines(callSiteElm.locator)
+            frames.add(StackFrame().also { f ->
+                f.id = i
+                f.name = def.name ?: "(unknown)"
+                f.line = bounds.startLine + 1
+                f.column = bounds.startChar + 1
+                f.endLine = bounds.endLine + 1
+                f.endColumn = bounds.endChar + 1
+                f.source = source
+            })
         }
+        return frames
     }
 
-    private fun buildAstStackFrame(handler: StreamingBreakpointHandler): StackFrame {
-        val elm = handler.lastPausedElm
-        val locator = elm?.locator
-        val bounds = parseLocatorLines(locator)
-        val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
-        return StackFrame().also { f ->
-            f.id = 0
-            f.name = elm?.javaClass?.simpleName ?: "(unknown)"
-            f.line = bounds.startLine + 1
-            f.column = bounds.startChar + 1
-            f.endLine = bounds.endLine + 1
-            f.endColumn = bounds.endChar + 1
-            f.instructionPointerReference = elm?.localId
-            f.source = sourceUri?.let { Source().also { s -> s.path = it } }
-        }
-    }
 
     @JsonRequest("setStepGranularity")
     fun setStepGranularity(args: Map<String, Any>): CompletableFuture<Void> {
@@ -1769,8 +1784,12 @@ open class CqlDebugServer(
             model.resolveTypeName(profileName) as? ClassType
                 ?: return elementDef.children ?: emptyList()
         val allChildren = elementDef.children ?: emptyList()
-        return classType.sortedElements.mapNotNull { element ->
+        // Use allElements (not sortedElements) so inherited fields like id/meta/extension are included.
+        val profileMatched = classType.allElements.sortedBy { it.name }.mapNotNull { element ->
             allChildren.firstOrNull { it.elementName == element.name }
         }
+        val matchedNames = profileMatched.map { it.elementName }.toSet()
+        val unmatched = allChildren.filter { it.elementName !in matchedNames }
+        return profileMatched + unmatched
     }
 }

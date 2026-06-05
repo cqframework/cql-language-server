@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.debug
 
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.FunctionDef
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
@@ -36,6 +37,12 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
     @Volatile
     var lastPausedState: State? = null
+        private set
+
+    private val defineCallStack = ArrayDeque<Pair<ExpressionDef, Element?>>()
+
+    @Volatile
+    var lastPausedCallStack: List<Pair<ExpressionDef, Element?>> = emptyList()
         private set
 
     private var resumeLatch = CountDownLatch(0)
@@ -128,6 +135,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
     fun resume() {
         stepMode = StepMode.CONTINUE
+        lastPausedLine = -1
         lastPausedElmIdentity = null
         clearEvaluatedValues()
         resumeLatch.countDown()
@@ -169,6 +177,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
             lastPausedElmIdentity = elm
             lastPausedElm = elm
             lastPausedState = state
+            lastPausedCallStack = defineCallStack.toList()
 
             runtimeRegistry.clearStackVariables()
 
@@ -202,11 +211,17 @@ class StreamingBreakpointHandler : BreakpointHandler {
         return BreakpointAction.CONTINUE
     }
 
+    override fun onExpressionDefEntered(elm: ExpressionDef, callSite: Element?, state: State) {
+        defineCallStack.addLast(Pair(elm, callSite))
+    }
+
     override fun onExpressionDefEvaluated(
         elm: ExpressionDef,
         state: State,
         value: Any?,
     ) {
+        defineCallStack.removeLastOrNull()
+        if (elm is FunctionDef) return
         elm.name?.let {
             val defineType = variableTypeMap[it]
             runtimeRegistry.putDefine(it, value, defineType, state.getCurrentLibrary()?.identifier)
@@ -279,6 +294,8 @@ class StreamingBreakpointHandler : BreakpointHandler {
         lastPausedElm = null
         lastPausedElmIdentity = null
         lastPausedState = null
+        defineCallStack.clear()
+        lastPausedCallStack = emptyList()
     }
 
     companion object {

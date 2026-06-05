@@ -4,8 +4,6 @@ import org.cqframework.cql.gen.cqlParser
 import org.cqframework.cql.gen.cqlParser.AliasedQuerySourceContext
 import org.cqframework.cql.gen.cqlParser.LetClauseItemContext
 import org.cqframework.cql.gen.cqlParser.QueryContext
-import org.cqframework.cql.gen.cqlParser.WithClauseContext
-import org.cqframework.cql.gen.cqlParser.WithoutClauseContext
 
 object CqlStepPositionCollector {
     fun collect(parseTree: cqlParser.LibraryContext): Set<Int> {
@@ -27,6 +25,12 @@ object CqlStepPositionCollector {
                 is cqlParser.QueryContext -> collectQuery(child, lines)
                 is cqlParser.ExpressionContext -> collectExpression(child, lines)
                 is cqlParser.ExpressionTermContext -> collectExpressionTerm(child, lines)
+                is cqlParser.RetrieveContext -> child.start?.line?.let { lines.add(it) }
+                is cqlParser.QueryInclusionClauseContext -> {
+                    child.withClause()?.expression()?.start?.line?.let { lines.add(it) }
+                    child.withoutClause()?.expression()?.start?.line?.let { lines.add(it) }
+                }
+                is ParserRuleContext -> collectFromContext(child, lines)
             }
         }
     }
@@ -78,14 +82,7 @@ object CqlStepPositionCollector {
         exprCtx: cqlParser.ExpressionContext,
         lines: MutableSet<Int>,
     ) {
-        for (i in 0 until exprCtx.childCount) {
-            val child = exprCtx.getChild(i)
-            if (child is cqlParser.ExpressionTermContext) {
-                collectExpressionTerm(child, lines)
-            } else if (child is cqlParser.ExpressionContext) {
-                collectExpression(child, lines)
-            }
-        }
+        collectFromContext(exprCtx, lines)
     }
 
     private fun collectExpressionTerm(
@@ -124,11 +121,9 @@ object CqlStepPositionCollector {
 
         queryCtx.aggregateClause()?.expression()?.start?.line?.let { lines.add(it) }
 
-        for (i in 0 until queryCtx.childCount) {
-            val child = queryCtx.getChild(i)
-            when (child) {
-                is WithClauseContext -> child.expression()?.start?.line?.let { lines.add(it) }
-                is WithoutClauseContext -> child.expression()?.start?.line?.let { lines.add(it) }
+        queryCtx.sortClause()?.let { sort ->
+            for (item in sort.sortByItem()) {
+                item.expressionTerm()?.start?.line?.let { lines.add(it) }
             }
         }
 
