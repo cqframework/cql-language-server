@@ -88,6 +88,10 @@ class RuntimeValueRegistry {
         state: State,
         paramTypes: Map<String, Map<String, String>> = emptyMap(),
     ) {
+        if (state.parameters.isEmpty()) {
+            log.debug("loadParameters: state.parameters is empty, skipping")
+            return
+        }
         if (parametersLoaded) {
             log.debug("loadParameters: already loaded, skipping")
             return
@@ -100,8 +104,11 @@ class RuntimeValueRegistry {
                 libraryName = fullName.substring(0, dotIndex)
                 paramName = fullName.substring(dotIndex + 1)
             } else {
-                libraryName = "(Global)"
                 paramName = fullName
+                libraryName = paramTypes.entries
+                    .firstOrNull { (_, params) -> params.containsKey(paramName) }
+                    ?.key
+                    ?: "(Global)"
             }
             val type = paramTypes[libraryName]?.get(paramName)
             val displayValue = value

@@ -1793,6 +1793,44 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
+    fun `loadParameters resolves unprefixed parameter names to the correct library`() {
+        val reg = RuntimeValueRegistry()
+        val state = State(Environment(null))
+        // Engine stores keys without library prefix (e.g. "Measurement Period" not "Lib.Measurement Period")
+        state.setParameters(null, mapOf("Measurement Period" to "Interval[2026-01-01, 2027-01-01]"))
+        val paramTypes = mapOf("MyLib" to mapOf("Measurement Period" to "Interval<DateTime>"))
+
+        reg.loadParameters(state, paramTypes)
+
+        val paramsByLib = reg.getParametersByLibrary()
+        assertEquals(1, paramsByLib.size)
+        assertTrue(paramsByLib.containsKey("MyLib"), "Should resolve to 'MyLib', not '(Global)'")
+        val param = paramsByLib["MyLib"]!!.first()
+        assertEquals("Measurement Period", param.name)
+        assertEquals("Interval<DateTime>", param.type)
+    }
+
+    @Test
+    fun `loadParameters does not block future loads when state is empty on first pause`() {
+        val reg = RuntimeValueRegistry()
+
+        // First call: empty state — should not set parametersLoaded = true
+        val emptyState = State(Environment(null))
+        reg.loadParameters(emptyState)
+        assertTrue(reg.getParametersByLibrary().isEmpty(), "No parameters after empty state")
+
+        // Second call: populated state — must load parameters
+        val fullState = State(Environment(null))
+        fullState.setParameters(null, mapOf("Threshold" to 50))
+        val types = mapOf("MyLib" to mapOf("Threshold" to "Integer"))
+        reg.loadParameters(fullState, types)
+
+        val params = reg.getParametersByLibrary()
+        assertEquals(1, params["MyLib"]?.size ?: 0, "Should load parameters on second call")
+        assertEquals(50, params["MyLib"]?.first()?.value)
+    }
+
+    @Test
     fun `parameter and stack variable with same name are independent`() {
         val reg = RuntimeValueRegistry()
 
