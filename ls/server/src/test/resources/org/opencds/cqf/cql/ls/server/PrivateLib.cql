@@ -5,3 +5,9 @@ private define "PrivateDef":
 
 define "PublicDef":
     1
+
+define private function "PrivateFn"(x Integer):
+    x * 2
+
+define function "PublicFn"(x Integer):
+    x

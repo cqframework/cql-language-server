@@ -1,5 +1,9 @@
 package org.opencds.cqf.cql.ls.server.service
 
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionList
+import org.eclipse.lsp4j.CompletionOptions
+import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
@@ -27,6 +31,7 @@ import org.opencds.cqf.cql.ls.server.event.DidChangeTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.event.DidCloseTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.event.DidOpenTextDocumentEvent
 import org.opencds.cqf.cql.ls.server.event.DidSaveTextDocumentEvent
+import org.opencds.cqf.cql.ls.server.provider.CompletionProvider
 import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
 import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
@@ -43,6 +48,7 @@ class CqlTextDocumentService(
     private val definitionProvider: DefinitionProvider,
     private val documentSymbolProvider: DocumentSymbolProvider,
     private val referencesProvider: ReferencesProvider,
+    private val completionProvider: CompletionProvider,
 ) : TextDocumentService {
     companion object {
         private val log = LoggerFactory.getLogger(CqlTextDocumentService::class.java)
@@ -58,6 +64,7 @@ class CqlTextDocumentService(
         serverCapabilities.setDefinitionProvider(true)
         serverCapabilities.setDocumentSymbolProvider(true)
         serverCapabilities.setReferencesProvider(true)
+        serverCapabilities.setCompletionProvider(CompletionOptions(false, listOf(".")))
     }
 
     // LSP4J declares CompletableFuture<Hover>, but hoverProvider returns Hover?.
@@ -105,6 +112,17 @@ class CqlTextDocumentService(
             }.exceptionally { notifyClient(it) }
         @Suppress("UNCHECKED_CAST")
         return result as CompletableFuture<List<Location>>
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    override fun completion(
+        params: CompletionParams,
+    ): CompletableFuture<Either<List<CompletionItem>, CompletionList>> {
+        val result =
+            CompletableFuture.supplyAsync<Either<List<CompletionItem>, CompletionList>> {
+                Either.forLeft(completionProvider.completion(params))
+            }.exceptionally { notifyClient(it) }
+        return result as CompletableFuture<Either<List<CompletionItem>, CompletionList>>
     }
 
     private fun <T> notifyClient(e: Throwable): T? {

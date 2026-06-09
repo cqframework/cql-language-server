@@ -457,7 +457,7 @@ class HoverProvider(
      * Resolves a property type from a [DataType] by name, handling both
      * [ClassType.allElements] and [TupleType.elements].
      */
-    fun resolvePropertyType(
+    internal fun resolvePropertyType(
         elementType: DataType,
         propertyName: String,
     ): DataType? {
@@ -497,7 +497,7 @@ class HoverProvider(
      * Resolves a library alias (e.g., "AHA") to a compiled library by looking up the
      * IncludeDef in the current library, locating the file via ContentService, and compiling it.
      */
-    private fun resolveIncludedLibrary(
+    internal fun resolveIncludedLibrary(
         alias: String,
         library: Library,
         uri: URI,
@@ -655,7 +655,7 @@ class HoverProvider(
      *      ANTLR tree for a nested [RetrieveContext] at any depth; falls back to
      *      ELM alias lookup when no retrieve is found.
      */
-    private fun resolveAliasTypeFromAntlr(
+    internal fun resolveAliasTypeFromAntlr(
         aqs: cqlParser.AliasedQuerySourceContext,
         library: Library,
     ): String? {
@@ -713,7 +713,7 @@ class HoverProvider(
      * Wraps [resolveAliasTypeFromAntlr] with the [findAliasedQuerySource] lookup.
      * Returns null for non-retrieve or complex expression-ref sources.
      */
-    private fun resolveAliasTypeFromAntlrWithContext(
+    internal fun resolveAliasTypeFromAntlrWithContext(
         parseTree: cqlParser.LibraryContext,
         position: Position,
         aliasName: String,

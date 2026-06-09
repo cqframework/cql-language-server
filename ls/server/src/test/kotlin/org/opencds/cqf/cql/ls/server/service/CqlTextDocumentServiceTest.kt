@@ -33,6 +33,7 @@ import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.ls.server.provider.CompletionProvider
 import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
 import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
@@ -51,14 +52,16 @@ class CqlTextDocumentServiceTest {
     ): CqlTextDocumentService {
         val cs = TestContentService()
         val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+        val hoverProvider = HoverProvider(compilationManager, cs)
         return CqlTextDocumentService(
             clientFuture,
-            HoverProvider(compilationManager, cs),
+            hoverProvider,
             FormattingProvider(cs),
             bus,
             DefinitionProvider(compilationManager, cs),
             DocumentSymbolProvider(compilationManager),
             ReferencesProvider(compilationManager, cs),
+            CompletionProvider(compilationManager, cs, hoverProvider),
         )
     }
 

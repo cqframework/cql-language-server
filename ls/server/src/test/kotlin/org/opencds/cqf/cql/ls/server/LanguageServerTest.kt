@@ -25,6 +25,7 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
+import org.opencds.cqf.cql.ls.server.provider.CompletionProvider
 import org.opencds.cqf.cql.ls.server.provider.DefinitionProvider
 import org.opencds.cqf.cql.ls.server.provider.DocumentSymbolProvider
 import org.opencds.cqf.cql.ls.server.provider.FormattingProvider
@@ -45,6 +46,7 @@ class LanguageServerTest {
             val eventBus = EventBus.builder().logger(JavaLogger("eventBus")).build()
             val cs = TestContentService()
             val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+            val hoverProvider = HoverProvider(compilationManager, cs)
             val languageClientFuture = CompletableFuture<LanguageClient>()
             // Complete with a mock so initialized() can call registerCapability/unregisterCapability.
             languageClientFuture.complete(Mockito.mock(LanguageClient::class.java))
@@ -56,12 +58,13 @@ class LanguageServerTest {
                     CqlWorkspaceService(languageClientFuture, commandsFuture, mutableListOf(), eventBus),
                     CqlTextDocumentService(
                         languageClientFuture,
-                        HoverProvider(compilationManager, cs),
+                        hoverProvider,
                         FormattingProvider(cs),
                         eventBus,
                         DefinitionProvider(compilationManager, cs),
                         DocumentSymbolProvider(compilationManager),
                         ReferencesProvider(compilationManager, cs),
+                        CompletionProvider(compilationManager, cs, hoverProvider),
                     ),
                 )
         }
@@ -71,6 +74,7 @@ class LanguageServerTest {
             val eventBus = EventBus.builder().build()
             val cs = TestContentService()
             val compilationManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+            val hoverProvider = HoverProvider(compilationManager, cs)
             val clientFuture = CompletableFuture<LanguageClient>()
             val commandsFuture = CompletableFuture.completedFuture<List<CommandContribution>>(emptyList())
             return CqlLanguageServer(
@@ -78,12 +82,13 @@ class LanguageServerTest {
                 CqlWorkspaceService(clientFuture, commandsFuture, mutableListOf(), eventBus),
                 CqlTextDocumentService(
                     clientFuture,
-                    HoverProvider(compilationManager, cs),
+                    hoverProvider,
                     FormattingProvider(cs),
                     eventBus,
                     DefinitionProvider(compilationManager, cs),
                     DocumentSymbolProvider(compilationManager),
                     ReferencesProvider(compilationManager, cs),
+                    CompletionProvider(compilationManager, cs, hoverProvider),
                 ),
             )
         }
