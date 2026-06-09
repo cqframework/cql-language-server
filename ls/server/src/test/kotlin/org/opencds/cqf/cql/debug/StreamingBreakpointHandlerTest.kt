@@ -473,7 +473,7 @@ class StreamingBreakpointHandlerTest {
     }
 
     @Test
-    fun `onBeforeExpression continues for elements from non-primary library`() {
+    fun `stepIn pauses for elements from non-primary library when stepping`() {
         val handler = StreamingBreakpointHandler()
         handler.primaryLibraryId = "MyPrimaryLib"
         handler.stepIn()
@@ -486,7 +486,65 @@ class StreamingBreakpointHandlerTest {
         repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
 
         val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `continueMode does not pause for elements from non-primary library without breakpoint`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.resume()
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        val elm = makeElement("10:1-10:20")
         assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `continueMode pauses for breakpoint in non-primary library`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.resume()
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        handler.breakpointsByLibrary["FHIRHelpers"] = mutableSetOf(10)
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `callStackEntry captures libraryId`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val def = ExpressionDef().also { it.name = "Foo" }
+        handler.onExpressionDefEntered(def, null, state)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
+        assertEquals(1, stack.size)
+        assertEquals("FHIRHelpers", stack.last().libraryId)
     }
 
     @Test
@@ -520,10 +578,10 @@ class StreamingBreakpointHandlerTest {
         val field = handler::class.java.getDeclaredField("defineCallStack")
         field.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val stack = field.get(handler) as ArrayDeque<Pair<ExpressionDef, Element?>>
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
         assertEquals(1, stack.size)
-        assertEquals("Foo", stack.last().first.name)
-        assertSame(ref, stack.last().second)
+        assertEquals("Foo", stack.last().def.name)
+        assertSame(ref, stack.last().callSite)
     }
 
     @Test
@@ -540,9 +598,9 @@ class StreamingBreakpointHandlerTest {
         val field = handler::class.java.getDeclaredField("defineCallStack")
         field.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val stack = field.get(handler) as ArrayDeque<Pair<ExpressionDef, Element?>>
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
         assertEquals(1, stack.size)
-        assertEquals("A", stack.last().first.name)
+        assertEquals("A", stack.last().def.name)
     }
 
     @Test
@@ -560,7 +618,7 @@ class StreamingBreakpointHandlerTest {
         val field = handler::class.java.getDeclaredField("defineCallStack")
         field.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val stack = field.get(handler) as ArrayDeque<Pair<ExpressionDef, Element?>>
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
         assertTrue(stack.isEmpty())
     }
 
@@ -581,8 +639,8 @@ class StreamingBreakpointHandlerTest {
 
         val snapshot = handler.lastPausedCallStack
         assertEquals(2, snapshot.size)
-        assertEquals("A", snapshot[0]?.first?.name)
-        assertEquals("B", snapshot[1]?.first?.name)
+        assertEquals("A", snapshot[0]?.def?.name)
+        assertEquals("B", snapshot[1]?.def?.name)
     }
 
     @Test
@@ -632,6 +690,6 @@ class StreamingBreakpointHandlerTest {
 
         val snapshot = handler.lastPausedCallStack
         assertEquals(1, snapshot.size)
-        assertSame(ref, snapshot[0].second)
+        assertSame(ref, snapshot[0].callSite)
     }
 }

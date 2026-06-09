@@ -5,8 +5,10 @@ import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
 import org.eclipse.lsp4j.debug.NextArguments
 import org.eclipse.lsp4j.debug.ScopesArguments
+import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
 import org.eclipse.lsp4j.debug.Source
+import org.eclipse.lsp4j.debug.SourceBreakpoint
 import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
 import org.hl7.elm.r1.ExpressionDef
@@ -20,7 +22,10 @@ import org.hl7.fhir.r4.model.Meta
 import org.hl7.fhir.r4.model.Patient
 import org.hl7.fhir.r4.model.Encounter
 import com.google.gson.Gson
+import java.net.URI
+import java.util.concurrent.ConcurrentHashMap
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -36,6 +41,7 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 
 class StreamingCqlDebugServerTest {
     /**
@@ -45,7 +51,7 @@ class StreamingCqlDebugServerTest {
      */
     private class TestStreamingServer(
         cm: CqlCompilationManager,
-        cs: ContentService,
+        private val cs: ContentService,
         ig: IgContextManager,
         lrm: LibraryResolutionManager,
     ) : CqlDebugServer(cm, cs, ig, lrm) {
@@ -57,6 +63,33 @@ class StreamingCqlDebugServerTest {
 
         override fun executeLaunchStreaming(args: DebugLaunchArgs) {
             // no-op for tests
+        }
+
+        /**
+         * Migrates path-keyed breakpoints for [libId] from sourcePathBreakpoints
+         * into breakpointsByLibrary and handler.breakpointsByLibrary.
+         * Mirrors the migration block in [CqlDebugServer]'s onLibraryEnteredCallback.
+         */
+        fun triggerBreakpointMigration(libId: String) {
+            val libMapField = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
+            libMapField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val libMap = libMapField.get(this) as ConcurrentHashMap<String, URI>
+            val uri = libMap[libId] ?: return
+            val pathStr = Paths.get(uri).toString()
+
+            val bpField = CqlDebugServer::class.java.getDeclaredField("sourcePathBreakpoints")
+            bpField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val spb = bpField.get(this) as ConcurrentHashMap<String, MutableSet<Int>>
+            val pending = spb[pathStr] ?: return
+
+            val srvBpField = CqlDebugServer::class.java.getDeclaredField("breakpointsByLibrary")
+            srvBpField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val srvBp = srvBpField.get(this) as ConcurrentHashMap<String, MutableSet<Int>>
+            srvBp[libId] = pending
+            testHandler.breakpointsByLibrary[libId] = pending
         }
 
         fun setLaunchUri(uri: String) {
@@ -77,6 +110,34 @@ class StreamingCqlDebugServerTest {
 
         fun initLaunchArgs(args: DebugLaunchArgs) {
             launchArgs = args
+        }
+
+        fun addLibrarySource(libId: String, uri: URI) {
+            val field = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
+            field.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            (field.get(this) as ConcurrentHashMap<String, URI>)[libId] = uri
+        }
+
+        fun getBreakpointIdsForPath(path: String): Map<Int, Int>? {
+            val field = CqlDebugServer::class.java.getDeclaredField("breakpointIdsByPath")
+            field.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            return (field.get(this) as ConcurrentHashMap<String, ConcurrentHashMap<Int, Int>>)[path]?.toMap()
+        }
+
+        fun seedBreakpointIdsForPath(path: String, lineIdMap: Map<Int, Int>) {
+            val field = CqlDebugServer::class.java.getDeclaredField("breakpointIdsByPath")
+            field.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val map = field.get(this) as ConcurrentHashMap<String, ConcurrentHashMap<Int, Int>>
+            map[path] = ConcurrentHashMap(lineIdMap)
+        }
+
+        fun triggerUpdateBreakpointVerification() {
+            val method = CqlDebugServer::class.java.getDeclaredMethod("updateBreakpointVerification")
+            method.isAccessible = true
+            method.invoke(this)
         }
 
         fun triggerCompletion(error: Throwable?) {
@@ -476,7 +537,210 @@ class StreamingCqlDebugServerTest {
             }
         val response = server.setBreakpoints(bpArgs).get()
         assertEquals(2, response.breakpoints.size)
-        assertEquals(setOf(5, 10), server.testHandler.getBreakpointLines())
+        assertEquals(setOf(5, 10), server.testHandler.breakpointsByLibrary[""])
+    }
+
+    @Test
+    fun `setBreakpoints assigns unique sequential IDs`() {
+        val server = setupServer()
+
+        // First call — two breakpoints on one file
+        val response1 =
+            server
+                .setBreakpoints(
+                    SetBreakpointsArguments().also {
+                        it.source = Source().also { s -> s.path = "/a.cql" }
+                        it.breakpoints =
+                            arrayOf(
+                                SourceBreakpoint().also { bp -> bp.line = 5 },
+                                SourceBreakpoint().also { bp -> bp.line = 10 },
+                            )
+                    },
+                ).get()
+        assertEquals(2, response1.breakpoints.size)
+        val id1 = response1.breakpoints[0].id
+        val id2 = response1.breakpoints[1].id
+        assertTrue(id2 > id1, "IDs within same call must be sequential")
+
+        // Second call — verify IDs continue
+        val response2 =
+            server
+                .setBreakpoints(
+                    SetBreakpointsArguments().also {
+                        it.source = Source().also { s -> s.path = "/b.cql" }
+                        it.breakpoints =
+                            arrayOf(
+                                SourceBreakpoint().also { bp -> bp.line = 3 },
+                            )
+                    },
+                ).get()
+        assertEquals(1, response2.breakpoints.size)
+        assertTrue(response2.breakpoints[0].id > id2, "IDs must increase across calls")
+    }
+
+    @Test
+    fun `setBreakpoints stores IDs in breakpointIdsByPath`() {
+        val server = setupServer()
+        val path = "/test.cql"
+
+        server
+            .setBreakpoints(
+                SetBreakpointsArguments().also {
+                    it.source = Source().also { s -> s.path = path }
+                    it.breakpoints =
+                        arrayOf(
+                            SourceBreakpoint().also { bp -> bp.line = 5 },
+                            SourceBreakpoint().also { bp -> bp.line = 10 },
+                        )
+                },
+            ).get()
+
+        val ids = server.getBreakpointIdsForPath(path)
+        assertNotNull(ids)
+        assertEquals(2, ids!!.size)
+        assertTrue(ids.containsKey(5))
+        assertTrue(ids.containsKey(10))
+    }
+
+    @Test
+    fun `setBreakpoints marks all breakpoints verified when relevantLibraryIds is null`() {
+        val server = setupServer()
+
+        val response =
+            server
+                .setBreakpoints(
+                    SetBreakpointsArguments().also {
+                        it.source = Source().also { s -> s.path = "/test.cql" }
+                        it.breakpoints =
+                            arrayOf(
+                                SourceBreakpoint().also { bp -> bp.line = 5 },
+                            )
+                    },
+                ).get()
+        assertEquals(1, response.breakpoints.size)
+        assertTrue(response.breakpoints[0].isVerified)
+    }
+
+    @Test
+    fun `setBreakpoints marks breakpoints verified for relevant library`() {
+        val server = setupServer()
+        server.addLibrarySource("TestLib", URI.create("file:///test/test.cql"))
+        server.relevantLibraryIds = setOf("TestLib")
+
+        val response =
+            server
+                .setBreakpoints(
+                    SetBreakpointsArguments().also {
+                        it.source = Source().also { s -> s.path = "/test/test.cql" }
+                        it.breakpoints =
+                            arrayOf(
+                                SourceBreakpoint().also { bp -> bp.line = 5 },
+                            )
+                    },
+                ).get()
+        assertEquals(1, response.breakpoints.size)
+        assertTrue(response.breakpoints[0].isVerified)
+    }
+
+    @Test
+    fun `setBreakpoints marks breakpoints unverified for non-relevant library`() {
+        val server = setupServer()
+        server.addLibrarySource("TestLib", URI.create("file:///test/test.cql"))
+        server.addLibrarySource("OtherLib", URI.create("file:///other/other.cql"))
+        server.relevantLibraryIds = setOf("TestLib")
+
+        val response =
+            server
+                .setBreakpoints(
+                    SetBreakpointsArguments().also {
+                        it.source = Source().also { s -> s.path = "/other/other.cql" }
+                        it.breakpoints =
+                            arrayOf(
+                                SourceBreakpoint().also { bp -> bp.line = 5 },
+                            )
+                    },
+                ).get()
+        assertEquals(1, response.breakpoints.size)
+        assertFalse(response.breakpoints[0].isVerified)
+    }
+
+    @Test
+    fun `updateBreakpointVerification sends breakpoint events for non-relevant libraries`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.setLaunchUri("file:///primary.cql")
+        server.connect(client)
+
+        // Seed breakpoints for two paths — one relevant, one not
+        server.addLibrarySource("Primary", URI.create("file:///primary.cql"))
+        server.addLibrarySource("OtherLib", URI.create("file:///other.cql"))
+        server.seedBreakpointIdsForPath(
+            "/primary.cql",
+            mapOf(10 to 100, 20 to 101),
+        )
+        server.seedBreakpointIdsForPath(
+            "/other.cql",
+            mapOf(30 to 200),
+        )
+
+        server.relevantLibraryIds = setOf("Primary")
+        server.triggerUpdateBreakpointVerification()
+
+        // Verify breakpoint event sent for the non-relevant library only
+        Mockito.verify(client, Mockito.times(1)).breakpoint(Mockito.any())
+    }
+
+    @Test
+    fun `updateBreakpointVerification sends correct breakpoint payload for non-relevant library`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.setLaunchUri("file:///primary.cql")
+        server.connect(client)
+
+        server.addLibrarySource("Primary", URI.create("file:///primary.cql"))
+        server.addLibrarySource("OtherLib", URI.create("file:///other.cql"))
+        server.seedBreakpointIdsForPath("/other.cql", mapOf(30 to 200))
+
+        server.relevantLibraryIds = setOf("Primary")
+        server.triggerUpdateBreakpointVerification()
+
+        val captor =
+            org.mockito.ArgumentCaptor.forClass(BreakpointEventArguments::class.java)
+        Mockito.verify(client).breakpoint(captor.capture())
+        val event = captor.value
+        assertEquals("changed", event.reason)
+        assertFalse(event.breakpoint.isVerified)
+        assertEquals(30, event.breakpoint.line)
+        assertEquals("/other.cql", event.breakpoint.source.path)
+    }
+
+    @Test
+    fun `updateBreakpointVerification does not send events for breakpoints in relevant library`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.setLaunchUri("file:///primary.cql")
+        server.connect(client)
+
+        server.addLibrarySource("Primary", URI.create("file:///primary.cql"))
+        server.seedBreakpointIdsForPath("/primary.cql", mapOf(10 to 100))
+
+        server.relevantLibraryIds = setOf("Primary")
+        server.triggerUpdateBreakpointVerification()
+
+        Mockito.verify(client, Mockito.never()).breakpoint(Mockito.any())
+    }
+
+    @Test
+    fun `updateBreakpointVerification does nothing when relevantLibraryIds is null`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.connect(client)
+
+        server.seedBreakpointIdsForPath("/any.cql", mapOf(5 to 1))
+        // relevantLibraryIds is null by default
+        server.triggerUpdateBreakpointVerification()
+
+        Mockito.verify(client, Mockito.never()).breakpoint(Mockito.any())
     }
 
     // -- next dispatches to handler -----------------------------------------
@@ -1996,5 +2260,141 @@ class StreamingCqlDebugServerTest {
         val formatted = formatMethod.invoke(server, result, gson) as String
 
         assertEquals("finished", formatted)
+    }
+
+    // -- onLibraryEnteredCallback --------------------------------------------
+
+    @Test
+    fun `onExpressionDefEntered fires callback with library identifier`() {
+        val server = setupServer()
+        val handler = server.testHandler
+        handler.primaryLibraryId = "PrimaryLib"
+
+        var capturedLibId: String? = null
+        var capturedIdentifier: VersionedIdentifier? = null
+        handler.onLibraryEnteredCallback = { libId, identifier ->
+            capturedLibId = libId
+            capturedIdentifier = identifier
+        }
+
+        val libId = VersionedIdentifier().also { it.id = "FHIRHelpers"; it.version = "1.0.0" }
+        val library = Library().also { it.identifier = libId }
+        val state = State(Environment(null))
+        state.init(library)
+
+        val def = ExpressionDef().also { it.name = "Test"; it.locator = "1:1-1:10" }
+        handler.onExpressionDefEntered(def, null, state)
+
+        assertEquals("FHIRHelpers", capturedLibId)
+        assertNotNull(capturedIdentifier)
+        assertEquals("FHIRHelpers", capturedIdentifier!!.id)
+        assertEquals("1.0.0", capturedIdentifier!!.version)
+    }
+
+    // -- Breakpoint migration for included libraries -------------------------
+
+    @Test
+    fun `breakpoints in directly included library fire after migration`() {
+        val server = setupServer()
+        server.setLaunchUri("file:///primary/Library.cql")
+        val handler = server.testHandler
+
+        // Set breakpoints BEFORE librarySourceMap is populated (pre-launch timing).
+        // At this point resolveLibraryIdFromPath returns null so breakpoints are
+        // stored in sourcePathBreakpoints (keyed by the file path), not under the
+        // library ID in breakpointsByLibrary.
+        val fhirHelpersUri = URI.create("file:///libraries/FHIRHelpers.cql")
+        val fhirHelpersPath = Paths.get(fhirHelpersUri).toString()
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = fhirHelpersPath }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 42 })
+            }
+        ).get()
+
+        // handler does not yet have FHIRHelpers breakpoints
+        assertFalse(
+            handler.breakpointsByLibrary.containsKey("FHIRHelpers"),
+            "Before migration, handler should not have FHIRHelpers breakpoints",
+        )
+
+        // Now simulate collectTransitiveIncludes populating librarySourceMap
+        server.addLibrarySource("FHIRHelpers", fhirHelpersUri)
+
+        // This is the migration the callback performs (now outside the !containsKey guard)
+        server.triggerBreakpointMigration("FHIRHelpers")
+
+        // After migration: handler has FHIRHelpers breakpoints
+        assertTrue(handler.breakpointsByLibrary.containsKey("FHIRHelpers"))
+        assertEquals(setOf(42), handler.breakpointsByLibrary["FHIRHelpers"])
+    }
+
+    @Test
+    fun `breakpoints in transitive include fire after migration`() {
+        val cs = mock(ContentService::class.java)
+        val cm = mock(CqlCompilationManager::class.java)
+        val ig = mock(IgContextManager::class.java)
+        val lrm = mock(LibraryResolutionManager::class.java)
+        val server = TestStreamingServer(cm, cs, ig, lrm)
+        server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+        val launchUriStr = "file:///primary/Library.cql"
+        server.setLaunchUri(launchUriStr)
+        val handler = server.testHandler
+
+        // Transitive library C (not a direct include of the primary library)
+        val libCIdentifier = VersionedIdentifier().also { it.id = "LibC"; it.version = "1.0.0" }
+        val libCUri = URI.create("file:///libraries/LibC.cql")
+        val libCPath = Paths.get(libCUri).toString()
+
+        // Stub contentService.locate to return a URI for the transitive library
+        Mockito.`when`(cs.locate(URI.create(launchUriStr), libCIdentifier))
+            .thenReturn(setOf(libCUri))
+
+        // Set breakpoints on the transitive library's path before launch
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = libCPath }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 15 })
+            }
+        ).get()
+
+        assertFalse(handler.breakpointsByLibrary.containsKey("LibC"))
+
+        // Wire up a callback that mirrors the production logic:
+        // 1. URI resolution uses libraryIdentifier fallback (LibC not a direct include)
+        // 2. Breakpoint migration always runs
+        handler.onLibraryEnteredCallback = { libId, libraryIdentifier ->
+            // URI resolution block (guarded by !containsKey)
+            try {
+                val libMapField = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
+                libMapField.isAccessible = true
+                @Suppress("UNCHECKED_CAST")
+                val libMap = libMapField.get(server) as ConcurrentHashMap<String, URI>
+
+                if (!libMap.containsKey(libId) && libraryIdentifier != null) {
+                    val csField = CqlDebugServer::class.java.getDeclaredField("contentService")
+                    csField.isAccessible = true
+                    val contentSvc = csField.get(server) as ContentService
+                    val uris = contentSvc.locate(
+                        URI.create(launchUriStr),
+                        libraryIdentifier,
+                    )
+                    val uri = uris.firstOrNull()
+                    if (uri != null) {
+                        libMap[libId] = uri
+                    }
+                }
+            } catch (_: Exception) { }
+
+            // Migration block (always runs)
+            server.triggerBreakpointMigration(libId)
+        }
+
+        // Invoke the callback with the transitive library's identifier
+        handler.onLibraryEnteredCallback?.invoke("LibC", libCIdentifier)
+
+        // Verify breakpoints migrated
+        assertTrue(handler.breakpointsByLibrary.containsKey("LibC"))
+        assertEquals(setOf(15), handler.breakpointsByLibrary["LibC"])
     }
 }

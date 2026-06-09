@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.debug
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.FunctionDef
+import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
@@ -12,7 +13,22 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 
 class StreamingBreakpointHandler : BreakpointHandler {
+    data class CallStackEntry(
+        val def: ExpressionDef,
+        val callSite: Element?,
+        val libraryId: String,
+    )
+
     private val breakpointLines = mutableSetOf<Int>()
+
+    val breakpointsByLibrary = ConcurrentHashMap<String, MutableSet<Int>>()
+
+    val cqlStepLinesByLibrary = ConcurrentHashMap<String, Set<Int>>()
+
+    private val knownLibraryIds = mutableSetOf<String>()
+
+    @Volatile
+    var onLibraryEnteredCallback: ((libraryId: String, identifier: VersionedIdentifier?) -> Unit)? = null
 
     @Volatile
     var primaryLibraryId: String? = null
@@ -39,10 +55,10 @@ class StreamingBreakpointHandler : BreakpointHandler {
     var lastPausedState: State? = null
         private set
 
-    private val defineCallStack = ArrayDeque<Pair<ExpressionDef, Element?>>()
+    private val defineCallStack = ArrayDeque<CallStackEntry>()
 
     @Volatile
-    var lastPausedCallStack: List<Pair<ExpressionDef, Element?>> = emptyList()
+    var lastPausedCallStack: List<CallStackEntry> = emptyList()
         private set
 
     private var resumeLatch = CountDownLatch(0)
@@ -146,13 +162,66 @@ class StreamingBreakpointHandler : BreakpointHandler {
         state: State,
     ): BreakpointAction {
         val currentLibId = state.getCurrentLibrary()?.identifier?.id
-        if (primaryLibraryId != null && currentLibId != null && currentLibId != primaryLibraryId) {
+        val isIncludedLibrary = primaryLibraryId != null
+            && currentLibId != null
+            && currentLibId != primaryLibraryId
+
+        if (isIncludedLibrary && stepMode == StepMode.CONTINUE) {
+            val locator = elm.locator ?: return BreakpointAction.CONTINUE
+            val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
+            if (breakpointsByLibrary[currentLibId]?.contains(line) == true && line != lastPausedLine) {
+                log.debug("onBeforeExpression: PAUSE (included library breakpoint) lib={} line={}", currentLibId, line)
+                capturePauseState(elm, state, line)
+                return BreakpointAction.PAUSE
+            }
             return BreakpointAction.CONTINUE
         }
+
+        if (isIncludedLibrary && stepGranularity == StepGranularity.CQL) {
+            val locator = elm.locator ?: return BreakpointAction.CONTINUE
+            val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
+            val depth = state.stack.size
+            val cqlFilter = cqlStepLinesByLibrary[currentLibId] ?: cqlStepLinesByLibrary[primaryLibraryId]
+            val shouldPause =
+                when (stepMode) {
+                    StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
+                    StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+                    StepMode.STEP_OUT -> depth < depthAtStep
+                    StepMode.CONTINUE -> line in breakpointsByLibrary[currentLibId].orEmpty() && line != lastPausedLine
+                }
+            if (shouldPause) {
+                capturePauseState(elm, state, line)
+                return BreakpointAction.PAUSE
+            }
+            return BreakpointAction.CONTINUE
+        }
+
+        if (isIncludedLibrary && stepGranularity == StepGranularity.AST) {
+            val shouldPause =
+                when (stepMode) {
+                    StepMode.STEP_IN -> elm !== lastPausedElmIdentity
+                    StepMode.STEP_OVER -> elm !== lastPausedElmIdentity && state.stack.size <= depthAtStep
+                    StepMode.STEP_OUT -> state.stack.size < depthAtStep
+                    StepMode.CONTINUE -> {
+                        val locator = elm.locator ?: return BreakpointAction.CONTINUE
+                        val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
+                        line in breakpointsByLibrary[currentLibId].orEmpty() && elm !== lastPausedElmIdentity
+                    }
+                }
+            if (shouldPause) {
+                val line = parseLine(elm.locator ?: "") ?: -1
+                capturePauseState(elm, state, line)
+                return BreakpointAction.PAUSE
+            }
+            return BreakpointAction.CONTINUE
+        }
+
+        // Primary library (or currentLibId is null) — use per-library breakpoints
         val locator = elm.locator ?: return BreakpointAction.CONTINUE
         val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
         val depth = state.stack.size
 
+        val primaryLibLines = if (primaryLibraryId != null) breakpointsByLibrary[primaryLibraryId] else null
         val cqlFilter = cqlStepLines
         val shouldPause =
             when (stepGranularity) {
@@ -161,50 +230,20 @@ class StreamingBreakpointHandler : BreakpointHandler {
                         StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
                         StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
                         StepMode.STEP_OUT -> depth < depthAtStep
-                        StepMode.CONTINUE -> line in breakpointLines && line != lastPausedLine
+                        StepMode.CONTINUE -> line in (primaryLibLines ?: breakpointLines) && line != lastPausedLine
                     }
                 StepGranularity.AST ->
                     when (stepMode) {
                         StepMode.STEP_IN -> elm !== lastPausedElmIdentity
                         StepMode.STEP_OVER -> elm !== lastPausedElmIdentity && depth <= depthAtStep
                         StepMode.STEP_OUT -> depth < depthAtStep
-                        StepMode.CONTINUE -> line in breakpointLines && elm !== lastPausedElmIdentity
+                        StepMode.CONTINUE -> line in (primaryLibLines ?: breakpointLines) && elm !== lastPausedElmIdentity
                     }
             }
 
         if (shouldPause) {
-            lastPausedLine = line
-            lastPausedElmIdentity = elm
-            lastPausedElm = elm
-            lastPausedState = state
-            lastPausedCallStack = defineCallStack.toList()
-
-            runtimeRegistry.clearStackVariables()
-
-            // Parameters are loaded by CqlDebugServer.onPauseCallback (which has access to
-            // parameterMetadata for type info). Nothing to do here.
-
-            // Capture context values — prefer full resource from contextResourcesByName (if pre-populated
-            // externally or from a previous capture), fall back to the raw state context value.
-            state.contextValues.forEach { (key, value) ->
-                if (value is org.hl7.fhir.instance.model.api.IBase) {
-                    contextResourcesByName[key] = value
-                }
-            }
-            state.contextValues.forEach { (key, value) ->
-                val displayValue = contextResourcesByName[key] ?: value
-                runtimeRegistry.loadContextResource(key, displayValue, null)
-            }
-
-            // Capture stack variables (frame locals, aliases, let clauses)
-            for (frame in state.stack) {
-                for (v in frame.variables) {
-                    val name = v.name ?: "(unnamed)"
-                    runtimeRegistry.putStackVariable(name, v.value, null)
-                }
-            }
-
-            resumeLatch = CountDownLatch(1)
+            log.debug("onBeforeExpression: PAUSE (primary library breakpoint) line={}", line)
+            capturePauseState(elm, state, line)
             return BreakpointAction.PAUSE
         }
 
@@ -212,7 +251,12 @@ class StreamingBreakpointHandler : BreakpointHandler {
     }
 
     override fun onExpressionDefEntered(elm: ExpressionDef, callSite: Element?, state: State) {
-        defineCallStack.addLast(Pair(elm, callSite))
+        val libId = state.getCurrentLibrary()?.identifier?.id ?: primaryLibraryId ?: ""
+        if (libId != primaryLibraryId && libId !in knownLibraryIds) {
+            knownLibraryIds.add(libId)
+            onLibraryEnteredCallback?.invoke(libId, state.getCurrentLibrary()?.identifier)
+        }
+        defineCallStack.addLast(CallStackEntry(elm, callSite, libId))
     }
 
     override fun onExpressionDefEvaluated(
@@ -286,10 +330,52 @@ class StreamingBreakpointHandler : BreakpointHandler {
         evaluatedValuesByLocator.clear()
     }
 
+    private fun capturePauseState(
+        elm: Element,
+        state: State,
+        line: Int,
+    ) {
+        lastPausedLine = line
+        lastPausedElmIdentity = elm
+        lastPausedElm = elm
+        lastPausedState = state
+        lastPausedCallStack = defineCallStack.toList()
+
+        runtimeRegistry.clearStackVariables()
+
+        // Parameters are loaded by CqlDebugServer.onPauseCallback (which has access to
+        // parameterMetadata for type info). Nothing to do here.
+
+        // Capture context values — prefer full resource from contextResourcesByName (if pre-populated
+        // externally or from a previous capture), fall back to the raw state context value.
+        state.contextValues.forEach { (key, value) ->
+            if (value is org.hl7.fhir.instance.model.api.IBase) {
+                contextResourcesByName[key] = value
+            }
+        }
+        state.contextValues.forEach { (key, value) ->
+            val displayValue = contextResourcesByName[key] ?: value
+            runtimeRegistry.loadContextResource(key, displayValue, null)
+        }
+
+        // Capture stack variables (frame locals, aliases, let clauses)
+        for (frame in state.stack) {
+            for (v in frame.variables) {
+                val name = v.name ?: "(unnamed)"
+                runtimeRegistry.putStackVariable(name, v.value, null)
+            }
+        }
+
+        resumeLatch = CountDownLatch(1)
+    }
+
     fun reset() {
         runtimeRegistry.reset()
         contextResourcesByName.clear()
         evaluatedValuesByLocator.clear()
+        breakpointsByLibrary.clear()
+        cqlStepLinesByLibrary.clear()
+        knownLibraryIds.clear()
         lastPausedLine = -1
         lastPausedElm = null
         lastPausedElmIdentity = null

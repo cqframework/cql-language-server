@@ -21,11 +21,14 @@ import org.eclipse.lsp4j.debug.NextArguments
 import org.eclipse.lsp4j.debug.Scope
 import org.eclipse.lsp4j.debug.ScopesArguments
 import org.eclipse.lsp4j.debug.ScopesResponse
+import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsResponse
 import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments
 import org.eclipse.lsp4j.debug.SetExceptionBreakpointsResponse
 import org.eclipse.lsp4j.debug.Source
+import org.eclipse.lsp4j.debug.SourceArguments
+import org.eclipse.lsp4j.debug.SourceResponse
 import org.eclipse.lsp4j.debug.StackFrame
 import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.StackTraceResponse
@@ -45,6 +48,7 @@ import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.hl7.cql.model.ClassType
 import org.hl7.elm.r1.AggregateExpression
 import org.hl7.elm.r1.AliasedQuerySource
+import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.elm.r1.BinaryExpression
 import org.hl7.elm.r1.Case
 import org.hl7.elm.r1.Combine
@@ -92,9 +96,11 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 open class CqlDebugServer(
     private val compilationManager: CqlCompilationManager,
@@ -156,6 +162,20 @@ open class CqlDebugServer(
     @Volatile
     protected var currentIndex: Int = -1
     protected val breakpointLines = mutableSetOf<Int>()
+
+    private val librarySourceMap = ConcurrentHashMap<String, URI>()
+    private val sourceReferenceRegistry = ConcurrentHashMap<Int, VersionedIdentifier>()
+    private val nextSourceReference = AtomicInteger(1)
+    private val breakpointsByLibrary = ConcurrentHashMap<String, MutableSet<Int>>()
+
+    /** Path-based fallback for breakpoints set before the library is resolved. */
+    private val sourcePathBreakpoints = ConcurrentHashMap<String, MutableSet<Int>>()
+
+    private val nextBreakpointId = AtomicInteger(1)
+    private val breakpointIdsByPath = ConcurrentHashMap<String, ConcurrentHashMap<Int, Int>>()
+
+    @Volatile
+    internal var relevantLibraryIds: Set<String>? = null
 
     data class ParameterMetadata(
         val name: String,
@@ -219,17 +239,108 @@ open class CqlDebugServer(
         CompletableFuture.completedFuture(SetExceptionBreakpointsResponse())
 
     override fun setBreakpoints(args: SetBreakpointsArguments): CompletableFuture<SetBreakpointsResponse> {
+        val sourcePath = args.source?.path
+        val libId = resolveLibraryIdFromPath(sourcePath) ?: streamingHandler?.primaryLibraryId ?: ""
+
+        val lines = args.breakpoints?.map { it.line }?.toMutableSet() ?: mutableSetOf()
+        breakpointsByLibrary[libId] = lines
+        streamingHandler?.breakpointsByLibrary?.set(libId, lines)
+
+        // Store by source path as well for resolution before library is entered
+        if (sourcePath != null) {
+            sourcePathBreakpoints[sourcePath] = lines
+        }
+
+        // Update the flat breakpoint set for non-streaming fallback (0-indexed)
         breakpointLines.clear()
         args.breakpoints?.forEach { breakpointLines.add(it.line - 1) }
-        streamingHandler?.setBreakpoints(args.breakpoints?.map { it.line }?.toSet() ?: emptySet())
+
         val bps =
             args.breakpoints?.map { bp ->
+                val id = nextBreakpointId.getAndIncrement()
+                if (sourcePath != null) {
+                    breakpointIdsByPath
+                        .computeIfAbsent(sourcePath) { ConcurrentHashMap() }
+                        .put(bp.line, id)
+                }
                 Breakpoint().also {
-                    it.isVerified = true
+                    it.id = id
+                    it.isVerified = relevantLibraryIds == null || isRelevantSourcePath(sourcePath)
                     it.line = bp.line
                 }
             }?.toTypedArray() ?: emptyArray()
         return CompletableFuture.completedFuture(SetBreakpointsResponse().also { it.breakpoints = bps })
+    }
+
+    private fun resolveLibraryIdFromPath(path: String?): String? {
+        if (path == null) return null
+        val pathUri = Paths.get(path).toUri()
+        return librarySourceMap.entries.firstOrNull { (_, uri) -> uri == pathUri }?.key
+    }
+
+    private fun isRelevantSourcePath(sourcePath: String?): Boolean {
+        val relevant = relevantLibraryIds ?: return true
+        val libId = resolveLibraryIdFromPath(sourcePath)
+        return libId != null && libId in relevant
+    }
+
+    internal fun collectTransitiveIncludes(
+        primaryId: String,
+        compiler: CqlCompiler?,
+    ): Set<String> {
+        val result = mutableSetOf(primaryId)
+        val visited = mutableSetOf(primaryId)
+        val queue = ArrayDeque<org.hl7.elm.r1.IncludeDef>()
+        compiler?.compiledLibrary?.library?.includes?.def?.forEach { queue.addLast(it) }
+
+        while (queue.isNotEmpty()) {
+            val includeDef = queue.removeFirst()
+            val libPath = includeDef.path ?: continue
+            if (libPath in visited) continue
+            visited.add(libPath)
+
+            val uri = librarySourceMap[libPath]
+            if (uri == null) {
+                try {
+                    val identifier = VersionedIdentifier().also { vi ->
+                        vi.id = includeDef.path
+                        vi.version = includeDef.version
+                    }
+                    val uris = contentService.locate(URI.create(streamingLaunchUri ?: ""), identifier)
+                    val resolvedUri = uris.firstOrNull()
+                    if (resolvedUri != null) {
+                        librarySourceMap[libPath] = resolvedUri
+                    }
+                } catch (_: Exception) {
+                    // unresolvable — still add to result so breakpoints aren't spuriously greyed
+                }
+            }
+            result.add(libPath)
+        }
+        return result
+    }
+
+    private fun updateBreakpointVerification() {
+        val relevant = relevantLibraryIds ?: return
+        for ((sourcePath, lineToId) in breakpointIdsByPath) {
+            val libId = resolveLibraryIdFromPath(sourcePath)
+            val isRelevant = libId != null && libId in relevant
+            if (isRelevant) continue
+            for ((line, id) in lineToId) {
+                client.join().breakpoint(
+                    BreakpointEventArguments().also {
+                        it.reason = "changed"
+                        it.breakpoint =
+                            Breakpoint().also { bp ->
+                                bp.id = id
+                                bp.isVerified = false
+                                bp.line = line
+                                bp.source = Source().also { s -> s.path = sourcePath }
+                            }
+                    },
+                )
+            }
+        }
     }
 
     private fun extractParameterMetadata(libraryUri: URI): Map<String, List<ParameterMetadata>> {
@@ -385,6 +496,50 @@ open class CqlDebugServer(
             }
         }
 
+        handler.onLibraryEnteredCallback = migration@{ libId, libraryIdentifier ->
+            if (!librarySourceMap.containsKey(libId)) {
+                try {
+                    val compiler = launchCompiler
+                    val allDefs = compiler?.compiledLibrary?.library?.includes?.def ?: emptyList()
+                    val identifier =
+                        allDefs.firstOrNull { it.path == libId || it.localIdentifier == libId }
+                            ?.let { def ->
+                                VersionedIdentifier().also { vi ->
+                                    vi.id = def.path
+                                    vi.version = def.version
+                                }
+                            } ?: libraryIdentifier
+                    if (identifier != null) {
+                        val uris = contentService.locate(URI.create(streamingLaunchUri!!), identifier)
+                        val uri = uris.firstOrNull()
+                        if (uri != null) {
+                            librarySourceMap[libId] = uri
+                        } else {
+                            val ref = nextSourceReference.getAndIncrement()
+                            sourceReferenceRegistry[ref] = identifier
+                            librarySourceMap[libId] = URI.create("cql-source://$ref")
+                        }
+                        loadStepLinesForLibrary(libId, identifier)
+                        loadVariableTypesForLibrary(libId)
+                    }
+                } catch (e: Exception) {
+                    log.debug("onLibraryEnteredCallback: failed to resolve library $libId", e)
+                }
+            }
+
+            // Migrate path-keyed breakpoints set before this library's ID was known.
+            // This runs OUTSIDE the !containsKey guard because collectTransitiveIncludes
+            // pre-populates librarySourceMap for direct includes before execution starts,
+            // which would otherwise prevent migration from ever running.
+            try {
+                val uri = librarySourceMap[libId] ?: return@migration
+                val pathStr = Paths.get(uri).toString()
+                val pending = sourcePathBreakpoints[pathStr] ?: return@migration
+                breakpointsByLibrary[libId] = pending
+                handler.breakpointsByLibrary[libId] = pending
+            } catch (_: Exception) { }
+        }
+
         streamingLaunchUri = args.libraryUri
 
         val libraryUri = URI.create(args.libraryUri)
@@ -398,6 +553,42 @@ open class CqlDebugServer(
         launchCompiler = compiler
         variableTypeMap = buildVariableTypeMap(compiler)
         handler.variableTypeMap = variableTypeMap
+
+        // Re-populate handler's per-library breakpoints from server's maps
+        // (reset() cleared the handler's copy, but this.breakpointsByLibrary survived)
+        streamingHandler?.breakpointsByLibrary?.putAll(breakpointsByLibrary)
+
+        // Populate primary library in the per-library maps
+        handler.primaryLibraryId?.let { id ->
+            handler.cqlStepLinesByLibrary[id] = handler.cqlStepLines ?: emptySet()
+        }
+
+        // Migrate breakpoints that were set before the primary library ID was known.
+        // Pre-launch setBreakpoints calls store under sourcePathBreakpoints (keyed by
+        // the file path) because resolveLibraryIdFromPath returns null — librarySourceMap
+        // hasn't been populated yet.  This uses the same Paths.get(uri).toString()
+        // normalization as onLibraryEnteredCallback does for included libraries.
+        val primaryId = handler.primaryLibraryId
+        if (primaryId != null) {
+            val primaryPathStr = Paths.get(libraryUri).toString()
+            val pendingPrimary = sourcePathBreakpoints[primaryPathStr]
+            if (pendingPrimary != null) {
+                breakpointsByLibrary[primaryId] = pendingPrimary
+                // Write directly to the handler — putAll already ran above, so the
+                // handler won't pick up this server-map update via putAll.
+                streamingHandler?.breakpointsByLibrary?.set(primaryId, pendingPrimary)
+            }
+
+            // Register primary library in source map so updateBreakpointVerification
+            // can resolve its path via resolveLibraryIdFromPath (was missing, causing
+            // all primary-library breakpoints to be marked unverified).
+            librarySourceMap[primaryId] = libraryUri
+
+            // Compute transitive includes and update breakpoint verification
+            val transitiveIncludes = collectTransitiveIncludes(primaryId, compiler)
+            relevantLibraryIds = transitiveIncludes
+            updateBreakpointVerification()
+        }
 
         handler.stepGranularity =
             if (args.stepGranularity?.equals("ast", ignoreCase = true) == true) {
@@ -433,6 +624,33 @@ open class CqlDebugServer(
                 terminateServer()
                 exitServer()
             }
+        }
+    }
+
+    private fun loadStepLinesForLibrary(libId: String, identifier: VersionedIdentifier?) {
+        if (identifier == null) return
+        try {
+            val uris = contentService.locate(URI.create(streamingLaunchUri ?: return), identifier)
+            val uri = uris.firstOrNull() ?: return
+            val parseTree = compilationManager.getParseTree(uri) ?: return
+            val lines = CqlStepPositionCollector.collect(parseTree)
+            streamingHandler?.cqlStepLinesByLibrary?.set(libId, lines)
+        } catch (e: Exception) {
+            log.debug("loadStepLinesForLibrary: failed for $libId", e)
+        }
+    }
+
+    private fun loadVariableTypesForLibrary(libId: String) {
+        val sourceUri = librarySourceMap[libId] ?: return
+        try {
+            val compiler = compilationManager.compile(sourceUri) ?: return
+            val additions = buildVariableTypeMap(compiler)
+            val qualifiedAdditions = additions.mapKeys { (name, _) -> "$libId.$name" }
+            val updated = (streamingHandler?.variableTypeMap ?: emptyMap()) + qualifiedAdditions
+            streamingHandler?.variableTypeMap = updated
+            variableTypeMap = updated
+        } catch (e: Exception) {
+            log.debug("loadVariableTypesForLibrary: failed for $libId", e)
         }
     }
 
@@ -700,35 +918,43 @@ open class CqlDebugServer(
                     varRefs.clear()
                     varRefTypes.clear()
                     nextVarRef = 1000
+                    val frameLibId = resolveFrameLibraryId()
                     for (sv in registry.getStackVariables().sortedBy { it.name }) {
+                        val svType = variableTypeMap["${frameLibId}.${sv.name}"] ?: variableTypeMap[sv.name]
                         vars.add(
                             Variable().also {
                                 it.name = sv.name
                                 it.value = formatVariableValue(sv.value, gson)
-                                it.type = variableTypeMap[sv.name]
-                                it.variablesReference = registerIfExpandable(sv.value, variableTypeMap[sv.name])
+                                it.type = svType
+                                it.variablesReference = registerIfExpandable(sv.value, svType)
                             },
                         )
                     }
                     for (cr in registry.getContextResources().sortedBy { it.name }) {
+                        val crType = variableTypeMap["${frameLibId}.${cr.name}"] ?: variableTypeMap[cr.name]
                         vars.add(
                             Variable().also {
                                 it.name = cr.name
                                 it.value = formatVariableValue(cr.value, gson)
-                                it.type = variableTypeMap[cr.name]
-                                it.variablesReference = registerIfExpandable(cr.value, variableTypeMap[cr.name])
+                                it.type = crType
+                                it.variablesReference = registerIfExpandable(cr.value, crType)
                             },
                         )
                     }
                 }
                 if (args.variablesReference == 3) {
                     for (d in registry.getDefines().sortedBy { it.name }) {
+                        val dType = if (d.libraryName != null) {
+                            variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
+                        } else {
+                            variableTypeMap[d.name]
+                        }
                         vars.add(
                             Variable().also {
                                 it.name = d.name
                                 it.value = formatVariableValue(d.value, gson)
-                                it.type = variableTypeMap[d.name]
-                                it.variablesReference = registerIfExpandable(d.value, variableTypeMap[d.name])
+                                it.type = dType
+                                it.variablesReference = registerIfExpandable(d.value, dType)
                             },
                         )
                     }
@@ -1618,41 +1844,85 @@ open class CqlDebugServer(
     }
 
     private fun buildCqlStackFrames(handler: StreamingBreakpointHandler): List<StackFrame> {
-        val sourceUri = streamingLaunchUri?.let { Paths.get(URI.create(it)).toString() }
-        val source = sourceUri?.let { Source().also { s -> s.path = it } }
         val reversed = handler.lastPausedCallStack.asReversed()
         val frames = mutableListOf<StackFrame>()
 
         val topElm = handler.lastPausedElm
+        val topEntry = reversed.firstOrNull()
+        val topLibId = topEntry?.libraryId ?: handler.primaryLibraryId ?: ""
         val topBounds = parseLocatorLines(topElm?.locator)
         frames.add(StackFrame().also { f ->
             f.id = 0
-            f.name = reversed.firstOrNull()?.first?.name ?: extractExpressionName(topElm) ?: "(unknown)"
+            f.name = topEntry?.def?.name ?: extractExpressionName(topElm) ?: "(unknown)"
             f.line = topBounds.startLine + 1
             f.column = topBounds.startChar + 1
             f.endLine = topBounds.endLine + 1
             f.endColumn = topBounds.endChar + 1
             f.instructionPointerReference = topElm?.localId
-            f.source = source
+            f.source = resolveSource(topLibId)
         })
 
         for (i in 1 until reversed.size) {
-            val def = reversed[i].first
-            val callSiteElm = reversed[i - 1].second ?: def
+            val entry = reversed[i]
+            val callSiteElm = reversed[i - 1].callSite ?: entry.def
             val bounds = parseLocatorLines(callSiteElm.locator)
             frames.add(StackFrame().also { f ->
                 f.id = i
-                f.name = def.name ?: "(unknown)"
+                f.name = entry.def.name ?: "(unknown)"
                 f.line = bounds.startLine + 1
                 f.column = bounds.startChar + 1
                 f.endLine = bounds.endLine + 1
                 f.endColumn = bounds.endChar + 1
-                f.source = source
+                f.source = resolveSource(entry.libraryId)
             })
         }
         return frames
     }
 
+    private fun resolveSource(libraryId: String): Source {
+        val uri = librarySourceMap[libraryId]
+        return Source().also { s ->
+            if (uri != null && uri.scheme == "file") {
+                s.path = Paths.get(uri).toString()
+            } else if (streamingLaunchUri != null && uri == null &&
+                (libraryId.isEmpty() || libraryId == streamingHandler?.primaryLibraryId)
+            ) {
+                // Fallback: use streamingLaunchUri when the primary library's URI hasn't
+                // been added to librarySourceMap yet (e.g., during early execution or in tests
+                // that bypass executeLaunchStreaming).
+                s.path = Paths.get(URI.create(streamingLaunchUri)).toString()
+            } else {
+                val ref = sourceReferenceRegistry.entries
+                    .firstOrNull { (_, id) -> id.id == libraryId }?.key
+                s.sourceReference = ref ?: 0
+            }
+        }
+    }
+
+    private fun resolveFrameLibraryId(): String {
+        return streamingHandler?.lastPausedCallStack?.firstOrNull()?.libraryId
+            ?: streamingHandler?.primaryLibraryId
+            ?: ""
+    }
+
+
+    override fun source(args: SourceArguments): CompletableFuture<SourceResponse> {
+        val ref = args.sourceReference ?: return CompletableFuture.completedFuture(
+            SourceResponse().also { it.content = "" }
+        )
+        val identifier = sourceReferenceRegistry[ref]
+        val content = identifier?.let { id ->
+            try {
+                val uris = contentService.locate(
+                    URI.create(streamingLaunchUri ?: return@let null),
+                    id,
+                )
+                val uri = uris.firstOrNull() ?: return@let null
+                contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() }
+            } catch (_: Exception) { null }
+        } ?: ""
+        return CompletableFuture.completedFuture(SourceResponse().also { it.content = content })
+    }
 
     @JsonRequest("setStepGranularity")
     fun setStepGranularity(args: Map<String, Any>): CompletableFuture<Void> {
