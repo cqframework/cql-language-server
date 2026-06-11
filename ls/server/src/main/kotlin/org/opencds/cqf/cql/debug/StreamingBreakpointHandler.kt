@@ -9,6 +9,7 @@ import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentHashMap.newKeySet
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 
@@ -51,6 +52,30 @@ class StreamingBreakpointHandler : BreakpointHandler {
     @Volatile
     private var lastPausedElmIdentity: Element? = null
 
+    /**
+     * Tracks [Element.localId] (qualified by library ID) of every ELM node
+     * paused on during the current step session. Prevents re-pausing when the
+     * engine re-enters the same ELM node across patient rows (e.g.,
+     * [FHIRHelpers.ToString] once per patient).
+     *
+     * The compound key is "$libId:$localId". If [localId] is null (defensive
+     * fallback), the key is "hash:<identityHashCode>".
+     *
+     * The set is cleared ONLY on [resume]/[prepareResume]/[reset], NOT on every
+     * [prepareStep]. This means a visited node is invisible to stepping for
+     * the remainder of the run — the only way to re-pause on it is to press
+     * Resume (clearing the set) and re-enter via a breakpoint.
+     */
+    private val visitedElmKeysInStepSession = newKeySet<String>()
+
+    private fun elmKey(
+        elm: Element,
+        libId: String?,
+    ): String {
+        val id = elm.localId ?: return "hash:${System.identityHashCode(elm)}"
+        return "${libId ?: ""}:$id"
+    }
+
     @Volatile
     var lastPausedState: State? = null
         private set
@@ -61,6 +86,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
     var lastPausedCallStack: List<CallStackEntry> = emptyList()
         private set
 
+    @Volatile
     private var resumeLatch = CountDownLatch(0)
 
     @Volatile
@@ -123,57 +149,113 @@ class StreamingBreakpointHandler : BreakpointHandler {
         cqlStepLines = lines
     }
 
-    fun stepIn() {
-        stepMode = StepMode.STEP_IN
+    private fun prepareStep() {
+        log.debug(
+            "prepareStep: stepMode={} stepGranularity={} clearing lastPausedElmIdentity (was={}@{} line={})",
+            stepMode,
+            stepGranularity,
+            lastPausedElmIdentity?.javaClass?.simpleName,
+            lastPausedElmIdentity?.localId,
+            lastPausedLine,
+        )
+        released = false
         lastPausedLine = -1
         lastPausedElmIdentity = null
         clearEvaluatedValues()
+    }
+
+    fun stepIn() {
+        prepareStep()
+        stepMode = StepMode.STEP_IN
         resumeLatch.countDown()
     }
 
     fun stepOver(currentDepth: Int) {
+        prepareStep()
         stepMode = StepMode.STEP_OVER
         depthAtStep = currentDepth
-        lastPausedLine = -1
-        lastPausedElmIdentity = null
-        clearEvaluatedValues()
         resumeLatch.countDown()
     }
 
     fun stepOut(currentDepth: Int) {
+        prepareStep()
         stepMode = StepMode.STEP_OUT
         depthAtStep = currentDepth
-        lastPausedLine = -1
-        lastPausedElmIdentity = null
-        clearEvaluatedValues()
         resumeLatch.countDown()
     }
 
     fun resume() {
+        prepareStep()
+        visitedElmKeysInStepSession.clear()
         stepMode = StepMode.CONTINUE
-        lastPausedLine = -1
-        lastPausedElmIdentity = null
-        clearEvaluatedValues()
         resumeLatch.countDown()
+    }
+
+    fun resumeFromPause() {
+        resumeLatch.countDown()
+    }
+
+    fun prepareStepIn() {
+        prepareStep()
+        stepMode = StepMode.STEP_IN
+    }
+
+    fun prepareStepOver(currentDepth: Int) {
+        prepareStep()
+        stepMode = StepMode.STEP_OVER
+        depthAtStep = currentDepth
+    }
+
+    fun prepareStepOut(currentDepth: Int) {
+        prepareStep()
+        stepMode = StepMode.STEP_OUT
+        depthAtStep = currentDepth
+    }
+
+    fun prepareResume() {
+        prepareStep()
+        visitedElmKeysInStepSession.clear()
+        stepMode = StepMode.CONTINUE
     }
 
     override fun onBeforeExpression(
         elm: Element,
         state: State,
     ): BreakpointAction {
+        if (released) return BreakpointAction.CONTINUE
         val currentLibId = state.getCurrentLibrary()?.identifier?.id
-        val isIncludedLibrary = primaryLibraryId != null
-            && currentLibId != null
-            && currentLibId != primaryLibraryId
+        val isIncludedLibrary =
+            primaryLibraryId != null &&
+                currentLibId != null &&
+                currentLibId != primaryLibraryId
+        log.debug(
+            "onBeforeExpression: ENTER elmClass={} locator={} currentLibId={} isIncludedLibrary={} stepMode={} stepGranularity={} lastPausedElmIdentity={}",
+            elm.javaClass.simpleName,
+            elm.locator,
+            currentLibId,
+            isIncludedLibrary,
+            stepMode,
+            stepGranularity,
+            lastPausedElmIdentity?.let { "${it.javaClass.simpleName}@${it.localId ?: "hash:${System.identityHashCode(it)}"}" },
+        )
 
         if (isIncludedLibrary && stepMode == StepMode.CONTINUE) {
             val locator = elm.locator ?: return BreakpointAction.CONTINUE
             val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
-            if (breakpointsByLibrary[currentLibId]?.contains(line) == true && line != lastPausedLine) {
+            val libBreakpoints = breakpointsByLibrary[currentLibId]
+            if (libBreakpoints?.contains(line) == true && line != lastPausedLine) {
                 log.debug("onBeforeExpression: PAUSE (included library breakpoint) lib={} line={}", currentLibId, line)
                 capturePauseState(elm, state, line)
                 return BreakpointAction.PAUSE
             }
+            log.debug(
+                "onBeforeExpression: SKIP (included library CONTINUE) lib={} line={} libBreakpoints={} lastPausedLine={} hasBreakpoint={}",
+                currentLibId,
+                line,
+                libBreakpoints,
+                lastPausedLine,
+                libBreakpoints?.contains(line),
+            )
             return BreakpointAction.CONTINUE
         }
 
@@ -182,14 +264,35 @@ class StreamingBreakpointHandler : BreakpointHandler {
             val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
             val depth = state.stack.size
             val cqlFilter = cqlStepLinesByLibrary[currentLibId] ?: cqlStepLinesByLibrary[primaryLibraryId]
+            val stepInCondition = line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
+            val stepOverCondition = line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+            val stepOutCondition = depth < depthAtStep
+            val continueCondition = line in breakpointsByLibrary[currentLibId].orEmpty() && line != lastPausedLine
             val shouldPause =
                 when (stepMode) {
-                    StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-                    StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
-                    StepMode.STEP_OUT -> depth < depthAtStep
-                    StepMode.CONTINUE -> line in breakpointsByLibrary[currentLibId].orEmpty() && line != lastPausedLine
+                    StepMode.STEP_IN -> stepInCondition
+                    StepMode.STEP_OVER -> stepOverCondition
+                    StepMode.STEP_OUT -> stepOutCondition
+                    StepMode.CONTINUE -> continueCondition
                 }
+            log.debug(
+                "onBeforeExpression: EVAL (included library CQL) lib={} line={} stepMode={} depth={} depthAtStep={} " +
+                    "cqlFilterSize={} lastPausedLine={} stepInCond={} stepOverCond={} stepOutCond={} continueCond={} shouldPause={}",
+                currentLibId,
+                line,
+                stepMode,
+                depth,
+                depthAtStep,
+                cqlFilter?.size,
+                lastPausedLine,
+                stepInCondition,
+                stepOverCondition,
+                stepOutCondition,
+                continueCondition,
+                shouldPause,
+            )
             if (shouldPause) {
+                log.debug("onBeforeExpression: PAUSE (included library CQL) lib={} line={}", currentLibId, line)
                 capturePauseState(elm, state, line)
                 return BreakpointAction.PAUSE
             }
@@ -197,19 +300,40 @@ class StreamingBreakpointHandler : BreakpointHandler {
         }
 
         if (isIncludedLibrary && stepGranularity == StepGranularity.AST) {
+            val locator = elm.locator ?: return BreakpointAction.CONTINUE
+            val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
+            val elmNotVisited = elmKey(elm, currentLibId) !in visitedElmKeysInStepSession
+            val stackSize = state.stack.size
+            val stepInCondition = elmNotVisited
+            val stepOverCondition = elmNotVisited && stackSize <= depthAtStep
+            val stepOutCondition = stackSize < depthAtStep
+            val continueCondition = line in breakpointsByLibrary[currentLibId].orEmpty() && elmNotVisited
             val shouldPause =
                 when (stepMode) {
-                    StepMode.STEP_IN -> elm !== lastPausedElmIdentity
-                    StepMode.STEP_OVER -> elm !== lastPausedElmIdentity && state.stack.size <= depthAtStep
-                    StepMode.STEP_OUT -> state.stack.size < depthAtStep
-                    StepMode.CONTINUE -> {
-                        val locator = elm.locator ?: return BreakpointAction.CONTINUE
-                        val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
-                        line in breakpointsByLibrary[currentLibId].orEmpty() && elm !== lastPausedElmIdentity
-                    }
+                    StepMode.STEP_IN -> stepInCondition
+                    StepMode.STEP_OVER -> stepOverCondition
+                    StepMode.STEP_OUT -> stepOutCondition
+                    StepMode.CONTINUE -> continueCondition
                 }
+            log.debug(
+                "onBeforeExpression: EVAL (included library AST) lib={} line={} stepMode={} " +
+                    "elmKey={} elmNotVisited={} stackSize={} depthAtStep={} " +
+                    "stepInCond={} stepOverCond={} stepOutCond={} continueCond={} shouldPause={}",
+                currentLibId,
+                line,
+                stepMode,
+                elmKey(elm, currentLibId),
+                elmNotVisited,
+                stackSize,
+                depthAtStep,
+                stepInCondition,
+                stepOverCondition,
+                stepOutCondition,
+                continueCondition,
+                shouldPause,
+            )
             if (shouldPause) {
-                val line = parseLine(elm.locator ?: "") ?: -1
+                log.debug("onBeforeExpression: PAUSE (included library AST) lib={} line={}", currentLibId, line)
                 capturePauseState(elm, state, line)
                 return BreakpointAction.PAUSE
             }
@@ -223,26 +347,61 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
         val primaryLibLines = if (primaryLibraryId != null) breakpointsByLibrary[primaryLibraryId] else null
         val cqlFilter = cqlStepLines
+        val elmNotVisited = elmKey(elm, currentLibId) !in visitedElmKeysInStepSession
+        val cqlStepInCondition = line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
+        val cqlStepOverCondition = line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+        val cqlStepOutCondition = depth < depthAtStep
+        val cqlContinueCondition = line in (primaryLibLines ?: breakpointLines) && line != lastPausedLine
+        val astStepInCondition = elmNotVisited
+        val astStepOverCondition = elmNotVisited && depth <= depthAtStep
+        val astStepOutCondition = depth < depthAtStep
+        val astContinueCondition = line in (primaryLibLines ?: breakpointLines) && elmNotVisited
         val shouldPause =
             when (stepGranularity) {
                 StepGranularity.CQL ->
                     when (stepMode) {
-                        StepMode.STEP_IN -> line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-                        StepMode.STEP_OVER -> line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
-                        StepMode.STEP_OUT -> depth < depthAtStep
-                        StepMode.CONTINUE -> line in (primaryLibLines ?: breakpointLines) && line != lastPausedLine
+                        StepMode.STEP_IN -> cqlStepInCondition
+                        StepMode.STEP_OVER -> cqlStepOverCondition
+                        StepMode.STEP_OUT -> cqlStepOutCondition
+                        StepMode.CONTINUE -> cqlContinueCondition
                     }
                 StepGranularity.AST ->
                     when (stepMode) {
-                        StepMode.STEP_IN -> elm !== lastPausedElmIdentity
-                        StepMode.STEP_OVER -> elm !== lastPausedElmIdentity && depth <= depthAtStep
-                        StepMode.STEP_OUT -> depth < depthAtStep
-                        StepMode.CONTINUE -> line in (primaryLibLines ?: breakpointLines) && elm !== lastPausedElmIdentity
+                        StepMode.STEP_IN -> astStepInCondition
+                        StepMode.STEP_OVER -> astStepOverCondition
+                        StepMode.STEP_OUT -> astStepOutCondition
+                        StepMode.CONTINUE -> astContinueCondition
                     }
             }
 
+        log.debug(
+            "onBeforeExpression: EVAL (primary library) lib={} line={} stepMode={} stepGran={} depth={} depthAtStep={} " +
+                "cqlFilterSize={} lastPausedLine={} elmKey={} elmNotVisited={} " +
+                "cqlStepIn={} cqlStepOver={} cqlStepOut={} cqlContinue={} " +
+                "astStepIn={} astStepOver={} astStepOut={} astContinue={} shouldPause={}",
+            currentLibId,
+            line,
+            stepMode,
+            stepGranularity,
+            depth,
+            depthAtStep,
+            cqlFilter?.size,
+            lastPausedLine,
+            elmKey(elm, currentLibId),
+            elmNotVisited,
+            cqlStepInCondition,
+            cqlStepOverCondition,
+            cqlStepOutCondition,
+            cqlContinueCondition,
+            astStepInCondition,
+            astStepOverCondition,
+            astStepOutCondition,
+            astContinueCondition,
+            shouldPause,
+        )
+
         if (shouldPause) {
-            log.debug("onBeforeExpression: PAUSE (primary library breakpoint) line={}", line)
+            log.debug("onBeforeExpression: PAUSE (primary library) line={}", line)
             capturePauseState(elm, state, line)
             return BreakpointAction.PAUSE
         }
@@ -250,13 +409,29 @@ class StreamingBreakpointHandler : BreakpointHandler {
         return BreakpointAction.CONTINUE
     }
 
-    override fun onExpressionDefEntered(elm: ExpressionDef, callSite: Element?, state: State) {
+    override fun onExpressionDefEntered(
+        elm: ExpressionDef,
+        callSite: Element?,
+        state: State,
+    ) {
         val libId = state.getCurrentLibrary()?.identifier?.id ?: primaryLibraryId ?: ""
         if (libId != primaryLibraryId && libId !in knownLibraryIds) {
+            log.debug(
+                "onExpressionDefEntered: NEW LIBRARY libId={} elm={} primaryLibId={} firing callback",
+                libId,
+                elm.name,
+                primaryLibraryId,
+            )
             knownLibraryIds.add(libId)
             onLibraryEnteredCallback?.invoke(libId, state.getCurrentLibrary()?.identifier)
         }
         defineCallStack.addLast(CallStackEntry(elm, callSite, libId))
+        log.debug(
+            "onExpressionDefEntered: PUSH libId={} elm={} stackDepth={}",
+            libId,
+            elm.name,
+            defineCallStack.size,
+        )
     }
 
     override fun onExpressionDefEvaluated(
@@ -335,9 +510,20 @@ class StreamingBreakpointHandler : BreakpointHandler {
         state: State,
         line: Int,
     ) {
+        val libId = state.getCurrentLibrary()?.identifier?.id
+        log.debug(
+            "capturePauseState: line={} elmClass={} elmKey={} libId={} stepMode={} stepGran={}",
+            line,
+            elm.javaClass.simpleName,
+            elmKey(elm, libId),
+            libId,
+            stepMode,
+            stepGranularity,
+        )
         lastPausedLine = line
         lastPausedElmIdentity = elm
         lastPausedElm = elm
+        visitedElmKeysInStepSession.add(elmKey(elm, libId))
         lastPausedState = state
         lastPausedCallStack = defineCallStack.toList()
 
@@ -370,12 +556,15 @@ class StreamingBreakpointHandler : BreakpointHandler {
     }
 
     fun reset() {
+        released = false
+        resumeLatch = CountDownLatch(0)
         runtimeRegistry.reset()
         contextResourcesByName.clear()
         evaluatedValuesByLocator.clear()
         breakpointsByLibrary.clear()
         cqlStepLinesByLibrary.clear()
         knownLibraryIds.clear()
+        visitedElmKeysInStepSession.clear()
         lastPausedLine = -1
         lastPausedElm = null
         lastPausedElmIdentity = null
@@ -434,9 +623,9 @@ class StreamingBreakpointHandler : BreakpointHandler {
                         lastPausedState,
                     )
                 }
+                resumeLatch.await()
+                log.debug("waitForResume: latch released [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
             }
-            resumeLatch.await()
-            log.debug("waitForResume: latch released [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
         } finally {
             log.debug("waitForResume: exit released={} [thread={}]", released, Thread.currentThread().name)
         }

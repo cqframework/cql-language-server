@@ -3,7 +3,6 @@ package org.opencds.cqf.cql.debug
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
-import org.hl7.elm.r1.FunctionRef
 import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.VersionedIdentifier
@@ -19,7 +18,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class StreamingBreakpointHandlerTest {
-    private fun makeElement(locator: String?): Element = Literal().also { it.locator = locator }
+    private var nextLocalId = 0
+
+    private fun makeElement(locator: String?): Element =
+        Literal().also {
+            it.locator = locator
+            it.localId = (nextLocalId++).toString()
+        }
 
     private fun makeState(stackDepth: Int = 0): State {
         val state = State(Environment(null))
@@ -293,6 +298,25 @@ class StreamingBreakpointHandlerTest {
     }
 
     // -- onPauseCallback ---------------------------------------------------
+
+    @Test
+    fun `waitForResume does not block after release in AST step mode`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+        val state = makeState(1)
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Simulate session teardown — release() is called, evaluation thread resumes.
+        handler.release()
+        handler.waitForResume()
+
+        // After release, a subsequent ELM node should CONTINUE.
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
 
     @Test
     fun `release suppresses further pause callbacks`() {
@@ -679,7 +703,11 @@ class StreamingBreakpointHandlerTest {
     fun `callSite captured in lastPausedCallStack`() {
         val handler = StreamingBreakpointHandler()
         val defA = ExpressionDef().also { it.name = "A" }
-        val ref = ExpressionRef().also { it.name = "A"; it.locator = "1:1-1:10" }
+        val ref =
+            ExpressionRef().also {
+                it.name = "A"
+                it.locator = "1:1-1:10"
+            }
         val state = makeState()
 
         handler.onExpressionDefEntered(defA, ref, state)
@@ -691,5 +719,69 @@ class StreamingBreakpointHandlerTest {
         val snapshot = handler.lastPausedCallStack
         assertEquals(1, snapshot.size)
         assertSame(ref, snapshot[0].callSite)
+    }
+
+    // -- Included library, AST granularity, locator-less elements -----------
+
+    @Test
+    fun `astGranularity includedLibrary stepIn continues on element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val otherLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "OtherLib" }
+            }
+        val state = State(Environment(null)).also { it.init(otherLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm = makeElement(null as String?)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary stepOver continues on element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val otherLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "OtherLib" }
+            }
+        val state = State(Environment(null)).also { it.init(otherLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        handler.onBeforeExpression(elm1, state)
+
+        handler.stepOver(1)
+        val elm2 = makeElement(null as String?)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary stepOut continues on element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val otherLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "OtherLib" }
+            }
+        val state = State(Environment(null)).also { it.init(otherLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        handler.onBeforeExpression(elm1, state)
+
+        handler.stepOut(2)
+        val elm2 = makeElement(null as String?)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
     }
 }

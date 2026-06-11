@@ -8,6 +8,7 @@ import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
+import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.Capabilities
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
@@ -21,7 +22,6 @@ import org.eclipse.lsp4j.debug.NextArguments
 import org.eclipse.lsp4j.debug.Scope
 import org.eclipse.lsp4j.debug.ScopesArguments
 import org.eclipse.lsp4j.debug.ScopesResponse
-import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsResponse
 import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments
@@ -48,7 +48,6 @@ import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.hl7.cql.model.ClassType
 import org.hl7.elm.r1.AggregateExpression
 import org.hl7.elm.r1.AliasedQuerySource
-import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.elm.r1.BinaryExpression
 import org.hl7.elm.r1.Case
 import org.hl7.elm.r1.Combine
@@ -74,6 +73,7 @@ import org.hl7.elm.r1.Slice
 import org.hl7.elm.r1.Sort
 import org.hl7.elm.r1.TernaryExpression
 import org.hl7.elm.r1.UnaryExpression
+import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.opencds.cqf.cql.engine.execution.State
@@ -90,6 +90,7 @@ import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
+import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -302,10 +303,11 @@ open class CqlDebugServer(
             val uri = librarySourceMap[libPath]
             if (uri == null) {
                 try {
-                    val identifier = VersionedIdentifier().also { vi ->
-                        vi.id = includeDef.path
-                        vi.version = includeDef.version
-                    }
+                    val identifier =
+                        VersionedIdentifier().also { vi ->
+                            vi.id = includeDef.path
+                            vi.version = includeDef.version
+                        }
                     val uris = contentService.locate(URI.create(streamingLaunchUri ?: ""), identifier)
                     val resolvedUri = uris.firstOrNull()
                     if (resolvedUri != null) {
@@ -537,7 +539,8 @@ open class CqlDebugServer(
                 val pending = sourcePathBreakpoints[pathStr] ?: return@migration
                 breakpointsByLibrary[libId] = pending
                 handler.breakpointsByLibrary[libId] = pending
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+            }
         }
 
         streamingLaunchUri = args.libraryUri
@@ -627,7 +630,10 @@ open class CqlDebugServer(
         }
     }
 
-    private fun loadStepLinesForLibrary(libId: String, identifier: VersionedIdentifier?) {
+    private fun loadStepLinesForLibrary(
+        libId: String,
+        identifier: VersionedIdentifier?,
+    ) {
         if (identifier == null) return
         try {
             val uris = contentService.locate(URI.create(streamingLaunchUri ?: return), identifier)
@@ -920,7 +926,7 @@ open class CqlDebugServer(
                     nextVarRef = 1000
                     val frameLibId = resolveFrameLibraryId()
                     for (sv in registry.getStackVariables().sortedBy { it.name }) {
-                        val svType = variableTypeMap["${frameLibId}.${sv.name}"] ?: variableTypeMap[sv.name]
+                        val svType = variableTypeMap["$frameLibId.${sv.name}"] ?: variableTypeMap[sv.name]
                         vars.add(
                             Variable().also {
                                 it.name = sv.name
@@ -931,7 +937,7 @@ open class CqlDebugServer(
                         )
                     }
                     for (cr in registry.getContextResources().sortedBy { it.name }) {
-                        val crType = variableTypeMap["${frameLibId}.${cr.name}"] ?: variableTypeMap[cr.name]
+                        val crType = variableTypeMap["$frameLibId.${cr.name}"] ?: variableTypeMap[cr.name]
                         vars.add(
                             Variable().also {
                                 it.name = cr.name
@@ -944,11 +950,12 @@ open class CqlDebugServer(
                 }
                 if (args.variablesReference == 3) {
                     for (d in registry.getDefines().sortedBy { it.name }) {
-                        val dType = if (d.libraryName != null) {
-                            variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
-                        } else {
-                            variableTypeMap[d.name]
-                        }
+                        val dType =
+                            if (d.libraryName != null) {
+                                variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
+                            } else {
+                                variableTypeMap[d.name]
+                            }
                         vars.add(
                             Variable().also {
                                 it.name = d.name
@@ -1737,9 +1744,9 @@ open class CqlDebugServer(
     override fun next(args: NextArguments): CompletableFuture<Void> {
         val handler = streamingHandler
         if (handler != null) {
-            return CompletableFuture.runAsync {
-                handler.stepOver(handler.lastPausedState?.stack?.size ?: 0)
-            }
+            handler.prepareStepOver(handler.lastPausedState?.stack?.size ?: 0)
+            CompletableFuture.runAsync { handler.resumeFromPause() }
+            return CompletableFuture.completedFuture(null)
         }
         return CompletableFuture.runAsync { stepToNext() }
     }
@@ -1747,7 +1754,9 @@ open class CqlDebugServer(
     override fun stepIn(args: StepInArguments): CompletableFuture<Void> {
         val handler = streamingHandler
         if (handler != null) {
-            return CompletableFuture.runAsync { handler.stepIn() }
+            handler.prepareStepIn()
+            CompletableFuture.runAsync { handler.resumeFromPause() }
+            return CompletableFuture.completedFuture(null)
         }
         return CompletableFuture.runAsync { stepToNext() }
     }
@@ -1755,9 +1764,9 @@ open class CqlDebugServer(
     override fun stepOut(args: StepOutArguments): CompletableFuture<Void> {
         val handler = streamingHandler
         if (handler != null) {
-            return CompletableFuture.runAsync {
-                handler.stepOut(handler.lastPausedState?.stack?.size ?: 0)
-            }
+            handler.prepareStepOut(handler.lastPausedState?.stack?.size ?: 0)
+            CompletableFuture.runAsync { handler.resumeFromPause() }
+            return CompletableFuture.completedFuture(null)
         }
         return CompletableFuture.runAsync { stepToNext() }
     }
@@ -1765,10 +1774,11 @@ open class CqlDebugServer(
     override fun continue_(args: ContinueArguments): CompletableFuture<ContinueResponse> {
         val handler = streamingHandler
         if (handler != null) {
-            return CompletableFuture.supplyAsync {
-                handler.resume()
-                ContinueResponse().also { it.allThreadsContinued = true }
-            }
+            handler.prepareResume()
+            CompletableFuture.runAsync { handler.resumeFromPause() }
+            return CompletableFuture.completedFuture(
+                ContinueResponse().also { it.allThreadsContinued = true },
+            )
         }
         return CompletableFuture.supplyAsync {
             var hitBreakpoint = false
@@ -1851,30 +1861,34 @@ open class CqlDebugServer(
         val topEntry = reversed.firstOrNull()
         val topLibId = topEntry?.libraryId ?: handler.primaryLibraryId ?: ""
         val topBounds = parseLocatorLines(topElm?.locator)
-        frames.add(StackFrame().also { f ->
-            f.id = 0
-            f.name = topEntry?.def?.name ?: extractExpressionName(topElm) ?: "(unknown)"
-            f.line = topBounds.startLine + 1
-            f.column = topBounds.startChar + 1
-            f.endLine = topBounds.endLine + 1
-            f.endColumn = topBounds.endChar + 1
-            f.instructionPointerReference = topElm?.localId
-            f.source = resolveSource(topLibId)
-        })
+        frames.add(
+            StackFrame().also { f ->
+                f.id = 0
+                f.name = topEntry?.def?.name ?: extractExpressionName(topElm) ?: "(unknown)"
+                f.line = topBounds.startLine + 1
+                f.column = topBounds.startChar + 1
+                f.endLine = topBounds.endLine + 1
+                f.endColumn = topBounds.endChar + 1
+                f.instructionPointerReference = topElm?.localId
+                f.source = resolveSource(topLibId)
+            },
+        )
 
         for (i in 1 until reversed.size) {
             val entry = reversed[i]
             val callSiteElm = reversed[i - 1].callSite ?: entry.def
             val bounds = parseLocatorLines(callSiteElm.locator)
-            frames.add(StackFrame().also { f ->
-                f.id = i
-                f.name = entry.def.name ?: "(unknown)"
-                f.line = bounds.startLine + 1
-                f.column = bounds.startChar + 1
-                f.endLine = bounds.endLine + 1
-                f.endColumn = bounds.endChar + 1
-                f.source = resolveSource(entry.libraryId)
-            })
+            frames.add(
+                StackFrame().also { f ->
+                    f.id = i
+                    f.name = entry.def.name ?: "(unknown)"
+                    f.line = bounds.startLine + 1
+                    f.column = bounds.startChar + 1
+                    f.endLine = bounds.endLine + 1
+                    f.endColumn = bounds.endChar + 1
+                    f.source = resolveSource(entry.libraryId)
+                },
+            )
         }
         return frames
     }
@@ -1892,8 +1906,9 @@ open class CqlDebugServer(
                 // that bypass executeLaunchStreaming).
                 s.path = Paths.get(URI.create(streamingLaunchUri)).toString()
             } else {
-                val ref = sourceReferenceRegistry.entries
-                    .firstOrNull { (_, id) -> id.id == libraryId }?.key
+                val ref =
+                    sourceReferenceRegistry.entries
+                        .firstOrNull { (_, id) -> id.id == libraryId }?.key
                 s.sourceReference = ref ?: 0
             }
         }
@@ -1905,22 +1920,26 @@ open class CqlDebugServer(
             ?: ""
     }
 
-
     override fun source(args: SourceArguments): CompletableFuture<SourceResponse> {
-        val ref = args.sourceReference ?: return CompletableFuture.completedFuture(
-            SourceResponse().also { it.content = "" }
-        )
+        val ref =
+            args.sourceReference ?: return CompletableFuture.completedFuture(
+                SourceResponse().also { it.content = "" },
+            )
         val identifier = sourceReferenceRegistry[ref]
-        val content = identifier?.let { id ->
-            try {
-                val uris = contentService.locate(
-                    URI.create(streamingLaunchUri ?: return@let null),
-                    id,
-                )
-                val uri = uris.firstOrNull() ?: return@let null
-                contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() }
-            } catch (_: Exception) { null }
-        } ?: ""
+        val content =
+            identifier?.let { id ->
+                try {
+                    val uris =
+                        contentService.locate(
+                            URI.create(streamingLaunchUri ?: return@let null),
+                            id,
+                        )
+                    val uri = uris.firstOrNull() ?: return@let null
+                    contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() }
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: ""
         return CompletableFuture.completedFuture(SourceResponse().also { it.content = content })
     }
 
@@ -1945,6 +1964,33 @@ open class CqlDebugServer(
             )
         }
         return CompletableFuture.completedFuture(null)
+    }
+
+    @JsonRequest("getAst")
+    fun getAst(args: Map<String, Any>): CompletableFuture<Map<String, Any?>> {
+        val uriStr = args["uri"] as? String ?: return CompletableFuture.completedFuture(mapOf("ast" to null))
+        val targetUri =
+            try {
+                URI.create(uriStr)
+            } catch (_: Exception) {
+                return CompletableFuture.completedFuture(mapOf("ast" to null))
+            }
+
+        val libId = librarySourceMap.entries.firstOrNull { (_, u) -> u == targetUri }?.key
+
+        val library =
+            if (libId != null) {
+                launchCompiler?.libraryManager?.compiledLibraries?.entries
+                    ?.firstOrNull { (vid, _) -> vid.id == libId }
+                    ?.value?.library
+            } else if (streamingLaunchUri != null && targetUri.toString() == streamingLaunchUri) {
+                launchCompiler?.compiledLibrary?.library
+            } else {
+                null
+            }
+
+        val astStr = library?.let { ElmAstLibraryWriter().writeAsString(it) }
+        return CompletableFuture.completedFuture(mapOf("ast" to astStr))
     }
 
     // ---- Type resolution helpers ----
@@ -2055,9 +2101,10 @@ open class CqlDebugServer(
                 ?: return elementDef.children ?: emptyList()
         val allChildren = elementDef.children ?: emptyList()
         // Use allElements (not sortedElements) so inherited fields like id/meta/extension are included.
-        val profileMatched = classType.allElements.sortedBy { it.name }.mapNotNull { element ->
-            allChildren.firstOrNull { it.elementName == element.name }
-        }
+        val profileMatched =
+            classType.allElements.sortedBy { it.name }.mapNotNull { element ->
+                allChildren.firstOrNull { it.elementName == element.name }
+            }
         val matchedNames = profileMatched.map { it.elementName }.toSet()
         val unmatched = allChildren.filter { it.elementName !in matchedNames }
         return profileMatched + unmatched

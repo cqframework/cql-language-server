@@ -1,11 +1,12 @@
 package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.FhirContext
+import com.google.gson.Gson
+import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
 import org.eclipse.lsp4j.debug.NextArguments
 import org.eclipse.lsp4j.debug.ScopesArguments
-import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
 import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.SourceBreakpoint
@@ -18,12 +19,9 @@ import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
+import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.Meta
 import org.hl7.fhir.r4.model.Patient
-import org.hl7.fhir.r4.model.Encounter
-import com.google.gson.Gson
-import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -39,9 +37,11 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
 
 class StreamingCqlDebugServerTest {
     /**
@@ -112,7 +112,10 @@ class StreamingCqlDebugServerTest {
             launchArgs = args
         }
 
-        fun addLibrarySource(libId: String, uri: URI) {
+        fun addLibrarySource(
+            libId: String,
+            uri: URI,
+        ) {
             val field = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
             field.isAccessible = true
             @Suppress("UNCHECKED_CAST")
@@ -126,7 +129,10 @@ class StreamingCqlDebugServerTest {
             return (field.get(this) as ConcurrentHashMap<String, ConcurrentHashMap<Int, Int>>)[path]?.toMap()
         }
 
-        fun seedBreakpointIdsForPath(path: String, lineIdMap: Map<Int, Int>) {
+        fun seedBreakpointIdsForPath(
+            path: String,
+            lineIdMap: Map<Int, Int>,
+        ) {
             val field = CqlDebugServer::class.java.getDeclaredField("breakpointIdsByPath")
             field.isAccessible = true
             @Suppress("UNCHECKED_CAST")
@@ -249,7 +255,11 @@ class StreamingCqlDebugServerTest {
         server.setLaunchUri("file:///test.cql")
         val handler = server.testHandler
 
-        val def = ExpressionDef().also { it.name = "Initial Population"; it.locator = "5:1-5:30" }
+        val def =
+            ExpressionDef().also {
+                it.name = "Initial Population"
+                it.locator = "5:1-5:30"
+            }
         val state = State(Environment(null))
         handler.onExpressionDefEntered(def, null, state)
 
@@ -267,16 +277,32 @@ class StreamingCqlDebugServerTest {
         server.setLaunchUri("file:///test.cql")
         val handler = server.testHandler
 
-        val outerDef = ExpressionDef().also { it.name = "Outer"; it.locator = "1:1-1:30" }
-        val innerDef = ExpressionDef().also { it.name = "Inner"; it.locator = "2:1-2:30" }
-        val ref = ExpressionRef().also { it.name = "Inner"; it.locator = "1:15-1:20" }
+        val outerDef =
+            ExpressionDef().also {
+                it.name = "Outer"
+                it.locator = "1:1-1:30"
+            }
+        val innerDef =
+            ExpressionDef().also {
+                it.name = "Inner"
+                it.locator = "2:1-2:30"
+            }
+        val ref =
+            ExpressionRef().also {
+                it.name = "Inner"
+                it.locator = "1:15-1:20"
+            }
         val state = State(Environment(null))
 
         handler.onExpressionDefEntered(outerDef, null, state)
         handler.onExpressionDefEntered(innerDef, ref, state)
 
         handler.stepIn()
-        val pausedElm = ExpressionDef().also { it.name = "Inner"; it.locator = "2:5-2:20" }
+        val pausedElm =
+            ExpressionDef().also {
+                it.name = "Inner"
+                it.locator = "2:5-2:20"
+            }
         handler.onBeforeExpression(pausedElm, state)
 
         val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
@@ -289,8 +315,8 @@ class StreamingCqlDebugServerTest {
 
         // Frame 1 = caller (Outer), position at call site
         assertEquals("Outer", response.stackFrames[1].name)
-        assertEquals(1, response.stackFrames[1].line)  // call site line from expression ref
-        assertEquals(15, response.stackFrames[1].column)  // call site col from expression ref
+        assertEquals(1, response.stackFrames[1].line) // call site line from expression ref
+        assertEquals(15, response.stackFrames[1].column) // call site col from expression ref
     }
 
     @Test
@@ -299,8 +325,16 @@ class StreamingCqlDebugServerTest {
         server.setLaunchUri("file:///test.cql")
         val handler = server.testHandler
 
-        val funcDef = ExpressionDef().also { it.name = "MyFunc"; it.locator = "3:1-3:30" }
-        val funcRef = FunctionRef().also { it.name = "MyFunc"; it.locator = "1:20-1:25" }
+        val funcDef =
+            ExpressionDef().also {
+                it.name = "MyFunc"
+                it.locator = "3:1-3:30"
+            }
+        val funcRef =
+            FunctionRef().also {
+                it.name = "MyFunc"
+                it.locator = "1:20-1:25"
+            }
         val state = State(Environment(null))
 
         handler.onExpressionDefEntered(funcDef, funcRef, state)
@@ -320,11 +354,31 @@ class StreamingCqlDebugServerTest {
         server.setLaunchUri("file:///test.cql")
         val handler = server.testHandler
 
-        val defA = ExpressionDef().also { it.name = "A"; it.locator = "1:1-1:30" }
-        val defB = ExpressionDef().also { it.name = "B"; it.locator = "2:1-2:30" }
-        val defC = ExpressionDef().also { it.name = "C"; it.locator = "3:1-3:30" }
-        val refB = ExpressionRef().also { it.name = "B"; it.locator = "1:10-1:11" }
-        val refC = ExpressionRef().also { it.name = "C"; it.locator = "2:10-2:11" }
+        val defA =
+            ExpressionDef().also {
+                it.name = "A"
+                it.locator = "1:1-1:30"
+            }
+        val defB =
+            ExpressionDef().also {
+                it.name = "B"
+                it.locator = "2:1-2:30"
+            }
+        val defC =
+            ExpressionDef().also {
+                it.name = "C"
+                it.locator = "3:1-3:30"
+            }
+        val refB =
+            ExpressionRef().also {
+                it.name = "B"
+                it.locator = "1:10-1:11"
+            }
+        val refC =
+            ExpressionRef().also {
+                it.name = "C"
+                it.locator = "2:10-2:11"
+            }
         val state = State(Environment(null))
 
         handler.onExpressionDefEntered(defA, null, state)
@@ -2225,9 +2279,12 @@ class StreamingCqlDebugServerTest {
         encounter.status = Encounter.EncounterStatus.FINISHED
         val statusValue = encounter.getStatusElement()
 
-        val method = CqlDebugServer::class.java.getDeclaredMethod(
-            "formatVariableValue", Any::class.java, Gson::class.java
-        )
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "formatVariableValue",
+                Any::class.java,
+                Gson::class.java,
+            )
         method.isAccessible = true
         val result = method.invoke(server, statusValue, gson) as String
 
@@ -2242,20 +2299,28 @@ class StreamingCqlDebugServerTest {
         val encounter = Encounter()
         encounter.status = Encounter.EncounterStatus.FINISHED
 
-        val extractMethod = CqlDebugServer::class.java.getDeclaredMethod(
-            "extractPropertyValue", IBase::class.java, String::class.java
-        )
+        val extractMethod =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "extractPropertyValue",
+                IBase::class.java,
+                String::class.java,
+            )
         extractMethod.isAccessible = true
         val result = extractMethod.invoke(server, encounter, "status")
 
         // Should return Enumeration<EncounterStatus> (an IPrimitiveType), not EncounterStatus.FINISHED
-        assertTrue(result is org.hl7.fhir.instance.model.api.IPrimitiveType<*>,
-            "Expected IPrimitiveType wrapper, got ${result?.javaClass?.name}")
+        assertTrue(
+            result is org.hl7.fhir.instance.model.api.IPrimitiveType<*>,
+            "Expected IPrimitiveType wrapper, got ${result?.javaClass?.name}",
+        )
 
         // Verify it formats as lowercase FHIR code
-        val formatMethod = CqlDebugServer::class.java.getDeclaredMethod(
-            "formatVariableValue", Any::class.java, Gson::class.java
-        )
+        val formatMethod =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "formatVariableValue",
+                Any::class.java,
+                Gson::class.java,
+            )
         formatMethod.isAccessible = true
         val formatted = formatMethod.invoke(server, result, gson) as String
 
@@ -2277,12 +2342,20 @@ class StreamingCqlDebugServerTest {
             capturedIdentifier = identifier
         }
 
-        val libId = VersionedIdentifier().also { it.id = "FHIRHelpers"; it.version = "1.0.0" }
+        val libId =
+            VersionedIdentifier().also {
+                it.id = "FHIRHelpers"
+                it.version = "1.0.0"
+            }
         val library = Library().also { it.identifier = libId }
         val state = State(Environment(null))
         state.init(library)
 
-        val def = ExpressionDef().also { it.name = "Test"; it.locator = "1:1-1:10" }
+        val def =
+            ExpressionDef().also {
+                it.name = "Test"
+                it.locator = "1:1-1:10"
+            }
         handler.onExpressionDefEntered(def, null, state)
 
         assertEquals("FHIRHelpers", capturedLibId)
@@ -2309,7 +2382,7 @@ class StreamingCqlDebugServerTest {
             SetBreakpointsArguments().also {
                 it.source = Source().also { s -> s.path = fhirHelpersPath }
                 it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 42 })
-            }
+            },
         ).get()
 
         // handler does not yet have FHIRHelpers breakpoints
@@ -2342,7 +2415,11 @@ class StreamingCqlDebugServerTest {
         val handler = server.testHandler
 
         // Transitive library C (not a direct include of the primary library)
-        val libCIdentifier = VersionedIdentifier().also { it.id = "LibC"; it.version = "1.0.0" }
+        val libCIdentifier =
+            VersionedIdentifier().also {
+                it.id = "LibC"
+                it.version = "1.0.0"
+            }
         val libCUri = URI.create("file:///libraries/LibC.cql")
         val libCPath = Paths.get(libCUri).toString()
 
@@ -2355,7 +2432,7 @@ class StreamingCqlDebugServerTest {
             SetBreakpointsArguments().also {
                 it.source = Source().also { s -> s.path = libCPath }
                 it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 15 })
-            }
+            },
         ).get()
 
         assertFalse(handler.breakpointsByLibrary.containsKey("LibC"))
@@ -2375,16 +2452,18 @@ class StreamingCqlDebugServerTest {
                     val csField = CqlDebugServer::class.java.getDeclaredField("contentService")
                     csField.isAccessible = true
                     val contentSvc = csField.get(server) as ContentService
-                    val uris = contentSvc.locate(
-                        URI.create(launchUriStr),
-                        libraryIdentifier,
-                    )
+                    val uris =
+                        contentSvc.locate(
+                            URI.create(launchUriStr),
+                            libraryIdentifier,
+                        )
                     val uri = uris.firstOrNull()
                     if (uri != null) {
                         libMap[libId] = uri
                     }
                 }
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+            }
 
             // Migration block (always runs)
             server.triggerBreakpointMigration(libId)
