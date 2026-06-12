@@ -2,6 +2,10 @@ package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
+import org.antlr.v4.kotlinruntime.CharStreams
+import org.antlr.v4.kotlinruntime.CommonTokenStream
+import org.cqframework.cql.gen.cqlLexer
+import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
@@ -716,6 +720,50 @@ class StreamingCqlDebugServerTest {
                 ).get()
         assertEquals(1, response.breakpoints.size)
         assertFalse(response.breakpoints[0].isVerified)
+    }
+
+    @Test
+    fun `setBreakpoints marks breakpoints on blank and invalid lines as unverified`() {
+        val cm = mock(CqlCompilationManager::class.java)
+        val cs = mock(ContentService::class.java)
+        val ig = mock(IgContextManager::class.java)
+        val lrm = mock(LibraryResolutionManager::class.java)
+        val server = TestStreamingServer(cm, cs, ig, lrm)
+        server.connect(Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+
+        val cql =
+            """
+            library Test
+            define "A": 1
+
+            define "B": 2
+            """.trimIndent()
+        val lexer = cqlLexer(CharStreams.fromString(cql))
+        val parser = cqlParser(CommonTokenStream(lexer))
+        val parseTree = parser.library()
+        val sourcePath = "/test.cql"
+        Mockito.`when`(cm.getParseTree(Paths.get(sourcePath).toUri())).thenReturn(parseTree)
+
+        val response =
+            server
+                .setBreakpoints(
+                    SetBreakpointsArguments().also {
+                        it.source = Source().also { s -> s.path = sourcePath }
+                        it.breakpoints =
+                            arrayOf(
+                                SourceBreakpoint().also { bp -> bp.line = 1 }, // library header
+                                SourceBreakpoint().also { bp -> bp.line = 2 }, // expression body
+                                SourceBreakpoint().also { bp -> bp.line = 3 }, // blank line
+                                SourceBreakpoint().also { bp -> bp.line = 4 }, // expression body
+                            )
+                    },
+                ).get()
+
+        assertEquals(4, response.breakpoints.size)
+        assertFalse(response.breakpoints[0].isVerified, "Library header should be unverified")
+        assertTrue(response.breakpoints[1].isVerified, "Expression line should be verified")
+        assertFalse(response.breakpoints[2].isVerified, "Blank line should be unverified")
+        assertTrue(response.breakpoints[3].isVerified, "Expression line should be verified")
     }
 
     @Test

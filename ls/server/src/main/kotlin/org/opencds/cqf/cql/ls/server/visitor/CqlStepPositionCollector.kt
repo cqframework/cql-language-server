@@ -12,6 +12,12 @@ object CqlStepPositionCollector {
         return lines
     }
 
+    fun collectBreakpointableLines(parseTree: cqlParser.LibraryContext): Set<Int> {
+        val lines = mutableSetOf<Int>()
+        collectBreakpointableLinesFrom(parseTree, lines)
+        return lines
+    }
+
     private fun collectFromContext(
         ctx: ParserRuleContext,
         lines: MutableSet<Int>,
@@ -128,6 +134,26 @@ object CqlStepPositionCollector {
         }
 
         collectFromContext(queryCtx, lines)
+    }
+
+    private fun collectBreakpointableLinesFrom(
+        ctx: ParserRuleContext,
+        lines: MutableSet<Int>,
+    ) {
+        for (i in 0 until ctx.childCount) {
+            val child = ctx.getChild(i)
+            when (child) {
+                is cqlParser.ExpressionContext -> {
+                    child.start?.line?.let { lines.add(it) }
+                    collectBreakpointableLinesFrom(child, lines)
+                }
+                is cqlParser.ExpressionTermContext -> {
+                    child.start?.line?.let { lines.add(it) }
+                    collectBreakpointableLinesFrom(child, lines)
+                }
+                is ParserRuleContext -> collectBreakpointableLinesFrom(child, lines)
+            }
+        }
     }
 }
 

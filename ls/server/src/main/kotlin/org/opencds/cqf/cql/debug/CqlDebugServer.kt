@@ -92,6 +92,7 @@ import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
+import org.cqframework.cql.gen.cqlParser
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -256,6 +257,15 @@ open class CqlDebugServer(
         breakpointLines.clear()
         args.breakpoints?.forEach { breakpointLines.add(it.line - 1) }
 
+        // Compute breakpointable lines from the ANTLR parse tree, if available.
+        // This allows marking breakpoints on blank/invalid lines as unverified.
+        val breakpointableLines: Set<Int>? = runCatching {
+            val treeUri = resolveLibraryIdFromPath(sourcePath)?.let { librarySourceMap[it] }
+                ?: if (sourcePath != null) Paths.get(sourcePath).toUri() else null
+            treeUri?.let { compilationManager.getParseTree(it) }
+                ?.let { CqlStepPositionCollector.collectBreakpointableLines(it) }
+        }.getOrNull()
+
         val bps =
             args.breakpoints?.map { bp ->
                 val id = nextBreakpointId.getAndIncrement()
@@ -264,9 +274,10 @@ open class CqlDebugServer(
                         .computeIfAbsent(sourcePath) { ConcurrentHashMap() }
                         .put(bp.line, id)
                 }
+                val lineIsBreakpointable = breakpointableLines?.contains(bp.line) ?: true
                 Breakpoint().also {
                     it.id = id
-                    it.isVerified = relevantLibraryIds == null || isRelevantSourcePath(sourcePath)
+                    it.isVerified = lineIsBreakpointable && (relevantLibraryIds == null || isRelevantSourcePath(sourcePath))
                     it.line = bp.line
                 }
             }?.toTypedArray() ?: emptyArray()
@@ -341,6 +352,28 @@ open class CqlDebugServer(
                             }
                     },
                 )
+            }
+        }
+    }
+
+    private fun updateBreakpointLineVerification(parseTree: cqlParser.LibraryContext) {
+        val breakpointableLines = CqlStepPositionCollector.collectBreakpointableLines(parseTree)
+        for ((sourcePath, lineToId) in breakpointIdsByPath) {
+            for ((line, id) in lineToId) {
+                if (line !in breakpointableLines) {
+                    client.join().breakpoint(
+                        BreakpointEventArguments().also {
+                            it.reason = "changed"
+                            it.breakpoint =
+                                Breakpoint().also { bp ->
+                                    bp.id = id
+                                    bp.isVerified = false
+                                    bp.line = line
+                                    bp.source = Source().also { s -> s.path = sourcePath }
+                                }
+                        },
+                    )
+                }
             }
         }
     }
@@ -591,6 +624,13 @@ open class CqlDebugServer(
             val transitiveIncludes = collectTransitiveIncludes(primaryId, compiler)
             relevantLibraryIds = transitiveIncludes
             updateBreakpointVerification()
+
+            // After library resolution, correct verification for breakpoints on
+            // lines that don't correspond to evaluatable CQL expressions.
+            val parseTreeAfterLaunch = compilationManager.getParseTree(libraryUri)
+            if (parseTreeAfterLaunch != null) {
+                updateBreakpointLineVerification(parseTreeAfterLaunch)
+            }
         }
 
         handler.stepGranularity =
