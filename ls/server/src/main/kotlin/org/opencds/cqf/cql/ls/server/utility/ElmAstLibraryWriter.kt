@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.ls.server.utility
 
 import org.cqframework.cql.cql2elm.CqlCompiler
-import org.cqframework.cql.cql2elm.CqlTranslator
 import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
 import org.hl7.elm.r1.AliasRef
 import org.hl7.elm.r1.AliasedQuerySource
@@ -637,7 +636,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     )
 
     private fun translatorVersion(): String {
-        return CqlTranslator::class.java.`package`.implementationVersion ?: "?"
+        return VersionReader.loadVersion("cql-to-elm-jvm") ?: "?"
     }
 
     private fun label(name: String): String =

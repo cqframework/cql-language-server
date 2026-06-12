@@ -250,6 +250,41 @@ class CqlEvaluatorTest {
      * "Expected date from(DateTime), Found date from(Date)" runtime error.
      */
     @Test
+    fun `evaluate returns version info structure in response`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "One",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = null,
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+
+        assertNotNull(response.versions, "Expected versions in response")
+        // Package.implementationVersion may be null when running outside a JAR (e.g. tests).
+        // Verify the VersionInfo instance is present with the correct type.
+        assertInstanceOf(VersionInfo::class.java, response.versions)
+        // Ensure all four fields are present on the data class (even if values are null)
+        val versionFields = response.versions!!::class.java.declaredFields.map { it.name }.toSet()
+        assertTrue("translator" in versionFields)
+        assertTrue("engine" in versionFields)
+        assertTrue("clinicalReasoning" in versionFields)
+        assertTrue("languageServer" in versionFields)
+    }
+
+    @Test
     fun `evaluate coerces bare date literals to DateTime for Interval-DateTime parameter`() {
         val request =
             ExecuteCqlRequest(

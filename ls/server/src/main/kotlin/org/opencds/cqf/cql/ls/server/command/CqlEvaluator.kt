@@ -5,6 +5,7 @@ import ca.uhn.fhir.context.FhirVersionEnum
 import ca.uhn.fhir.repository.IRepository
 import kotlinx.io.Source
 import kotlinx.io.files.Path
+import org.cqframework.cql.cql2elm.CqlTranslator
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider
@@ -19,13 +20,16 @@ import org.hl7.fhir.instance.model.api.IBaseDatatype
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.hl7.fhir.r5.context.ILoggingService
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
+import org.opencds.cqf.cql.engine.execution.CqlEngine
 import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
+import org.opencds.cqf.cql.ls.server.CqlLanguageServer
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
@@ -676,7 +680,18 @@ object CqlEvaluator {
                 results
             }
 
-        return DetailedEvaluationResult(ExecuteCqlResponse(allResults, emptyList()), allDetailed, allDefineOrder)
+        val versions = VersionInfo(
+            translator = VersionReader.loadVersion("cql-to-elm-jvm"),
+            engine = VersionReader.loadVersion("engine-jvm"),
+            clinicalReasoning = VersionReader.loadVersion("cqf-fhir-cql"),
+            languageServer = VersionReader.loadVersion("cql-ls-server"),
+        )
+
+        return DetailedEvaluationResult(
+            ExecuteCqlResponse(allResults, emptyList(), versions),
+            allDetailed,
+            allDefineOrder,
+        )
     }
 
     /**

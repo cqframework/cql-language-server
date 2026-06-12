@@ -23,7 +23,11 @@ data class ContextRequest(val contextName: String, val contextValue: String)
 
 data class ParameterRequest(val parameterName: String, val parameterType: String, val parameterValue: String)
 
-data class ExecuteCqlResponse(val results: List<LibraryResult>, val logs: List<String>)
+data class ExecuteCqlResponse(
+    val results: List<LibraryResult>,
+    val logs: List<String>,
+    val versions: VersionInfo? = null,
+)
 
 data class LibraryResult(
     val libraryName: String,
@@ -41,6 +45,13 @@ data class DetailedExpressionResult(
 )
 
 data class DefaultParameterResult(val name: String, val value: String)
+
+data class VersionInfo(
+    val translator: String?,
+    val engine: String?,
+    val clinicalReasoning: String?,
+    val languageServer: String?,
+)
 
 data class DetailedEvaluationResult(
     val response: ExecuteCqlResponse,
