@@ -35,6 +35,6 @@ jobs:
           job_name: "Check PR"
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
-        if: matrix.os == 'ubuntu-latest'
+        if: (success() || failure()) && matrix.os == 'ubuntu-latest'
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
