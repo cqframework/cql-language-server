@@ -188,8 +188,8 @@ class CqlStepPositionCollectorTest {
             define "B": 2
             """.trimIndent()
         val lines = CqlStepPositionCollector.collectBreakpointableLines(parse(cql))
-        assertTrue(2 in lines)  // define A body
-        assertTrue(4 in lines)  // define B body
+        assertTrue(2 in lines) // define A body
+        assertTrue(4 in lines) // define B body
         assertFalse(3 in lines) // blank line
     }
 
@@ -206,7 +206,7 @@ class CqlStepPositionCollectorTest {
         assertFalse(1 in lines) // library header
         assertFalse(2 in lines) // using
         assertFalse(3 in lines) // include
-        assertTrue(4 in lines)  // define body
+        assertTrue(4 in lines) // define body
     }
 
     @Test
@@ -227,9 +227,9 @@ class CqlStepPositionCollectorTest {
         assertFalse(3 in lines) // valueset
         assertFalse(4 in lines) // code
         assertFalse(5 in lines) // concept
-        assertTrue(6 in lines)  // parameter default expression
+        assertTrue(6 in lines) // parameter default expression
         assertFalse(7 in lines) // context
-        assertTrue(8 in lines)  // define body
+        assertTrue(8 in lines) // define body
     }
 
     @Test
@@ -268,9 +268,9 @@ class CqlStepPositionCollectorTest {
             """.trimIndent()
         val stepLines = CqlStepPositionCollector.collect(parse(cql))
         val bpLines = CqlStepPositionCollector.collectBreakpointableLines(parse(cql))
-        assertTrue(3 in bpLines)  // First(
-        assertTrue(4 in bpLines)  // Second(
-        assertTrue(5 in bpLines)  // Third(1)
+        assertTrue(3 in bpLines) // First(
+        assertTrue(4 in bpLines) // Second(
+        assertTrue(5 in bpLines) // Third(1)
         assertTrue(3 in stepLines) // First( is also a step line
         assertFalse(4 in stepLines) // Second( is not a step line
     }
@@ -288,9 +288,9 @@ class CqlStepPositionCollectorTest {
                   E.period
             """.trimIndent()
         val bpLines = CqlStepPositionCollector.collectBreakpointableLines(parse(cql))
-        assertTrue(4 in bpLines)  // where expression (line 1)
-        assertTrue(5 in bpLines)  // where expression (multi-line continuation)
-        assertTrue(7 in bpLines)  // return expression
+        assertTrue(4 in bpLines) // where expression (line 1)
+        assertTrue(5 in bpLines) // where expression (multi-line continuation)
+        assertTrue(7 in bpLines) // return expression
     }
 
     @Test
@@ -303,7 +303,7 @@ class CqlStepPositionCollectorTest {
             """.trimIndent()
         val bpLines = CqlStepPositionCollector.collectBreakpointableLines(parse(cql))
         assertFalse(2 in bpLines) // define keyword line (no expression starts here)
-        assertTrue(3 in bpLines)  // expression body line
+        assertTrue(3 in bpLines) // expression body line
     }
 
     @Test
@@ -320,8 +320,8 @@ class CqlStepPositionCollectorTest {
                   such that P.status = 'completed'
             """.trimIndent()
         val bpLines = CqlStepPositionCollector.collectBreakpointableLines(parse(cql))
-        assertTrue(5 in bpLines)  // with such-that (line 1)
-        assertTrue(6 in bpLines)  // with such-that (and continuation)
-        assertTrue(8 in bpLines)  // without such-that
+        assertTrue(5 in bpLines) // with such-that (line 1)
+        assertTrue(6 in bpLines) // with such-that (and continuation)
+        assertTrue(8 in bpLines) // without such-that
     }
 }

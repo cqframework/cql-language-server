@@ -17,12 +17,13 @@ class GetVersionInfoCommandContribution : CommandContribution {
     override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
         return if (GET_VERSION_INFO_COMMAND == params.command) {
             log.debug("getVersionInfo: received")
-            val versions = VersionInfo(
-                translator = VersionReader.loadVersion("cql-to-elm-jvm"),
-                engine = VersionReader.loadVersion("engine-jvm"),
-                clinicalReasoning = VersionReader.loadVersion("cqf-fhir-cql"),
-                languageServer = VersionReader.loadVersion("cql-ls-server"),
-            )
+            val versions =
+                VersionInfo(
+                    translator = VersionReader.loadVersion("cql-to-elm-jvm"),
+                    engine = VersionReader.loadVersion("engine-jvm"),
+                    clinicalReasoning = VersionReader.loadVersion("cqf-fhir-cql"),
+                    languageServer = VersionReader.loadVersion("cql-ls-server"),
+                )
             log.debug("getVersionInfo: returning {}", versions)
             CompletableFuture.completedFuture(versions)
         } else {

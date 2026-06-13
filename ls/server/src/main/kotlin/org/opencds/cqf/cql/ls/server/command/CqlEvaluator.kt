@@ -5,7 +5,6 @@ import ca.uhn.fhir.context.FhirVersionEnum
 import ca.uhn.fhir.repository.IRepository
 import kotlinx.io.Source
 import kotlinx.io.files.Path
-import org.cqframework.cql.cql2elm.CqlTranslator
 import org.cqframework.cql.cql2elm.CqlTranslatorOptions
 import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider
@@ -27,14 +26,13 @@ import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
-import org.opencds.cqf.cql.ls.server.CqlLanguageServer
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
-import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
+import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.opencds.cqf.fhir.cql.CqlOptions
 import org.opencds.cqf.fhir.cql.Engines
 import org.opencds.cqf.fhir.cql.EvaluationSettings
@@ -680,12 +678,13 @@ object CqlEvaluator {
                 results
             }
 
-        val versions = VersionInfo(
-            translator = VersionReader.loadVersion("cql-to-elm-jvm"),
-            engine = VersionReader.loadVersion("engine-jvm"),
-            clinicalReasoning = VersionReader.loadVersion("cqf-fhir-cql"),
-            languageServer = VersionReader.loadVersion("cql-ls-server"),
-        )
+        val versions =
+            VersionInfo(
+                translator = VersionReader.loadVersion("cql-to-elm-jvm"),
+                engine = VersionReader.loadVersion("engine-jvm"),
+                clinicalReasoning = VersionReader.loadVersion("cqf-fhir-cql"),
+                languageServer = VersionReader.loadVersion("cql-ls-server"),
+            )
 
         return DetailedEvaluationResult(
             ExecuteCqlResponse(allResults, emptyList(), versions),

@@ -3,12 +3,10 @@ package org.opencds.cqf.cql.ls.server.command
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class GetVersionInfoCommandContributionTest {
-
     private val contribution = GetVersionInfoCommandContribution()
 
     @Test

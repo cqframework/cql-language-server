@@ -7,7 +7,6 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Logger.JavaLogger
 import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer
-import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
 import org.opencds.cqf.cql.ls.server.command.GetVersionInfoCommandContribution
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
@@ -28,6 +27,7 @@ import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService
 import org.opencds.cqf.cql.ls.server.service.DiagnosticsService
 import org.opencds.cqf.cql.ls.server.service.FederatedContentService
 import org.opencds.cqf.cql.ls.server.service.FileContentService
+import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
 import java.util.concurrent.CompletableFuture

@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.server.provider
 
+import org.hl7.elm.r1.Query
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
@@ -7,7 +8,6 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
-import org.hl7.elm.r1.Query
 
 class TestCompile {
     @Test
@@ -15,7 +15,11 @@ class TestCompile {
         val cs = TestContentService()
         val cm = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
         val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/ReturnClauseQuery.cql")!!
-        val compiler = cm.compile(uri) ?: run { println("COMPILER NULL"); return }
+        val compiler =
+            cm.compile(uri) ?: run {
+                println("COMPILER NULL")
+                return
+            }
 
         val exceptions = compiler.exceptions
         if (exceptions != null) {
@@ -27,8 +31,16 @@ class TestCompile {
             println("NO EXCEPTIONS")
         }
 
-        val lib = compiler.library ?: run { println("LIBRARY NULL"); return }
-        val statements = lib.statements ?: run { println("STATEMENTS NULL"); return }
+        val lib =
+            compiler.library ?: run {
+                println("LIBRARY NULL")
+                return
+            }
+        val statements =
+            lib.statements ?: run {
+                println("STATEMENTS NULL")
+                return
+            }
         for (def in statements.def) {
             println("Def: " + def.name + " -> " + (def.expression?.let { it.javaClass.name } ?: "NULL"))
             if (def.expression is Query) {

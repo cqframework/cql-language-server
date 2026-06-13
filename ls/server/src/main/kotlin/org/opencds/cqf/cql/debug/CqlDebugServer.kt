@@ -6,6 +6,7 @@ import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
 import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
+import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
 import org.eclipse.lsp4j.debug.BreakpointEventArguments
@@ -92,7 +93,6 @@ import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
-import org.cqframework.cql.gen.cqlParser
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -259,12 +259,14 @@ open class CqlDebugServer(
 
         // Compute breakpointable lines from the ANTLR parse tree, if available.
         // This allows marking breakpoints on blank/invalid lines as unverified.
-        val breakpointableLines: Set<Int>? = runCatching {
-            val treeUri = resolveLibraryIdFromPath(sourcePath)?.let { librarySourceMap[it] }
-                ?: if (sourcePath != null) Paths.get(sourcePath).toUri() else null
-            treeUri?.let { compilationManager.getParseTree(it) }
-                ?.let { CqlStepPositionCollector.collectBreakpointableLines(it) }
-        }.getOrNull()
+        val breakpointableLines: Set<Int>? =
+            runCatching {
+                val treeUri =
+                    resolveLibraryIdFromPath(sourcePath)?.let { librarySourceMap[it] }
+                        ?: if (sourcePath != null) Paths.get(sourcePath).toUri() else null
+                treeUri?.let { compilationManager.getParseTree(it) }
+                    ?.let { CqlStepPositionCollector.collectBreakpointableLines(it) }
+            }.getOrNull()
 
         val bps =
             args.breakpoints?.map { bp ->
