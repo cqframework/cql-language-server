@@ -16,8 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- Verify Changelog ---
+  # --- Changelog (PR only; informational, does not gate tests) ---
   verify-changelog:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,9 +53,31 @@ jobs:
               print(f'Expected format:\n\n[Blank Line]\n{expected_header}\n\nDate: YYYY-MM-DD\n* ...', file=sys.stderr)
               sys.exit(1)
 
-  # --- Tests ---
+  # --- Formatting check (independent; does not gate tests) ---
+  format:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check formatting
+        run: ./mvnw spotless:check
+      - uses: mshick/add-pr-comment@v2
+        if: always()
+        with:
+          message-success: |
+            Formatting check succeeded!
+          message-failure: |
+            **This Pull Request has failed the formatting check**
+
+            Please run `./mvnw spotless:apply` to fix the formatting issues.
+
+  # --- Tests + coverage ---
   test:
-    needs: verify-changelog  # Prevents tests from running if changelog is wrong
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -66,11 +89,11 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
-          cache: 'maven'
+          distribution: temurin
+          cache: maven
 
       - name: Build and test
-        run: ./mvnw --batch-mode -no-transfer-progress prepare-package -Pci
+        run: ./mvnw --batch-mode --no-transfer-progress prepare-package -Pci
         shell: bash
 
       - uses: mikepenz/action-junit-report@v4
@@ -94,3 +117,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           title: Coverage Report
           update-comment: true
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        if: (success() || failure()) && runner.os == 'Linux'
+        with:
+          files: ls/server/target/site/jacoco/jacoco.xml
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "21"
+          java-version: "17"
           cache: "maven"
           server-id: central
           server-url: https://repo1.maven.org/maven2
@@ -36,7 +36,7 @@ jobs:
           fi
         shell: bash
       - name: Publish snapshot
-        run: ./mvnw --batch-mode -no-transfer-progress --update-snapshots deploy -Ppackage
+        run: ./mvnw --batch-mode --no-transfer-progress --update-snapshots deploy -Ppackage
         env:
           MAVEN_USERNAME: ${{ vars.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
@@ -45,7 +45,4 @@ jobs:
         if: success() || failure() # always run even if the previous step fails
         with:
           report_paths: "**/target/surefire-reports/TEST-*.xml"
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
