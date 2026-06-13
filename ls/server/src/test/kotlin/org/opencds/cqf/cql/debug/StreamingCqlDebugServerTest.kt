@@ -8,13 +8,17 @@ import org.cqframework.cql.gen.cqlLexer
 import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
+import org.eclipse.lsp4j.debug.DisconnectArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
+import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.NextArguments
 import org.eclipse.lsp4j.debug.ScopesArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
+import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments
 import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.SourceBreakpoint
 import org.eclipse.lsp4j.debug.StackTraceArguments
+import org.eclipse.lsp4j.debug.TerminateArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
@@ -2448,6 +2452,429 @@ class StreamingCqlDebugServerTest {
         // After migration: handler has FHIRHelpers breakpoints
         assertTrue(handler.breakpointsByLibrary.containsKey("FHIRHelpers"))
         assertEquals(setOf(42), handler.breakpointsByLibrary["FHIRHelpers"])
+    }
+
+    // ========================= Non-streaming mode tests =============================
+
+    /** Server without a streaming handler — exercises snapshot-based DAP mode. */
+    private class TestNonStreamingServer(
+        cm: CqlCompilationManager,
+        cs: ContentService,
+        ig: IgContextManager,
+        lrm: LibraryResolutionManager,
+    ) : CqlDebugServer(cm, cs, ig, lrm) {
+        override fun executeLaunch(args: DebugLaunchArgs) { /* no-op for tests */ }
+
+        fun seedSnapshots(snaps: List<ExpressionSnapshot>) {
+            snapshots = snaps
+        }
+
+        fun seedCurrentIndex(i: Int) {
+            currentIndex = i
+        }
+
+        fun seedBreakpointLines(lines: Collection<Int>) {
+            breakpointLines.addAll(lines)
+        }
+
+        fun initParameterMetadata(metadata: Map<String, List<CqlDebugServer.ParameterMetadata>>) {
+            parameterMetadata = metadata
+        }
+
+        fun initLaunchArgs(args: DebugLaunchArgs) {
+            launchArgs = args
+        }
+    }
+
+    private fun makeNonStreamingServer(): TestNonStreamingServer {
+        val cs = mock(ContentService::class.java)
+        val cm = mock(CqlCompilationManager::class.java)
+        val ig = mock(IgContextManager::class.java)
+        val lrm = mock(LibraryResolutionManager::class.java)
+        return TestNonStreamingServer(cm, cs, ig, lrm)
+    }
+
+    private fun setupNonStreamingServer(): TestNonStreamingServer {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        return server
+    }
+
+    // -- DAP state machine --------------------------------------------------
+
+    @Test
+    fun `initialize returns capabilities and transitions to INITIALIZED`() {
+        val server = setupServer()
+        assertEquals(ServerState.STARTED, server.getState())
+        val caps = server.initialize(InitializeRequestArguments()).get()
+        assertEquals(ServerState.INITIALIZED, server.getState())
+        assertTrue(caps.supportsConfigurationDoneRequest)
+        assertTrue(caps.supportsEvaluateForHovers)
+        assertTrue(caps.supportsTerminateRequest)
+    }
+
+    @Test
+    fun `configurationDone transitions to CONFIGURED`() {
+        val server = setupServer()
+        server.initialize(InitializeRequestArguments()).get()
+        server.configurationDone(null).get()
+        assertEquals(ServerState.CONFIGURED, server.getState())
+    }
+
+    @Test
+    fun `disconnect when STOPPED returns immediately without sending events`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.connect(client)
+        // Force STOPPED state via reflection
+        val f = CqlDebugServer::class.java.getDeclaredField("serverState")
+        f.isAccessible = true
+        f.set(server, ServerState.STOPPED)
+
+        server.disconnect(DisconnectArguments()).get()
+
+        Mockito.verify(client, Mockito.never()).terminated(Mockito.any())
+        Mockito.verify(client, Mockito.never()).exited(Mockito.any())
+    }
+
+    @Test
+    fun `terminate delegates to disconnect`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeServer()
+        server.connect(client)
+        val f = CqlDebugServer::class.java.getDeclaredField("serverState")
+        f.isAccessible = true
+        f.set(server, ServerState.STOPPED)
+
+        // Must return without throwing
+        server.terminate(TerminateArguments()).get()
+    }
+
+    @Test
+    fun `setExceptionBreakpoints returns empty response`() {
+        val server = setupServer()
+        val response = server.setExceptionBreakpoints(SetExceptionBreakpointsArguments()).get()
+        assertNotNull(response)
+    }
+
+    @Test
+    fun `threads returns a single CQL thread`() {
+        val server = setupServer()
+        val response = server.threads().get()
+        assertEquals(1, response.threads.size)
+        assertEquals(1, response.threads[0].id)
+        assertEquals("CQL", response.threads[0].name)
+    }
+
+    // -- Non-streaming stackTrace -------------------------------------------
+
+    @Test
+    fun `stackTrace non-streaming returns frame from current snapshot`() {
+        val server = setupNonStreamingServer()
+        server.seedSnapshots(
+            listOf(
+                ExpressionSnapshot("Define1", "true", "file:///test.cql", 5, 0, 5, 20),
+                ExpressionSnapshot("Define2", "false", "file:///test.cql", 10, 0, 10, 20),
+            ),
+        )
+        server.seedCurrentIndex(0)
+
+        val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
+        assertEquals(1, response.totalFrames)
+        val frame = response.stackFrames[0]
+        assertEquals("Define1", frame.name)
+        assertEquals(6, frame.line) // startLine(5, 0-indexed) + 1 = 6
+    }
+
+    @Test
+    fun `stackTrace non-streaming with index -1 returns none frame`() {
+        val server = setupNonStreamingServer()
+        server.seedSnapshots(emptyList())
+        server.seedCurrentIndex(-1)
+
+        val response = server.stackTrace(StackTraceArguments().also { it.threadId = 1 }).get()
+        assertEquals(1, response.totalFrames)
+        assertEquals("(none)", response.stackFrames[0].name)
+    }
+
+    // -- Non-streaming scopes ----------------------------------------------
+
+    @Test
+    fun `scopes non-streaming returns Expressions scope`() {
+        val server = setupNonStreamingServer()
+        val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
+        assertEquals(1, response.scopes.size)
+        assertEquals("Expressions", response.scopes[0].name)
+        assertEquals(1, response.scopes[0].variablesReference)
+    }
+
+    @Test
+    fun `scopes non-streaming includes Test Case scope when launchArgs has testCaseUri`() {
+        val server = setupNonStreamingServer()
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "Patient",
+                testCaseUri = "file:///testcases/Patient",
+            ),
+        )
+        val response = server.scopes(ScopesArguments().also { it.frameId = 0 }).get()
+        assertEquals(2, response.scopes.size)
+        assertNotNull(response.scopes.firstOrNull { it.name == "Expressions" })
+        assertNotNull(response.scopes.firstOrNull { it.name == "Test Case" })
+    }
+
+    // -- Non-streaming variables -------------------------------------------
+
+    @Test
+    fun `variables non-streaming ref=1 shows resolved expressions up to currentIndex`() {
+        val server = setupNonStreamingServer()
+        val snaps =
+            listOf(
+                ExpressionSnapshot("Expr1", "true", "file:///test.cql", 0, 0, 0, 10),
+                ExpressionSnapshot("Expr2", "42", "file:///test.cql", 1, 0, 1, 10),
+                ExpressionSnapshot("Expr3", "null", "file:///test.cql", 2, 0, 2, 10),
+            )
+        server.seedSnapshots(snaps)
+        server.seedCurrentIndex(1)
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        assertEquals(2, response.variables.size)
+        assertEquals("Expr1", response.variables[0].name)
+        assertEquals("true", response.variables[0].value)
+        assertEquals("Expr2", response.variables[1].name)
+        assertEquals("42", response.variables[1].value)
+    }
+
+    @Test
+    fun `variables non-streaming ref=1 with no snapshots returns empty list`() {
+        val server = setupNonStreamingServer()
+        server.seedSnapshots(emptyList())
+        server.seedCurrentIndex(-1)
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 1 }).get()
+        assertEquals(0, response.variables.size)
+    }
+
+    @Test
+    fun `variables non-streaming ref=2 shows grouped parameter metadata`() {
+        val server = setupNonStreamingServer()
+        server.initParameterMetadata(
+            mapOf(
+                "TestLib" to
+                    listOf(
+                        CqlDebugServer.ParameterMetadata("MP", "Interval<DateTime>", "Interval[2026,2027]"),
+                    ),
+            ),
+        )
+
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        assertEquals(1, groupsResponse.variables.size)
+        assertEquals("TestLib", groupsResponse.variables[0].name)
+        assertTrue(groupsResponse.variables[0].variablesReference >= 100000)
+
+        val paramsResponse =
+            server.variables(
+                VariablesArguments().also { it.variablesReference = groupsResponse.variables[0].variablesReference },
+            ).get()
+        assertEquals(1, paramsResponse.variables.size)
+        assertEquals("MP", paramsResponse.variables[0].name)
+        assertEquals("Interval[2026,2027]", paramsResponse.variables[0].value)
+    }
+
+    // -- Non-streaming evaluate --------------------------------------------
+
+    @Test
+    fun `evaluate non-streaming hover finds define by name`() {
+        val server = setupNonStreamingServer()
+        server.seedSnapshots(listOf(ExpressionSnapshot("InitialPop", "true", "file:///test.cql", 0, 0, 0, 20)))
+        server.seedCurrentIndex(0)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "InitialPop"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
+        assertEquals("true", response.result)
+    }
+
+    @Test
+    fun `evaluate non-streaming lookup finds define for non-hover context`() {
+        val server = setupNonStreamingServer()
+        server.seedSnapshots(listOf(ExpressionSnapshot("Numerator", "5", "file:///test.cql", 0, 0, 0, 10)))
+        server.seedCurrentIndex(0)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Numerator"
+                    it.context = "clipboard"
+                    it.frameId = null
+                },
+            ).get()
+        assertEquals("5", response.result)
+    }
+
+    @Test
+    fun `evaluate non-streaming returns not available for unknown expression`() {
+        val server = setupNonStreamingServer()
+        server.seedSnapshots(emptyList())
+        server.seedCurrentIndex(-1)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Unknown"
+                    it.context = "hover"
+                    it.frameId = 0
+                },
+            ).get()
+        assertEquals("not available", response.result)
+    }
+
+    // -- Non-streaming stepping --------------------------------------------
+
+    @Test
+    fun `next non-streaming advances to first snapshot and sends stopped`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        server.seedSnapshots(
+            listOf(
+                ExpressionSnapshot("A", "1", "file:///test.cql", 0, 0, 0, 5),
+                ExpressionSnapshot("B", "2", "file:///test.cql", 1, 0, 1, 5),
+            ),
+        )
+        server.seedCurrentIndex(-1)
+
+        server.next(NextArguments()).get()
+
+        Mockito.verify(client).stopped(Mockito.any())
+    }
+
+    @Test
+    fun `next non-streaming past last snapshot fires terminated and exited`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        server.seedSnapshots(listOf(ExpressionSnapshot("A", "1", "file:///test.cql", 0, 0, 0, 5)))
+        server.seedCurrentIndex(0)
+
+        server.next(NextArguments()).get()
+
+        Mockito.verify(client).terminated(Mockito.any())
+        Mockito.verify(client).exited(Mockito.any())
+    }
+
+    @Test
+    fun `stepIn non-streaming advances to next snapshot`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        server.seedSnapshots(listOf(ExpressionSnapshot("A", "1", "file:///test.cql", 0, 0, 0, 5)))
+        server.seedCurrentIndex(-1)
+
+        server.stepIn(org.eclipse.lsp4j.debug.StepInArguments()).get()
+
+        Mockito.verify(client).stopped(Mockito.any())
+    }
+
+    @Test
+    fun `stepOut non-streaming advances to next snapshot`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        server.seedSnapshots(listOf(ExpressionSnapshot("A", "1", "file:///test.cql", 0, 0, 0, 5)))
+        server.seedCurrentIndex(-1)
+
+        server.stepOut(org.eclipse.lsp4j.debug.StepOutArguments()).get()
+
+        Mockito.verify(client).stopped(Mockito.any())
+    }
+
+    // -- Non-streaming continue --------------------------------------------
+
+    @Test
+    fun `continue_ non-streaming with no breakpoints fires terminated and exited`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        server.seedSnapshots(
+            listOf(
+                ExpressionSnapshot("A", "1", "file:///test.cql", 5, 0, 5, 5),
+                ExpressionSnapshot("B", "2", "file:///test.cql", 10, 0, 10, 5),
+            ),
+        )
+        server.seedCurrentIndex(-1)
+
+        server.continue_(ContinueArguments()).get()
+
+        Mockito.verify(client).terminated(Mockito.any())
+        Mockito.verify(client).exited(Mockito.any())
+        Mockito.verify(client, Mockito.never()).stopped(Mockito.any())
+    }
+
+    @Test
+    fun `continue_ non-streaming hits breakpoint and sends stopped`() {
+        val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+        val server = makeNonStreamingServer()
+        server.connect(client)
+        val snaps =
+            listOf(
+                ExpressionSnapshot("A", "1", "file:///test.cql", 5, 0, 5, 5),
+                ExpressionSnapshot("B", "2", "file:///test.cql", 10, 0, 10, 5),
+            )
+        server.seedSnapshots(snaps)
+        server.seedCurrentIndex(-1)
+        server.seedBreakpointLines(setOf(10)) // 0-indexed line 10 = snap[1].startLine
+
+        server.continue_(ContinueArguments()).get()
+
+        Mockito.verify(client).stopped(Mockito.any())
+        Mockito.verify(client, Mockito.never()).terminated(Mockito.any())
+    }
+
+    // -- collectTransitiveIncludes -----------------------------------------
+
+    @Test
+    fun `collectTransitiveIncludes with null compiler returns only primaryId`() {
+        val server = setupServer()
+        val result = server.collectTransitiveIncludes("TestLib", null)
+        assertEquals(setOf("TestLib"), result)
+    }
+
+    // -- source ------------------------------------------------------------
+
+    @Test
+    fun `source with null sourceReference returns empty content`() {
+        val server = setupServer()
+        val args = org.eclipse.lsp4j.debug.SourceArguments()
+        // args.sourceReference is null by default → early return
+        val response = server.source(args).get()
+        assertEquals("", response.content)
+    }
+
+    // -- getAst ------------------------------------------------------------
+
+    @Test
+    fun `getAst with missing uri key returns null ast`() {
+        val server = setupServer()
+        val response = server.getAst(emptyMap<String, Any>()).get()
+        assertNull(response["ast"])
+    }
+
+    @Test
+    fun `getAst with invalid URI returns null ast`() {
+        val server = setupServer()
+        // Spaces in URIs cause URI.create to throw
+        val response = server.getAst(mapOf("uri" to "not a valid uri with spaces")).get()
+        assertNull(response["ast"])
     }
 
     @Test

@@ -3,7 +3,9 @@ package org.opencds.cqf.cql.ls.server.command
 import com.google.gson.JsonParser
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -201,6 +203,29 @@ class ViewElmCommandContributionTest {
         params.command = "org.opencds.cqf.cql.ls.viewElm"
         params.arguments = listOf(JsonParser.parseString("\"file:///nonexistent/Missing.cql\""))
         assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    // -----------------------------------------------------------------------
+    // Unknown elmType falls through to the else branch (returns XML)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun executeCommand_unknownElmType_returnsXml() {
+        // Any elmType string that isn't "xml", "json", or "ast" falls through to else → XML
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments =
+            listOf(
+                JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+                JsonParser.parseString("\"proto\""),
+            )
+        val result = viewElmCommandContribution.executeCommand(params).join()
+        assertNotNull(result)
+        val text = result.toString()
+        assertTrue(
+            text.startsWith("<?xml") || text.contains("<library"),
+            "Unknown elmType should produce XML output, got: ${text.take(200)}",
+        )
     }
 
     // -----------------------------------------------------------------------

@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.utility
 
 import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.FunctionDef
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -145,5 +146,96 @@ class ElmAstLibraryWriterTest {
 
         assertEquals(rendering1.text, rendering2.text, "Two renders should produce identical text")
         assertEquals(rendering1.elementLines, rendering2.elementLines, "Two renders should produce identical elementLines map")
+    }
+
+    // -----------------------------------------------------------------------
+    // displayValue() branches not covered by One.cql / WithFhirQuery.cql
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun writeAsString_withFunctionLib_containsFunctionDef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionLib.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        // FunctionLib declares functions; the AST should contain function definitions
+        assertTrue(result.contains("define"), "Expected define node in function library AST: $result")
+        val hasFunctionOrParam = result.contains("function") || result.contains("OperandRef") || result.contains("FunctionRef")
+        assertTrue(hasFunctionOrParam, "Expected function-related content in FunctionLib AST: $result")
+    }
+
+    @Test
+    fun writeAsString_withFunctionCaller_containsFunctionRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionCaller.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null for FunctionCaller")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        // FunctionCaller calls functions from FunctionLib — expects FunctionRef nodes
+        assertTrue(result.contains("FunctionRef"), "Expected FunctionRef in FunctionCaller AST: $result")
+    }
+
+    @Test
+    fun writeAsString_withQueryLib_containsExpressionRefAndQuery() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithQuery.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null for WithQuery")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        assertTrue(result.contains("Query"), "Expected Query node in WithQuery AST: $result")
+    }
+
+    @Test
+    fun writeAsString_withTerminologyLib_containsValueSetOrCodeSystem() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithTerminology.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null for WithTerminology")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        // Terminology library should declare at least valueset or codesystem sections
+        val hasTerminology =
+            result.contains("valueset:") || result.contains("codesystem:") ||
+                result.contains("ValueSetRef") || result.contains("CodeSystemRef")
+        assertTrue(hasTerminology, "Expected terminology section in WithTerminology AST: $result")
+    }
+
+    @Test
+    fun writeAsString_functionLibWithFunctionDef_rendersFunctionNode() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionLib.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val library = compiler.library!!
+        val result = ElmAstLibraryWriter(compiler).writeAsString(library)
+
+        val hasFunctionDef = library.statements?.def?.any { it is FunctionDef } ?: false
+        assertTrue(hasFunctionDef, "FunctionLib.cql should contain at least one FunctionDef")
+        assertTrue(result.contains("define"), "AST should contain a define node for FunctionDef: $result")
+    }
+
+    @Test
+    fun writeAsString_withNoCompiler_stillRenders() {
+        // Constructor without compiler — translatorVersion() falls back to "?"
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val library = compiler.library!!
+
+        val result = ElmAstLibraryWriter().writeAsString(library)
+        assertTrue(result.isNotEmpty(), "Writer without compiler should still produce output")
+        assertTrue(result.contains("Library:"), "Output should start with Library header: $result")
+    }
+
+    @Test
+    fun render_elementLinesMapIsConsistentAcrossRenderCalls() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithFhirQuery.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val library = compiler.library!!
+
+        val writer = ElmAstLibraryWriter(compiler)
+        val r1 = writer.render(library)
+        val r2 = writer.render(library)
+
+        // Element identity is per-object, not per-value, so maps may differ in identity.
+        // But the same number of elements should be recorded each time.
+        assertEquals(
+            r1.elementLines.size,
+            r2.elementLines.size,
+            "Each render should record the same number of elements",
+        )
     }
 }

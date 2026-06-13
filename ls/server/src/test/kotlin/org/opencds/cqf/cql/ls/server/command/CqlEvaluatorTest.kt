@@ -975,5 +975,17 @@ class CqlEvaluatorTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // parseCqlQuantityValue — edge case: space-separated value and unit
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseCqlQuantityValue parses with space before unit delimiter`() {
+        // "5 'mg'" has a space before the apostrophe — verify parsing still works
+        val q = parseCqlQuantityValue("5 'mg'")
+        assertNotNull(q)
+        assertEquals("mg", q.unit)
+    }
+
     private fun createNoOpRepo(): IRepository = NoOpRepository(r4Context)
 }
