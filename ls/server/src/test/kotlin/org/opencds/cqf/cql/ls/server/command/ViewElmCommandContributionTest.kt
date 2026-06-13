@@ -158,7 +158,9 @@ class ViewElmCommandContributionTest {
                                 ),
                             )
                                 .trim()
-                        assertEquals(expectedAst, result.toString().trim())
+                                .replace("\r\n", "\n")
+                        val actualAst = result.toString().trim().replace("\r\n", "\n")
+                        assertEquals(expectedAst, actualAst)
                     } catch (e: IOException) {
                         throw RuntimeException(e)
                     }

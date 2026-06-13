@@ -239,7 +239,7 @@ class StreamingCqlDebugServerTest {
         assertEquals(10, frame.endLine)
         assertEquals(26, frame.endColumn) // +1 because TrackBack end is inclusive but DAP endColumn is exclusive
         assertNotNull(frame.source)
-        assertEquals("/test.cql", frame.source.path)
+        assertEquals(Paths.get(URI.create("file:///test.cql")).toString(), frame.source.path)
     }
 
     @Test
@@ -684,16 +684,19 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
-    fun `setBreakpoints marks breakpoints verified for relevant library`() {
+    fun `setBreakpoints marks breakpoints verified for relevant library`(
+        @TempDir tempDir: Path,
+    ) {
         val server = setupServer()
-        server.addLibrarySource("TestLib", URI.create("file:///test/test.cql"))
+        val testFile = Files.createFile(tempDir.resolve("test.cql"))
+        server.addLibrarySource("TestLib", testFile.toUri())
         server.relevantLibraryIds = setOf("TestLib")
 
         val response =
             server
                 .setBreakpoints(
                     SetBreakpointsArguments().also {
-                        it.source = Source().also { s -> s.path = "/test/test.cql" }
+                        it.source = Source().also { s -> s.path = testFile.toString() }
                         it.breakpoints =
                             arrayOf(
                                 SourceBreakpoint().also { bp -> bp.line = 5 },
@@ -705,17 +708,21 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
-    fun `setBreakpoints marks breakpoints unverified for non-relevant library`() {
+    fun `setBreakpoints marks breakpoints unverified for non-relevant library`(
+        @TempDir tempDir: Path,
+    ) {
         val server = setupServer()
-        server.addLibrarySource("TestLib", URI.create("file:///test/test.cql"))
-        server.addLibrarySource("OtherLib", URI.create("file:///other/other.cql"))
+        val testFile = Files.createFile(tempDir.resolve("test.cql"))
+        val otherFile = Files.createFile(tempDir.resolve("other.cql"))
+        server.addLibrarySource("TestLib", testFile.toUri())
+        server.addLibrarySource("OtherLib", otherFile.toUri())
         server.relevantLibraryIds = setOf("TestLib")
 
         val response =
             server
                 .setBreakpoints(
                     SetBreakpointsArguments().also {
-                        it.source = Source().also { s -> s.path = "/other/other.cql" }
+                        it.source = Source().also { s -> s.path = otherFile.toString() }
                         it.breakpoints =
                             arrayOf(
                                 SourceBreakpoint().also { bp -> bp.line = 5 },
@@ -771,23 +778,20 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
-    fun `updateBreakpointVerification sends breakpoint events for non-relevant libraries`() {
+    fun `updateBreakpointVerification sends breakpoint events for non-relevant libraries`(
+        @TempDir tempDir: Path,
+    ) {
         val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
         val server = makeServer()
         server.setLaunchUri("file:///primary.cql")
         server.connect(client)
 
-        // Seed breakpoints for two paths — one relevant, one not
-        server.addLibrarySource("Primary", URI.create("file:///primary.cql"))
-        server.addLibrarySource("OtherLib", URI.create("file:///other.cql"))
-        server.seedBreakpointIdsForPath(
-            "/primary.cql",
-            mapOf(10 to 100, 20 to 101),
-        )
-        server.seedBreakpointIdsForPath(
-            "/other.cql",
-            mapOf(30 to 200),
-        )
+        val primaryFile = Files.createFile(tempDir.resolve("primary.cql"))
+        val otherFile = Files.createFile(tempDir.resolve("other.cql"))
+        server.addLibrarySource("Primary", primaryFile.toUri())
+        server.addLibrarySource("OtherLib", otherFile.toUri())
+        server.seedBreakpointIdsForPath(primaryFile.toString(), mapOf(10 to 100, 20 to 101))
+        server.seedBreakpointIdsForPath(otherFile.toString(), mapOf(30 to 200))
 
         server.relevantLibraryIds = setOf("Primary")
         server.triggerUpdateBreakpointVerification()
@@ -797,38 +801,44 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
-    fun `updateBreakpointVerification sends correct breakpoint payload for non-relevant library`() {
+    fun `updateBreakpointVerification sends correct breakpoint payload for non-relevant library`(
+        @TempDir tempDir: Path,
+    ) {
         val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
         val server = makeServer()
         server.setLaunchUri("file:///primary.cql")
         server.connect(client)
 
-        server.addLibrarySource("Primary", URI.create("file:///primary.cql"))
-        server.addLibrarySource("OtherLib", URI.create("file:///other.cql"))
-        server.seedBreakpointIdsForPath("/other.cql", mapOf(30 to 200))
+        val primaryFile = Files.createFile(tempDir.resolve("primary.cql"))
+        val otherFile = Files.createFile(tempDir.resolve("other.cql"))
+        server.addLibrarySource("Primary", primaryFile.toUri())
+        server.addLibrarySource("OtherLib", otherFile.toUri())
+        server.seedBreakpointIdsForPath(otherFile.toString(), mapOf(30 to 200))
 
         server.relevantLibraryIds = setOf("Primary")
         server.triggerUpdateBreakpointVerification()
 
-        val captor =
-            org.mockito.ArgumentCaptor.forClass(BreakpointEventArguments::class.java)
+        val captor = org.mockito.ArgumentCaptor.forClass(BreakpointEventArguments::class.java)
         Mockito.verify(client).breakpoint(captor.capture())
         val event = captor.value
         assertEquals("changed", event.reason)
         assertFalse(event.breakpoint.isVerified)
         assertEquals(30, event.breakpoint.line)
-        assertEquals("/other.cql", event.breakpoint.source.path)
+        assertEquals(otherFile.toString(), event.breakpoint.source.path)
     }
 
     @Test
-    fun `updateBreakpointVerification does not send events for breakpoints in relevant library`() {
+    fun `updateBreakpointVerification does not send events for breakpoints in relevant library`(
+        @TempDir tempDir: Path,
+    ) {
         val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
         val server = makeServer()
         server.setLaunchUri("file:///primary.cql")
         server.connect(client)
 
-        server.addLibrarySource("Primary", URI.create("file:///primary.cql"))
-        server.seedBreakpointIdsForPath("/primary.cql", mapOf(10 to 100))
+        val primaryFile = Files.createFile(tempDir.resolve("primary.cql"))
+        server.addLibrarySource("Primary", primaryFile.toUri())
+        server.seedBreakpointIdsForPath(primaryFile.toString(), mapOf(10 to 100))
 
         server.relevantLibraryIds = setOf("Primary")
         server.triggerUpdateBreakpointVerification()
