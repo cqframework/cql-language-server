@@ -114,6 +114,16 @@ open class CqlDebugServer(
         private val log = LoggerFactory.getLogger(CqlDebugServer::class.java)
     }
 
+    protected val varResolver = VariableResolver()
+    protected val breakpointManager: BreakpointManager = BreakpointManager(contentService)
+    protected val evaluateHelper: EvaluateHelper = EvaluateHelper(varResolver, compilationManager)
+
+    // Backing fields — kept for backward compatibility with existing inline code.
+    private val fhirContext: FhirContext = FhirContext.forR4()
+    private val varRefs = mutableMapOf<Int, Any>()
+    private val varRefTypes = mutableMapOf<Int, String>()
+    private var nextVarRef = 1000
+
     private val terminatedSent = java.util.concurrent.atomic.AtomicBoolean(false)
     private val exitedSent = java.util.concurrent.atomic.AtomicBoolean(false)
     private var exited: CompletableFuture<Void> = CompletableFuture()
@@ -139,12 +149,6 @@ open class CqlDebugServer(
     @Volatile
     protected var streamingLaunchUri: String? = null
 
-    private val fhirContext: FhirContext by lazy { FhirContext.forR4() }
-
-    private val varRefs = mutableMapOf<Int, Any>()
-    private val varRefTypes = mutableMapOf<Int, String>()
-    private var nextVarRef = 1000
-
     @Volatile
     private var launchCompiler: CqlCompiler? = null
 
@@ -165,6 +169,7 @@ open class CqlDebugServer(
     protected var currentIndex: Int = -1
     protected val breakpointLines = mutableSetOf<Int>()
 
+    /** Backing maps — kept on CqlDebugServer for reflection-based test access. */
     private val librarySourceMap = ConcurrentHashMap<String, URI>()
     private val sourceReferenceRegistry = ConcurrentHashMap<Int, VersionedIdentifier>()
     private val nextSourceReference = AtomicInteger(1)
