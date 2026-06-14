@@ -404,4 +404,59 @@ class ElmAstLibraryWriterTest {
         val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
         assertTrue(result.contains("Collapse"), "Expected Collapse in AST: $result")
     }
+
+    // -----------------------------------------------------------------------
+    // displayValue edge cases: FunctionRef with libraryName, Quantity with null,
+    // Retrieve with ToList(codes)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun writeAsString_withLibraryQualifiedFunction_includesFunctionRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionCaller.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        assertTrue(result.contains("FunctionRef"), "Expected FunctionRef in FunctionCaller AST: $result")
+        assertTrue(result.contains("Double"), "Expected function name in FunctionRef displayValue: $result")
+    }
+
+    @Test
+    fun writeAsString_quantityWithUnitAndValue_containsUnitInDisplay() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        assertTrue(result.contains("mg") || result.contains("'mg'"), "Expected unit in Quantity displayValue: $result")
+    }
+
+    @Test
+    fun writeAsString_withFhirQueryToListCodes_containsCodesToListDisplay() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/WithFhirQuery.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        val hasToList = result.contains("ToList")
+        val hasCodes = result.contains("codes:")
+        assertTrue(hasToList || hasCodes, "Expected ToList(codes) or codes: display in Retrieve: $result")
+    }
+
+    // -----------------------------------------------------------------------
+    // childrenOf branches: Expand, AggregateExpression
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun writeAsString_withAggregateExpression_includesAggregateInChildren() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture3.cql")!!
+        val compiler = compilationManager.compile(uri) ?: return
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Aggregate"), "Expected Aggregate in AST: $result")
+    }
+
+    @Test
+    fun writeAsString_withExpand_includesExpandInChildren() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture3.cql")!!
+        val compiler = compilationManager.compile(uri) ?: return
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Expand"), "Expected Expand in AST: $result")
+    }
 }

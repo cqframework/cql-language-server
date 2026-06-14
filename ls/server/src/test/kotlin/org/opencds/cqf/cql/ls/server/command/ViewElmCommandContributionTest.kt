@@ -23,8 +23,8 @@ class ViewElmCommandContributionTest {
     companion object {
         private lateinit var viewElmCommandContribution: ViewElmCommandContribution
 
-        @BeforeAll
         @JvmStatic
+        @BeforeAll
         fun beforeAll() {
             val cs = TestContentService()
             val cqlCompilationManager =
@@ -239,5 +239,18 @@ class ViewElmCommandContributionTest {
         val params = ExecuteCommandParams()
         params.command = "org.opencds.cqf.cql.ls.unknownCommand"
         assertThrows<RuntimeException> { viewElmCommandContribution.executeCommand(params) }
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage for uncovered branches
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun executeCommand_nonStringJsonElementArg_returnsNull() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        // Pass a JsonNumber (not a JsonString) as the first argument — asString will return null
+        params.arguments = listOf(JsonParser.parseString("123"))
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
     }
 }

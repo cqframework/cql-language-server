@@ -1,12 +1,15 @@
 library CoverageFixture3 version '1.0.0'
 
-using FHIR version '4.0.1'
-include FHIRHelpers version '4.0.1'
+codesystem "SNOMEDCT": 'http://snomed.info/sct'
 valueset "Test VS": 'http://example.org/fhir/ValueSet/Test'
-context Patient
+code "ABC": '123' from "SNOMEDCT"
 
-define "RetrieveWithToList":
-  [CommunicationRequest: "Test VS"]
+define "ExpandVal": expand { Interval[1, 3], Interval[5, 7] }
 
-define "PropertyAccessWithScope":
-  [Encounter] E where E.status = 'finished'
+define "AggregateSum": Sum({ 1, 2, 3 })
+
+define "AggregateCount": Count({ 1, 2, 3 })
+
+define "AggregateMin": Min({ 1, 2, 3 })
+
+define "AggregateMax": Max({ 1, 2, 3 })

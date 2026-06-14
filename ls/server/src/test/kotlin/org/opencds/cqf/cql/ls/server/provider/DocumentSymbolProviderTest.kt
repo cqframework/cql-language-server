@@ -90,4 +90,76 @@ class DocumentSymbolProviderTest {
         val symbols = provider.documentSymbol(params)
         assertTrue(symbols.isEmpty(), "Expected empty list for unresolvable URI")
     }
+
+    // -------------------------------------------------------------------------
+    // DocumentSymbolFixture.cql: parameter + codesystem + valueset + code +
+    //                             concept + 1 define
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun documentSymbol_fixture_returnsAllSymbols() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        assertTrue(symbols.size >= 6, "DocumentSymbolFixture should have at least 6 symbols, got ${symbols.size}")
+        assertTrue(symbols.any { it.name == "TestParam" }, "Expected TestParam parameter")
+        assertTrue(symbols.any { it.name == "TestCS" }, "Expected TestCS codesystem")
+        assertTrue(symbols.any { it.name == "TestVS" }, "Expected TestVS valueset")
+        assertTrue(symbols.any { it.name == "TestCode" }, "Expected TestCode code")
+        assertTrue(symbols.any { it.name == "TestConcept" }, "Expected TestConcept concept")
+        assertTrue(symbols.any { it.name == "TestDefine" }, "Expected TestDefine")
+    }
+
+    @Test
+    fun documentSymbol_fixture_parameterIsConstant() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        val param = symbols.firstOrNull { it.name == "TestParam" }
+        assertTrue(param != null, "Expected symbol named 'TestParam'")
+        assertEquals(SymbolKind.Constant, param!!.kind)
+    }
+
+    @Test
+    fun documentSymbol_fixture_codesystemIsModule() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        val cs = symbols.firstOrNull { it.name == "TestCS" }
+        assertTrue(cs != null, "Expected symbol named 'TestCS'")
+        assertEquals(SymbolKind.Module, cs!!.kind)
+    }
+
+    @Test
+    fun documentSymbol_fixture_valuesetIsEnum() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        val vs = symbols.firstOrNull { it.name == "TestVS" }
+        assertTrue(vs != null, "Expected symbol named 'TestVS'")
+        assertEquals(SymbolKind.Enum, vs!!.kind)
+    }
+
+    @Test
+    fun documentSymbol_fixture_codeIsEnumMember() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        val code = symbols.firstOrNull { it.name == "TestCode" }
+        assertTrue(code != null, "Expected symbol named 'TestCode'")
+        assertEquals(SymbolKind.EnumMember, code!!.kind)
+    }
+
+    @Test
+    fun documentSymbol_fixture_conceptIsStruct() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        val concept = symbols.firstOrNull { it.name == "TestConcept" }
+        assertTrue(concept != null, "Expected symbol named 'TestConcept'")
+        assertEquals(SymbolKind.Struct, concept!!.kind)
+    }
+
+    @Test
+    fun documentSymbol_fixture_defineIsVariable() {
+        val params = DocumentSymbolParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/DocumentSymbolFixture.cql"))
+        val symbols = provider.documentSymbol(params)
+        val def = symbols.firstOrNull { it.name == "TestDefine" }
+        assertTrue(def != null, "Expected symbol named 'TestDefine'")
+        assertEquals(SymbolKind.Variable, def!!.kind)
+    }
 }

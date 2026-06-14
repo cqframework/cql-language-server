@@ -1,11 +1,16 @@
 package org.opencds.cqf.cql.debug
 
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
+import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 
 class EvaluateHelperTest {
     private lateinit var helper: EvaluateHelper
@@ -236,6 +241,282 @@ class EvaluateHelperTest {
                 )
             val result = helper.handleHoverEvaluate("@100:100", 0, snapshots, emptyList())
             assertEquals("not available", result.result)
+        }
+    }
+
+    // -- resolveFromCursorCategory -----------------------------------------
+
+    @Nested
+    inner class ResolveFromCursorCategory {
+        private lateinit var handler: StreamingBreakpointHandler
+        private lateinit var state: State
+        private val gson = com.google.gson.Gson()
+        private val testRange = Range(org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.Position(0, 5))
+
+        @BeforeEach
+        fun setUpStreaming() {
+            handler = StreamingBreakpointHandler()
+            state = mock(State::class.java)
+        }
+
+        @Test
+        fun `AliasReference found returns evaluate response`() {
+            handler.runtimeRegistry.putDefine("MyAlias", 42, null, null)
+            val category = CursorCategory.AliasReference("MyAlias", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNotNull(result)
+            assertEquals("42", result!!.result)
+        }
+
+        @Test
+        fun `AliasReference not found returns null`() {
+            val category = CursorCategory.AliasReference("Unknown", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `OperandRef found returns evaluate response`() {
+            handler.runtimeRegistry.putStackVariable("Operand1", 42, null)
+            val category = CursorCategory.OperandRef("Operand1", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNotNull(result)
+            assertEquals("42", result!!.result)
+        }
+
+        @Test
+        fun `OperandRef not found returns null`() {
+            val category = CursorCategory.OperandRef("UnknownOperand", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `ExpressionRef without library returns evaluate response`() {
+            handler.runtimeRegistry.putDefine("MyDefine", 42, null, null)
+            val category = CursorCategory.ExpressionRef("MyDefine", null, testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNotNull(result)
+            assertEquals("42", result!!.result)
+        }
+
+        @Test
+        fun `ExpressionRef with library not found returns null`() {
+            val category = CursorCategory.ExpressionRef("MyDefine", "MyLib", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `ExpressionRef not found returns null`() {
+            val category = CursorCategory.ExpressionRef("UnknownDefine", null, testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `ParameterRef not found returns null`() {
+            val category = CursorCategory.ParameterRef("UnknownParam", null, testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `PropertyName with alias resolves property from alias`() {
+            val patient = org.hl7.fhir.r4.model.Patient()
+            patient.id = "patient-1"
+            handler.runtimeRegistry.putDefine("P", patient, null, null)
+            val category = CursorCategory.PropertyName("resourceType", "P", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNotNull(result)
+            assertEquals("\"Patient\"", result!!.result)
+        }
+
+        @Test
+        fun `PropertyName without alias returns null`() {
+            val category = CursorCategory.PropertyName("someProperty", null, testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `unhandled category returns null`() {
+            val category = CursorCategory.FunctionCall("SomeFunc", null, null, null)
+            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            assertNull(result)
+        }
+    }
+
+    // -- evaluateStreaming -------------------------------------------------
+
+    @Nested
+    inner class EvaluateStreaming {
+        private lateinit var handler: StreamingBreakpointHandler
+        private lateinit var state: State
+        private val gson = com.google.gson.Gson()
+
+        @BeforeEach
+        fun setUpStreaming() {
+            handler = StreamingBreakpointHandler()
+            state = mock(State::class.java)
+        }
+
+        @Test
+        fun `registry hit returns cached value`() {
+            handler.runtimeRegistry.putDefine("FoundVar", 42, null, null)
+            val result =
+                helper.evaluateStreaming(
+                    "FoundVar",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("42", result.result)
+            assertEquals(0, result.variablesReference)
+        }
+
+        @Test
+        fun `registry miss falls through to not available`() {
+            val result =
+                helper.evaluateStreaming(
+                    "NonExistent",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("not available", result.result)
+        }
+
+        @Test
+        fun `at-expression with position finds value via findValueAtPosition`() {
+            handler.runtimeRegistry.putDefine("SomeExpr", "atValue", null, null)
+            val result =
+                helper.evaluateStreaming(
+                    "@10:5",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("not available", result.result)
+        }
+
+        @Test
+        fun `expression resolves via findInVarRefs`() {
+            val result =
+                helper.evaluateStreaming(
+                    "SomeVarRef",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("not available", result.result)
+        }
+    }
+
+    // -- resolvePropertyValue ---------------------------------------------
+
+    @Nested
+    inner class ResolvePropertyValue {
+        private lateinit var handler: StreamingBreakpointHandler
+        private val gson = com.google.gson.Gson()
+
+        @BeforeEach
+        fun setUp() {
+            handler = StreamingBreakpointHandler()
+        }
+
+        @Test
+        fun `source is not ExpressionRef returns null`() {
+            val property = org.hl7.elm.r1.Property().apply { path = "active" }
+            val result = helper.resolvePropertyValue(property, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `source not in registry returns null`() {
+            val prop =
+                org.hl7.elm.r1.Property().apply {
+                    path = "active"
+                    source = org.hl7.elm.r1.ExpressionRef().apply { name = "Unknown" }
+                }
+            val result = helper.resolvePropertyValue(prop, handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `IBase source returns formatted property value`() {
+            val patient = org.hl7.fhir.r4.model.Patient()
+            patient.id = "patient-1"
+            handler.runtimeRegistry.putDefine("MyPat", patient, null, null)
+            val prop =
+                org.hl7.elm.r1.Property().apply {
+                    path = "resourceType"
+                    source = org.hl7.elm.r1.ExpressionRef().apply { name = "MyPat" }
+                }
+            val result = helper.resolvePropertyValue(prop, handler, gson)
+            assertNotNull(result)
+            assertEquals("\"Patient\"", result!!.first)
+        }
+    }
+
+    // -- resolvePropertyFromAlias -----------------------------------------
+
+    @Nested
+    inner class ResolvePropertyFromAlias {
+        private lateinit var handler: StreamingBreakpointHandler
+        private val gson = com.google.gson.Gson()
+
+        @BeforeEach
+        fun setUp() {
+            handler = StreamingBreakpointHandler()
+        }
+
+        @Test
+        fun `alias not in registry returns null`() {
+            val result = helper.resolvePropertyFromAlias("UnknownAlias", "active", handler, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `IBase alias returns formatted property value`() {
+            val patient = org.hl7.fhir.r4.model.Patient()
+            patient.id = "patient-1"
+            handler.runtimeRegistry.putDefine("P", patient, null, null)
+            val result = helper.resolvePropertyFromAlias("P", "resourceType", handler, gson)
+            assertNotNull(result)
+            assertEquals("\"Patient\"", result!!.first)
+        }
+
+        @Test
+        fun `List alias returns formatted property values for each item`() {
+            val patient1 = org.hl7.fhir.r4.model.Patient()
+            patient1.id = "p1"
+            val patient2 = org.hl7.fhir.r4.model.Patient()
+            patient2.id = "p2"
+            @Suppress("UNCHECKED_CAST")
+            val list = listOf<Any>(patient1, patient2) as List<Any>
+            handler.runtimeRegistry.putDefine("Patients", list, null, null)
+            val result = helper.resolvePropertyFromAlias("Patients", "id", handler, gson)
+            assertNotNull(result)
+            assertTrue(result!!.first.startsWith("["))
+            assertTrue(result.first.contains("p1:"))
+            assertTrue(result.first.contains("p2:"))
         }
     }
 }

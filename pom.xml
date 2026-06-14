@@ -293,6 +293,8 @@
                             <exclude>**/*$Companion.class</exclude>
                             <!-- Kotlin when-expression mapping arrays -->
                             <exclude>**/*$WhenMappings.class</exclude>
+                            <!-- Top-level main() entry point — tested via integration tests, not unit tests -->
+                            <exclude>**/*MainKt.class</exclude>
                         </excludes>
                     </configuration>
                     <executions>

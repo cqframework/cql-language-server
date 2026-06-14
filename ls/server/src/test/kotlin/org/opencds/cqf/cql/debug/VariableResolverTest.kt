@@ -11,10 +11,34 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.opencds.cqf.cql.ls.core.utility.Uris
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.ls.server.service.TestContentService
 
 class VariableResolverTest {
+    companion object {
+        private lateinit var compilationManager: CqlCompilationManager
+
+        @JvmStatic
+        @BeforeAll
+        fun beforeAll() {
+            val cs = TestContentService()
+            compilationManager =
+                CqlCompilationManager(
+                    cs,
+                    CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+        }
+    }
+
     private val resolver = VariableResolver()
     private val gson = Gson()
 
@@ -358,5 +382,55 @@ class VariableResolverTest {
         assertTrue(resolver.varRefs.isEmpty())
         assertTrue(resolver.varRefTypes.isEmpty())
         assertEquals(1000, resolver.nextVarRef)
+    }
+
+    // -- unwrapListType additional tests -------------------------------------
+
+    @Nested
+    inner class UnwrapListTypeAdditional {
+        @Test
+        fun `list prefix is case insensitive`() {
+            assertEquals("Foo", resolver.unwrapListType("LIST<Foo>"))
+        }
+
+        @Test
+        fun `list with spaces is trimmed`() {
+            assertEquals("Foo", resolver.unwrapListType("list< Foo >"))
+        }
+    }
+
+    // -- buildVariableTypeMap ------------------------------------------------
+
+    @Nested
+    inner class BuildVariableTypeMap {
+        @Test
+        fun `null compiler returns empty map`() {
+            val map = resolver.buildVariableTypeMap(null)
+            assertTrue(map.isEmpty())
+        }
+
+        @Test
+        fun `One_cql has defined expressions in type map`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.isNotEmpty(), "One.cql should produce type map entries, got: $map")
+        }
+
+        @Test
+        fun `CoverageFixture1_cql has expression types in type map`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.isNotEmpty(), "CoverageFixture1 should produce type map entries")
+        }
+
+        @Test
+        fun `CoverageFixture2_cql alias types are collected`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.isNotEmpty(), "CoverageFixture2 should produce type map entries")
+        }
     }
 }

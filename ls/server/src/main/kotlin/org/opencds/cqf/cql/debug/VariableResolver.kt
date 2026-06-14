@@ -249,8 +249,9 @@ class VariableResolver(
 
     fun unwrapListType(typeName: String): String {
         val trimmed = typeName.trim()
-        return if (trimmed.startsWith("list<", ignoreCase = true) && trimmed.endsWith(">")) {
-            trimmed.removePrefix("list<").removeSuffix(">").trim()
+        val lower = trimmed.lowercase()
+        return if (lower.startsWith("list<") && lower.endsWith(">")) {
+            trimmed.substring(5, trimmed.length - 1).trim()
         } else {
             trimmed
         }

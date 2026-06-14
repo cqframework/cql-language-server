@@ -436,4 +436,135 @@ class CqlDebugServerHelperTest {
         val result = method.invoke(server, "test-lib") as org.eclipse.lsp4j.debug.Source
         assertEquals(Paths.get(java.net.URI.create("file:///test/path.cql")).toString(), result.path)
     }
+
+    // -- splitParameterName ----------------------------------------------------
+
+    @Test
+    fun `splitParameterName with dot returns library and param`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "splitParameterName",
+                String::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val result = method.invoke(server, "MyLib.MyParam") as Pair<String, String>
+        assertEquals("MyLib", result.first)
+        assertEquals("MyParam", result.second)
+    }
+
+    @Test
+    fun `splitParameterName without dot returns Global`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "splitParameterName",
+                String::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val result = method.invoke(server, "MyParam") as Pair<String, String>
+        assertEquals("(Global)", result.first)
+        assertEquals("MyParam", result.second)
+    }
+
+    // -- loadStepLinesForLibrary exception path --------------------------------
+
+    @Test
+    fun `loadStepLinesForLibrary with null streamingLaunchUri does not throw`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "loadStepLinesForLibrary",
+                String::class.java,
+                org.hl7.elm.r1.VersionedIdentifier::class.java,
+            )
+        method.isAccessible = true
+        // streamingLaunchUri is null, so method should return early without throwing
+        method.invoke(server, "SomeLib", null)
+    }
+
+    // -- loadVariableTypesForLibrary exception path ----------------------------
+
+    @Test
+    fun `loadVariableTypesForLibrary with null librarySourceMap does not throw`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "loadVariableTypesForLibrary",
+                String::class.java,
+            )
+        method.isAccessible = true
+        // librarySourceMap is empty, so method should return early without throwing
+        method.invoke(server, "SomeLib")
+    }
+
+    // -- buildLibraryGroupVariables --------------------------------------------
+
+    @Test
+    fun `buildLibraryGroupVariables sorts keys and assigns incrementing refs`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "buildLibraryGroupVariables",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val groups = mapOf("Beta" to emptyList<RuntimeValue>(), "Alpha" to emptyList<RuntimeValue>())
+
+        @Suppress("UNCHECKED_CAST")
+        val result = method.invoke(server, groups) as List<org.eclipse.lsp4j.debug.Variable>
+        assertEquals(2, result.size)
+        // Should be sorted: Alpha before Beta
+        assertEquals("Alpha", result[0].name)
+        assertEquals("Beta", result[1].name)
+        // refs should be >= 100000
+        assertTrue(result[0].variablesReference >= 100000)
+        assertTrue(result[1].variablesReference >= 100000)
+        assertTrue(result[1].variablesReference > result[0].variablesReference)
+    }
+
+    @Test
+    fun `buildLibraryGroupVariables with empty map returns empty list`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "buildLibraryGroupVariables",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val result = method.invoke(server, emptyMap<String, List<RuntimeValue>>()) as List<org.eclipse.lsp4j.debug.Variable>
+        assertEquals(0, result.size)
+    }
+
+    // -- buildMetadataLibraryGroupVariables ------------------------------------
+
+    @Test
+    fun `buildMetadataLibraryGroupVariables sorts keys and shows param count`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "buildMetadataLibraryGroupVariables",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val groups =
+            mapOf(
+                "LibB" to listOf("p1" to null, "p2" to null),
+                "LibA" to listOf("p1" to null),
+            )
+
+        @Suppress("UNCHECKED_CAST")
+        val result = method.invoke(server, groups) as List<org.eclipse.lsp4j.debug.Variable>
+        assertEquals(2, result.size)
+        assertEquals("LibA", result[0].name)
+        assertEquals("LibB", result[1].name)
+        // LibA has 1 param, LibB has 2 params
+        assertTrue(result[0].value.contains("1 parameter"))
+        assertTrue(result[1].value.contains("2 parameter"))
+    }
 }

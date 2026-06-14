@@ -76,4 +76,56 @@ class DelegatingRepositoryTest {
         val result2 = proxy.search(Bundle::class.java, Patient::class.java, ArrayListMultimap.create(), emptyMap())
         assertTrue(result2.entry.isEmpty())
     }
+
+    @Test
+    fun `create delegates to current and throws`() {
+        val repo = DelegatingRepository(NoOpRepository(fhirContext))
+        assertThrows(UnsupportedOperationException::class.java) {
+            repo.create(Patient(), emptyMap())
+        }
+    }
+
+    @Test
+    fun `update delegates to current and throws`() {
+        val repo = DelegatingRepository(NoOpRepository(fhirContext))
+        assertThrows(UnsupportedOperationException::class.java) {
+            repo.update(Patient(), emptyMap())
+        }
+    }
+
+    @Test
+    fun `delete delegates to current and throws`() {
+        val repo = DelegatingRepository(NoOpRepository(fhirContext))
+        assertThrows(UnsupportedOperationException::class.java) {
+            repo.delete(Patient::class.java, Patient().apply { id = "1" }.idElement, emptyMap())
+        }
+    }
+
+    @Test
+    fun `invoke class overload delegates to current and throws`() {
+        val repo = DelegatingRepository(NoOpRepository(fhirContext))
+        assertThrows(UnsupportedOperationException::class.java) {
+            repo.invoke(
+                Patient::class.java,
+                "Operation",
+                org.hl7.fhir.r4.model.Parameters(),
+                Patient::class.java,
+                emptyMap(),
+            )
+        }
+    }
+
+    @Test
+    fun `invoke id overload delegates to current and throws`() {
+        val repo = DelegatingRepository(NoOpRepository(fhirContext))
+        assertThrows(UnsupportedOperationException::class.java) {
+            repo.invoke(
+                Patient().apply { id = "1" }.idElement,
+                "Operation",
+                org.hl7.fhir.r4.model.Parameters(),
+                Patient::class.java,
+                emptyMap(),
+            )
+        }
+    }
 }
