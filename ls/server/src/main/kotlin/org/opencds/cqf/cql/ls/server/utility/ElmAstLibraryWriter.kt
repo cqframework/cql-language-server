@@ -433,11 +433,13 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
                 val v = expr.value
                 ": ${v ?: "null"}"
             }
-            is ExpressionRef -> {
-                val n = expr.name
-                " (name=${label(n ?: "?")})"
-            }
             is FunctionRef -> {
+                val lib = expr.libraryName
+                val name = expr.name ?: "?"
+                val prefix = if (lib != null) "$lib." else ""
+                " ($prefix${label(name)})"
+            }
+            is ExpressionRef -> {
                 val lib = expr.libraryName
                 val name = expr.name ?: "?"
                 val prefix = if (lib != null) "$lib." else ""

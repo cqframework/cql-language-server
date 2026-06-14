@@ -418,6 +418,17 @@ class ElmAstLibraryWriterTest {
 
         assertTrue(result.contains("FunctionRef"), "Expected FunctionRef in FunctionCaller AST: $result")
         assertTrue(result.contains("Double"), "Expected function name in FunctionRef displayValue: $result")
+        assertTrue(result.contains("FL."), "Expected library prefix FL. in FunctionRef displayValue: $result")
+    }
+
+    @Test
+    fun writeAsString_withLibraryQualifiedExpressionRef_includesLibraryPrefix() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionCaller.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+
+        assertTrue(result.contains("ExpressionRef"), "Expected ExpressionRef in AST: $result")
+        assertTrue(result.contains("FL."), "Expected library prefix FL. on cross-library ExpressionRef: $result")
     }
 
     @Test
