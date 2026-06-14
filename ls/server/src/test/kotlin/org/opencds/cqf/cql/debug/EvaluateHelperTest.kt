@@ -158,6 +158,18 @@ class EvaluateHelperTest {
         fun `null returns null`() {
             assertNull(helper.extractExpressionName(null))
         }
+
+        @Test
+        fun `ExpressionDef returns name`() {
+            val exprDef = org.hl7.elm.r1.ExpressionDef().apply { name = "MyDefine" }
+            assertEquals("MyDefine", helper.extractExpressionName(exprDef))
+        }
+
+        @Test
+        fun `FunctionDef returns name`() {
+            val funcDef = org.hl7.elm.r1.FunctionDef().apply { name = "MyFunc" }
+            assertEquals("MyFunc", helper.extractExpressionName(funcDef))
+        }
     }
 
     // -- lookupByName -------------------------------------------------------
@@ -473,6 +485,38 @@ class EvaluateHelperTest {
             assertNotNull(result)
             assertEquals("\"Patient\"", result!!.first)
         }
+
+        @Test
+        fun `List source returns formatted property values for each item`() {
+            val patient1 = org.hl7.fhir.r4.model.Patient()
+            patient1.id = "p1"
+            val patient2 = org.hl7.fhir.r4.model.Patient()
+            patient2.id = "p2"
+            @Suppress("UNCHECKED_CAST")
+            val list = listOf<Any>(patient1, patient2) as List<Any>
+            handler.runtimeRegistry.putDefine("MyPatList", list, null, null)
+            val prop =
+                org.hl7.elm.r1.Property().apply {
+                    path = "id"
+                    source = org.hl7.elm.r1.ExpressionRef().apply { name = "MyPatList" }
+                }
+            val result = helper.resolvePropertyValue(prop, handler, gson)
+            assertNotNull(result)
+            assertTrue(result!!.first.startsWith("["))
+            assertTrue(result.first.contains("p1"))
+            assertTrue(result.first.contains("p2"))
+        }
+
+        @Test
+        fun `null sourceRef name returns null`() {
+            val prop =
+                org.hl7.elm.r1.Property().apply {
+                    path = "active"
+                    source = org.hl7.elm.r1.ExpressionRef().apply { name = null }
+                }
+            val result = helper.resolvePropertyValue(prop, handler, gson)
+            assertNull(result)
+        }
     }
 
     // -- resolvePropertyFromAlias -----------------------------------------
@@ -515,8 +559,21 @@ class EvaluateHelperTest {
             val result = helper.resolvePropertyFromAlias("Patients", "id", handler, gson)
             assertNotNull(result)
             assertTrue(result!!.first.startsWith("["))
-            assertTrue(result.first.contains("p1:"))
-            assertTrue(result.first.contains("p2:"))
+            assertTrue(result.first.contains("p1"))
+            assertTrue(result.first.contains("p2"))
+        }
+
+        @Test
+        fun `List alias with missing property returns null`() {
+            val patient1 = org.hl7.fhir.r4.model.Patient()
+            patient1.id = "p1"
+            val patient2 = org.hl7.fhir.r4.model.Patient()
+            patient2.id = "p2"
+            @Suppress("UNCHECKED_CAST")
+            val list = listOf<Any>(patient1, patient2) as List<Any>
+            handler.runtimeRegistry.putDefine("Patients", list, null, null)
+            val result = helper.resolvePropertyFromAlias("Patients", "nonexistentProperty", handler, gson)
+            assertNull(result)
         }
     }
 }

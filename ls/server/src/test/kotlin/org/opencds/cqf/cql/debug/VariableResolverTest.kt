@@ -432,5 +432,29 @@ class VariableResolverTest {
             val map = resolver.buildVariableTypeMap(compiler)
             assertTrue(map.isNotEmpty(), "CoverageFixture2 should produce type map entries")
         }
+
+        @Test
+        fun `CoverageFixture4_cql processes if expression`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture4.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.containsKey("IfVal"), "IfVal should be in type map")
+        }
+
+        @Test
+        fun `CoverageFixture4_cql processes binary expression`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture4.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.containsKey("BinaryVal"), "BinaryVal should be in type map")
+        }
+
+        @Test
+        fun `CoverageFixture4_cql processes and expression`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture4.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.containsKey("AndVal"), "AndVal should be in type map")
+        }
     }
 }

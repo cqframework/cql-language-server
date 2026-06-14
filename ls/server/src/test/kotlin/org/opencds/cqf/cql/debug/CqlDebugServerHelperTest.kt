@@ -20,6 +20,7 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import java.nio.file.Paths
+import java.util.concurrent.CompletableFuture
 import javax.xml.namespace.QName
 
 class CqlDebugServerHelperTest {
@@ -566,5 +567,224 @@ class CqlDebugServerHelperTest {
         // LibA has 1 param, LibB has 2 params
         assertTrue(result[0].value.contains("1 parameter"))
         assertTrue(result[1].value.contains("2 parameter"))
+    }
+
+    // -- extractTypeName ------------------------------------------------------
+
+    @Test
+    fun `extractTypeName uses parameterTypeSpecifier when present`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "extractTypeName",
+                ParameterDef::class.java,
+            )
+        method.isAccessible = true
+        val paramDef =
+            ParameterDef().also {
+                it.parameterTypeSpecifier =
+                    NamedTypeSpecifier().also { ts ->
+                        ts.name = QName("http://hl7.org/fhir", "System.Integer")
+                    }
+            }
+        val result = method.invoke(server, paramDef) as String
+        assertEquals("System.Integer", result)
+    }
+
+    @Test
+    fun `extractTypeName falls back to parameterType when no typeSpecifier`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "extractTypeName",
+                ParameterDef::class.java,
+            )
+        method.isAccessible = true
+        val paramDef =
+            ParameterDef().also {
+                it.parameterType = QName("http://hl7.org/fhir", "System.String")
+            }
+        val result = method.invoke(server, paramDef) as String
+        assertEquals("System.String", result)
+    }
+
+    @Test
+    fun `extractTypeName returns Unknown when both are null`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "extractTypeName",
+                ParameterDef::class.java,
+            )
+        method.isAccessible = true
+        val result = method.invoke(server, ParameterDef()) as String
+        assertEquals("Unknown", result)
+    }
+
+    // -- parseLocator ---------------------------------------------------------
+
+    @Test
+    fun `parseLocator with valid locator returns snapshot`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "parseLocator",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+        method.isAccessible = true
+        val result =
+            method.invoke(server, "10:5-20:30", "MyExpr", "42", "file:///test.cql") as ExpressionSnapshot
+        assertEquals("MyExpr", result.name)
+        assertEquals("42", result.value)
+        assertEquals(9, result.startLine)
+        assertEquals(4, result.startChar)
+        assertEquals(19, result.endLine)
+        assertEquals(30, result.endChar)
+    }
+
+    @Test
+    fun `parseLocator with no hyphen returns null`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "parseLocator",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+        method.isAccessible = true
+        val result = method.invoke(server, "10:5", "MyExpr", "42", "file:///test.cql")
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `parseLocator with three parts after hyphen returns null`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "parseLocator",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+        method.isAccessible = true
+        val result = method.invoke(server, "10:5-20:30:1", "MyExpr", "42", "file:///test.cql")
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `parseLocator with non-integer line returns null`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "parseLocator",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+        method.isAccessible = true
+        val result = method.invoke(server, "abc:5-20:30", "MyExpr", "42", "file:///test.cql")
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `parseLocator with non-integer col returns null`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "parseLocator",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+        method.isAccessible = true
+        val result = method.invoke(server, "10:abc-20:30", "MyExpr", "42", "file:///test.cql")
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun `parseLocator with missing start colon returns null`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "parseLocator",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+        method.isAccessible = true
+        val result = method.invoke(server, "10-20:30", "MyExpr", "42", "file:///test.cql")
+        assertEquals(null, result)
+    }
+
+    // -- setStepGranularity ---------------------------------------------------
+
+    @Test
+    fun `setStepGranularity with null streamingHandler returns completed future`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "setStepGranularity",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        val future = method.invoke(server, mapOf("granularity" to "ast")) as CompletableFuture<*>
+        assertTrue(future.isDone)
+    }
+
+    // -- getAst ---------------------------------------------------------------
+
+    @Test
+    fun `getAst with null uri returns null ast`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "getAst",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val future = method.invoke(server, emptyMap<String, Any>()) as CompletableFuture<Map<String, Any?>>
+        val result = future.get()
+        assertEquals(null, result["ast"])
+    }
+
+    @Test
+    fun `getAst with unparseable uri returns null ast`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "getAst",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val future = method.invoke(server, mapOf("uri" to "not-a-uri://[")) as CompletableFuture<Map<String, Any?>>
+        val result = future.get()
+        assertEquals(null, result["ast"])
+    }
+
+    @Test
+    fun `getAst with uri not in librarySourceMap returns null ast`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "getAst",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val future =
+            method.invoke(server, mapOf("uri" to "file:///not/in/map.cql")) as CompletableFuture<Map<String, Any?>>
+        val result = future.get()
+        assertEquals(null, result["ast"])
     }
 }
