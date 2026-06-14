@@ -787,4 +787,40 @@ class CqlDebugServerHelperTest {
         val result = future.get()
         assertEquals(null, result["ast"])
     }
+
+    // -- setStepGranularity (non-null handler) --------------------------------
+
+    @Test
+    fun `setStepGranularity with ast sets handler to AST granularity`() {
+        val server = makeServer()
+        val mockHandler = Mockito.mock(StreamingBreakpointHandler::class.java)
+        Mockito.`when`(mockHandler.stepGranularity).thenReturn(StreamingBreakpointHandler.StepGranularity.AST)
+        val handlerField = CqlDebugServer::class.java.getDeclaredField("streamingHandler")
+        handlerField.isAccessible = true
+        handlerField.set(server, mockHandler)
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "setStepGranularity",
+                Map::class.java,
+            )
+        method.isAccessible = true
+        method.invoke(server, mapOf("granularity" to "ast"))
+        assertEquals(StreamingBreakpointHandler.StepGranularity.AST, mockHandler.stepGranularity)
+    }
+
+    // -- buildVariableTypeMap -------------------------------------------------
+
+    @Test
+    fun `buildVariableTypeMap with null compiler returns empty map`() {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "buildVariableTypeMap",
+                Class.forName("org.cqframework.cql.cql2elm.CqlCompiler"),
+            )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val result = method.invoke(server, null) as Map<String, String>
+        assertTrue(result.isEmpty())
+    }
 }
