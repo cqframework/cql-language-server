@@ -324,4 +324,59 @@ class CqlStepPositionCollectorTest {
         assertTrue(6 in bpLines) // with such-that (and continuation)
         assertTrue(8 in bpLines) // without such-that
     }
+
+    // ---- function definition tests (previously uncovered) ----
+
+    @Test
+    fun `function definition body line collected`() {
+        val cql =
+            """
+            library Test
+            define function "Add"(x Integer, y Integer):
+              x + y
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // function body expression line
+    }
+
+    @Test
+    fun `function definition with query body`() {
+        val cql =
+            """
+            library Test
+            define function "GetFinished"(obs List<Observation>):
+              obs O
+                where O.status = 'finished'
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // function body start
+        assertTrue(4 in lines) // where clause line
+    }
+
+    @Test
+    fun `function with nested expression`() {
+        val cql =
+            """
+            library Test
+            define function "Nested"():
+              1 + 2
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines)
+    }
+
+    // ---- sortByItem expressionTerm test ----
+
+    @Test
+    fun `sort by expressionTerm line collected`() {
+        val cql =
+            """
+            library Test
+            define "SortByExpr":
+                [Observation] O
+                    sort by (O.value / 1000)
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(4 in lines) // sort by expression term line
+    }
 }

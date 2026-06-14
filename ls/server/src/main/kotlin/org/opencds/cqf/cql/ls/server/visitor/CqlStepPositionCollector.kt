@@ -82,6 +82,19 @@ object CqlStepPositionCollector {
                 collectExpression(child, lines)
             }
         }
+        // Handle functionBody → expression nesting explicitly since the
+        // generic ParserRuleContext fallback in collectFromContext may not
+        // match Java-generated ANTLR context classes under the Kotlin runtime.
+        val body = funcDef.functionBody()
+        if (body != null) {
+            for (j in 0 until body.childCount) {
+                val bodyChild = body.getChild(j)
+                if (bodyChild is cqlParser.ExpressionContext) {
+                    bodyChild.start?.line?.let { lines.add(it) }
+                    collectExpression(bodyChild, lines)
+                }
+            }
+        }
     }
 
     private fun collectExpression(

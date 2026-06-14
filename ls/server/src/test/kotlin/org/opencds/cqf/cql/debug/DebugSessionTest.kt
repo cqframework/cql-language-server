@@ -88,4 +88,30 @@ class DebugSessionTest {
         session.stop() // double stop — must not throw
         assertFalse(session.isActive())
     }
+
+    @Test
+    fun `isActive returns false before start`() {
+        val session = makeSession()
+        assertFalse(session.isActive())
+    }
+
+    @Test
+    fun `external socket close causes IOException and inactive session`() {
+        val session = makeSession()
+        session.start().join()
+        assertTrue(session.isActive())
+
+        // Use reflection to close the underlying server socket without calling stop().
+        // This triggers IOException in the accept() loop with stopped == false.
+        val socketField = DebugSession::class.java.getDeclaredField("serverSocket")
+        socketField.isAccessible = true
+        val ss = socketField.get(session) as java.net.ServerSocket
+        ss.close()
+
+        val deadline = System.currentTimeMillis() + 3000
+        while (session.isActive() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+        }
+        assertFalse(session.isActive(), "session should become inactive after socket is closed externally")
+    }
 }

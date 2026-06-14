@@ -238,4 +238,170 @@ class ElmAstLibraryWriterTest {
             "Each render should record the same number of elements",
         )
     }
+
+    // -----------------------------------------------------------------------
+    // CoverageFixture1 — Null, Quantity, Interval, Slice, Case, Tuple,
+    //                    ToList, In, First, Combine, As, Is
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun coverageFixture1_containsNull() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Null:"), "Expected Null displayValue in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsQuantity() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Quantity"), "Expected Quantity in AST: $result")
+        assertTrue(result.contains("5.0") || result.contains("5 'mg'"), "Expected quantity value+unit in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsInterval() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Interval"), "Expected Interval in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsSlice() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Slice"), "Expected Slice in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsCase() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Case"), "Expected Case in AST: $result")
+        assertTrue(result.contains("CaseItem"), "Expected CaseItem in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsTuple() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Tuple"), "Expected Tuple in AST: $result")
+        assertTrue(result.contains("TupleElement"), "Expected TupleElement in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsToList() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("ToList"), "Expected ToList in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsIn() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("In"), "Expected In in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsFirst() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("First"), "Expected First in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsCombine() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Combine"), "Expected Combine in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture1_containsAsAndIs() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture1.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("As"), "Expected As in AST: $result")
+        assertTrue(result.contains("Is"), "Expected Is in AST: $result")
+    }
+
+    // -----------------------------------------------------------------------
+    // CoverageFixture2 — CodeRef, CodeSystemRef, ConceptRef, ParameterRef,
+    //                    AliasRef, Exists, Contains, Collapse
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun coverageFixture2_containsCodeRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("CodeRef"), "Expected CodeRef in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsCodeSystemRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("CodeSystemRef"), "Expected CodeSystemRef in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsConceptRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("ConceptRef"), "Expected ConceptRef in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsParameterRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("ParameterRef (name="), "Expected ParameterRef displayValue in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsAliasRef() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("AliasRef"), "Expected AliasRef in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsExists() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Exists"), "Expected Exists in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsContains() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Contains"), "Expected Contains in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture2_containsCollapse() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+        val compiler = compilationManager.compile(uri) ?: throw AssertionError("compile returned null")
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("Collapse"), "Expected Collapse in AST: $result")
+    }
 }

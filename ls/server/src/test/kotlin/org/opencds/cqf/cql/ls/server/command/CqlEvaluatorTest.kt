@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.command
 import ca.uhn.fhir.context.FhirContext
 import ca.uhn.fhir.repository.IRepository
 import org.cqframework.fhir.npm.NpmProcessor
+import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.r4.model.Patient
 import org.hl7.fhir.r4.model.StringType
@@ -21,6 +22,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.io.TempDir
+import org.opencds.cqf.cql.engine.debug.BreakpointAction
+import org.opencds.cqf.cql.engine.debug.BreakpointHandler
+import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
@@ -988,4 +992,135 @@ class CqlEvaluatorTest {
     }
 
     private fun createNoOpRepo(): IRepository = NoOpRepository(r4Context)
+
+    // -------------------------------------------------------------------------
+    // evaluateDetailed
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluateDetailed returns detailed tracing results`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val result =
+            CqlEvaluator.evaluateDetailed(request, contentService, igContextManager, libraryResolutionManager)
+        assertNotNull(result.response)
+        assertTrue(result.response.results.isNotEmpty())
+        assertTrue(result.response.results[0].expressions.isNotEmpty())
+    }
+
+    @Test
+    fun `evaluateDetailed returns defineOrder`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val result =
+            CqlEvaluator.evaluateDetailed(request, contentService, igContextManager, libraryResolutionManager)
+        assertTrue(result.defineOrder.isNotEmpty())
+    }
+
+    // -------------------------------------------------------------------------
+    // evaluateStreaming
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluateStreaming completes with BreakpointHandler`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val handler =
+            object : BreakpointHandler {
+                override fun onBeforeExpression(
+                    elm: Element,
+                    state: State,
+                ): BreakpointAction {
+                    return BreakpointAction.CONTINUE
+                }
+            }
+        val future =
+            CqlEvaluator.evaluateStreaming(request, contentService, igContextManager, libraryResolutionManager, handler)
+        future.get()
+        assertTrue(future.isDone)
+        assertFalse(future.isCancelled)
+    }
+
+    @Test
+    fun `evaluateStreaming with failing library completes normally with Error expression`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "NonExistentLib",
+                            libraryUri = "file:///nonexistent/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val handler =
+            object : BreakpointHandler {
+                override fun onBeforeExpression(
+                    elm: Element,
+                    state: State,
+                ): BreakpointAction {
+                    return BreakpointAction.CONTINUE
+                }
+            }
+        val future =
+            CqlEvaluator.evaluateStreaming(request, contentService, igContextManager, libraryResolutionManager, handler)
+        assertDoesNotThrow { future.get() }
+        assertTrue(future.isDone)
+    }
 }
