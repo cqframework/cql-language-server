@@ -97,10 +97,10 @@ jobs:
         shell: bash
 
       - uses: mikepenz/action-junit-report@v4
-        if: always()
+        if: (success() || failure()) && runner.os == 'Linux'
         with:
           report_paths: '**/target/surefire-reports/TEST-*.xml'
-          check_name: Test Report (${{ matrix.os }})
+          check_name: Test Report
 
       - uses: actions/upload-artifact@v4
         if: always()
