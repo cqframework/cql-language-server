@@ -19,6 +19,7 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import java.nio.file.Paths
 import javax.xml.namespace.QName
 
 class CqlDebugServerHelperTest {
@@ -433,6 +434,6 @@ class CqlDebugServerHelperTest {
             )
         method.isAccessible = true
         val result = method.invoke(server, "test-lib") as org.eclipse.lsp4j.debug.Source
-        assertEquals("/test/path.cql", result.path)
+        assertEquals(Paths.get(java.net.URI.create("file:///test/path.cql")).toString(), result.path)
     }
 }
