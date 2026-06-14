@@ -5,7 +5,7 @@ on:
       - master
 
 permissions:
-  contents: write
+  contents: read
   checks: write
 
 concurrency:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "17"
+          java-version: "21" # JDK 21 used to run Maven; sources still target 17
           cache: "maven"
           server-id: central
           server-url: https://repo1.maven.org/maven2
@@ -45,4 +45,10 @@ jobs:
         if: success() || failure() # always run even if the previous step fails
         with:
           report_paths: "**/target/surefire-reports/TEST-*.xml"
-
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ls/server/target/site/jacoco/jacoco.xml
+          codecov_config: .github/codecov.yml
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
