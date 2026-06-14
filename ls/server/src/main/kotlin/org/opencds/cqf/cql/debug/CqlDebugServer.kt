@@ -5,11 +5,9 @@ import ca.uhn.fhir.context.BaseRuntimeElementDefinition
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
 import org.cqframework.cql.cql2elm.CqlCompiler
-import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
 import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
-import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.Capabilities
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
@@ -46,37 +44,17 @@ import org.eclipse.lsp4j.debug.VariablesResponse
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
-import org.hl7.cql.model.ClassType
-import org.hl7.elm.r1.AggregateExpression
-import org.hl7.elm.r1.AliasedQuerySource
-import org.hl7.elm.r1.BinaryExpression
-import org.hl7.elm.r1.Case
-import org.hl7.elm.r1.Combine
 import org.hl7.elm.r1.Element
-import org.hl7.elm.r1.ExpressionDef
-import org.hl7.elm.r1.First
 import org.hl7.elm.r1.FunctionDef
-import org.hl7.elm.r1.FunctionRef
-import org.hl7.elm.r1.If
 import org.hl7.elm.r1.Interval
 import org.hl7.elm.r1.IntervalTypeSpecifier
-import org.hl7.elm.r1.Last
-import org.hl7.elm.r1.LetClause
 import org.hl7.elm.r1.ListTypeSpecifier
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.NamedTypeSpecifier
-import org.hl7.elm.r1.NaryExpression
 import org.hl7.elm.r1.ParameterDef
 import org.hl7.elm.r1.Property
-import org.hl7.elm.r1.Query
-import org.hl7.elm.r1.Repeat
-import org.hl7.elm.r1.Slice
-import org.hl7.elm.r1.Sort
-import org.hl7.elm.r1.TernaryExpression
-import org.hl7.elm.r1.UnaryExpression
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
-import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
@@ -95,7 +73,6 @@ import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -114,15 +91,21 @@ open class CqlDebugServer(
         private val log = LoggerFactory.getLogger(CqlDebugServer::class.java)
     }
 
-    protected val varResolver = VariableResolver()
-    protected val breakpointManager: BreakpointManager = BreakpointManager(contentService)
-    protected val evaluateHelper: EvaluateHelper = EvaluateHelper(varResolver, compilationManager)
-
-    // Backing fields — kept for backward compatibility with existing inline code.
+    // Backing fields shared with varResolver so inline code and helpers use the same maps.
     private val fhirContext: FhirContext = FhirContext.forR4()
     private val varRefs = mutableMapOf<Int, Any>()
     private val varRefTypes = mutableMapOf<Int, String>()
     private var nextVarRef = 1000
+
+    protected val varResolver =
+        VariableResolver(
+            fhirContext = fhirContext,
+            varRefs = varRefs,
+            varRefTypes = varRefTypes,
+            nextVarRef = nextVarRef,
+        )
+    protected val breakpointManager: BreakpointManager = BreakpointManager(contentService)
+    protected val evaluateHelper: EvaluateHelper = EvaluateHelper(varResolver, compilationManager)
 
     private val terminatedSent = java.util.concurrent.atomic.AtomicBoolean(false)
     private val exitedSent = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -291,98 +274,23 @@ open class CqlDebugServer(
         return CompletableFuture.completedFuture(SetBreakpointsResponse().also { it.breakpoints = bps })
     }
 
-    private fun resolveLibraryIdFromPath(path: String?): String? {
-        if (path == null) return null
-        val pathUri = Paths.get(path).toUri()
-        return librarySourceMap.entries.firstOrNull { (_, uri) -> uri == pathUri }?.key
-    }
+    private fun resolveLibraryIdFromPath(path: String?): String? =
+        breakpointManager.resolveLibraryIdFromPath(path, librarySourceMap)
 
-    private fun isRelevantSourcePath(sourcePath: String?): Boolean {
-        val relevant = relevantLibraryIds ?: return true
-        val libId = resolveLibraryIdFromPath(sourcePath)
-        return libId != null && libId in relevant
-    }
+    private fun isRelevantSourcePath(sourcePath: String?): Boolean =
+        breakpointManager.isRelevantSourcePath(sourcePath, librarySourceMap, relevantLibraryIds)
 
     internal fun collectTransitiveIncludes(
         primaryId: String,
         compiler: CqlCompiler?,
-    ): Set<String> {
-        val result = mutableSetOf(primaryId)
-        val visited = mutableSetOf(primaryId)
-        val queue = ArrayDeque<org.hl7.elm.r1.IncludeDef>()
-        compiler?.compiledLibrary?.library?.includes?.def?.forEach { queue.addLast(it) }
-
-        while (queue.isNotEmpty()) {
-            val includeDef = queue.removeFirst()
-            val libPath = includeDef.path ?: continue
-            if (libPath in visited) continue
-            visited.add(libPath)
-
-            val uri = librarySourceMap[libPath]
-            if (uri == null) {
-                try {
-                    val identifier =
-                        VersionedIdentifier().also { vi ->
-                            vi.id = includeDef.path
-                            vi.version = includeDef.version
-                        }
-                    val uris = contentService.locate(URI.create(streamingLaunchUri ?: ""), identifier)
-                    val resolvedUri = uris.firstOrNull()
-                    if (resolvedUri != null) {
-                        librarySourceMap[libPath] = resolvedUri
-                    }
-                } catch (_: Exception) {
-                    // unresolvable — still add to result so breakpoints aren't spuriously greyed
-                }
-            }
-            result.add(libPath)
-        }
-        return result
-    }
+    ): Set<String> = breakpointManager.collectTransitiveIncludes(primaryId, compiler, streamingLaunchUri, librarySourceMap)
 
     private fun updateBreakpointVerification() {
-        val relevant = relevantLibraryIds ?: return
-        for ((sourcePath, lineToId) in breakpointIdsByPath) {
-            val libId = resolveLibraryIdFromPath(sourcePath)
-            val isRelevant = libId != null && libId in relevant
-            if (isRelevant) continue
-            for ((line, id) in lineToId) {
-                client.join().breakpoint(
-                    BreakpointEventArguments().also {
-                        it.reason = "changed"
-                        it.breakpoint =
-                            Breakpoint().also { bp ->
-                                bp.id = id
-                                bp.isVerified = false
-                                bp.line = line
-                                bp.source = Source().also { s -> s.path = sourcePath }
-                            }
-                    },
-                )
-            }
-        }
+        breakpointManager.updateBreakpointVerification(client.join(), breakpointIdsByPath, librarySourceMap, relevantLibraryIds)
     }
 
     private fun updateBreakpointLineVerification(parseTree: cqlParser.LibraryContext) {
-        val breakpointableLines = CqlStepPositionCollector.collectBreakpointableLines(parseTree)
-        for ((sourcePath, lineToId) in breakpointIdsByPath) {
-            for ((line, id) in lineToId) {
-                if (line !in breakpointableLines) {
-                    client.join().breakpoint(
-                        BreakpointEventArguments().also {
-                            it.reason = "changed"
-                            it.breakpoint =
-                                Breakpoint().also { bp ->
-                                    bp.id = id
-                                    bp.isVerified = false
-                                    bp.line = line
-                                    bp.source = Source().also { s -> s.path = sourcePath }
-                                }
-                        },
-                    )
-                }
-            }
-        }
+        breakpointManager.updateBreakpointLineVerification(parseTree, client.join(), breakpointIdsByPath)
     }
 
     private fun extractParameterMetadata(libraryUri: URI): Map<String, List<ParameterMetadata>> {
@@ -968,9 +876,7 @@ open class CqlDebugServer(
                 val registry = handler.runtimeRegistry
 
                 if (args.variablesReference == 1) {
-                    varRefs.clear()
-                    varRefTypes.clear()
-                    nextVarRef = 1000
+                    varResolver.resetVarRefs()
                     val frameLibId = resolveFrameLibraryId()
                     for (sv in registry.getStackVariables().sortedBy { it.name }) {
                         val svType = variableTypeMap["$frameLibId.${sv.name}"] ?: variableTypeMap[sv.name]
@@ -1122,9 +1028,8 @@ open class CqlDebugServer(
     private fun findParameterMetadata(
         libraryName: String,
         paramName: String,
-    ): ParameterMetadata? {
-        return parameterMetadata[libraryName]?.find { it.name == paramName }
-    }
+    ): ParameterMetadata? =
+        evaluateHelper.findParameterMetadata(libraryName, paramName, parameterMetadata)
 
     private fun findLaunchParameterType(paramName: String): String? {
         return launchParameters?.find { it.parameterName == paramName }?.parameterType
@@ -1240,384 +1145,73 @@ open class CqlDebugServer(
     private fun lookupByName(
         expression: String,
         frameId: Int?,
-    ): EvaluateResponse {
-        val candidates =
-            if (frameId != null && frameId in snapshots.indices) {
-                snapshots.subList(0, frameId + 1)
-            } else {
-                snapshots.take(currentIndex + 1)
-            }
-        return candidates.lastOrNull { nameMatches(it.name, expression) }
-            ?.let { snap ->
-                EvaluateResponse().also {
-                    it.result = snap.value
-                    it.variablesReference = 0
-                }
-            }
-            ?: notAvailable()
-    }
+    ): EvaluateResponse =
+        evaluateHelper.lookupByName(expression, frameId, snapshots, currentIndex)
 
     private fun handleHoverEvaluate(
         expression: String,
         frameId: Int?,
-    ): EvaluateResponse {
-        // 1. Name-based define match
-        val candidates =
-            if (frameId != null && frameId in snapshots.indices) {
-                snapshots.subList(0, frameId + 1)
-            } else {
-                snapshots
-            }
-        val defineSnapshot =
-            candidates.lastOrNull { snap ->
-                nameMatches(snap.name, expression)
-            }
-        if (defineSnapshot != null) {
-            return EvaluateResponse().also {
-                it.result = defineSnapshot.value
-                it.variablesReference = 0
-            }
-        }
-
-        // 2. Position-based sub-expression match
-        if (expression.startsWith("@") && frameId != null && frameId in snapshots.indices) {
-            val pos = parseHoverPosition(expression) ?: return notAvailable()
-            val currentDefine = snapshots[frameId].name
-
-            val match =
-                subExpressionSnapshots
-                    .filter { snap ->
-                        snap.parentDefine == currentDefine && snap.contains(pos.first, pos.second)
-                    }
-                    .minByOrNull {
-                        (it.endLine - it.startLine) * 10_000 + (it.endChar - it.startChar)
-                    }
-
-            if (match != null) {
-                return EvaluateResponse().also {
-                    it.result = match.value
-                    it.variablesReference = 0
-                }
-            }
-        }
-
-        return notAvailable()
-    }
+    ): EvaluateResponse =
+        evaluateHelper.handleHoverEvaluate(expression, frameId, snapshots, subExpressionSnapshots)
 
     private fun nameMatches(
         snapshotName: String,
         expression: String,
-    ): Boolean {
-        if (snapshotName == expression) return true
-        val stripped = expression.trim('"')
-        if (snapshotName == stripped) return true
-        val words = snapshotName.split(" ").toSet()
-        if (expression in words) return true
-        if (stripped in words) return true
-        return false
-    }
+    ): Boolean =
+        evaluateHelper.nameMatches(snapshotName, expression)
 
-    private fun parseHoverPosition(expression: String): Pair<Int, Int>? {
-        val raw = expression.removePrefix("@")
-        val parts = raw.split(":").mapNotNull { it.toIntOrNull() }
-        return if (parts.size == 2) parts[0] to parts[1] else null
-    }
+    private fun parseHoverPosition(expression: String): Pair<Int, Int>? =
+        evaluateHelper.parseHoverPosition(expression)
 
-    private fun extractExpressionName(elm: Element?): String? {
-        if (elm is ExpressionDef) return elm.name
-        return elm?.javaClass?.simpleName
-    }
+    private fun extractExpressionName(elm: Element?): String? =
+        varResolver.extractExpressionName(elm)
 
-    /**
-     * Parses a TrackBack locator string (1-indexed, e.g. "10:12-10:24") into
-     * (startLine, startChar, endLine, endChar) in 0-indexed DAP coordinates.
-     * Returns all zeros when the locator is null or unparseable.
-     */
-    private data class LocatorBounds(val startLine: Int, val startChar: Int, val endLine: Int, val endChar: Int)
-
-    private fun parseLocatorLines(locator: String?): LocatorBounds {
-        if (locator == null) return LocatorBounds(0, 0, 0, 0)
-        val parts = locator.split("-").takeIf { it.size == 2 } ?: return LocatorBounds(0, 0, 0, 0)
-        val (sl, sc) = parts[0].split(":").takeIf { it.size == 2 }?.map { it.toIntOrNull() } ?: return LocatorBounds(0, 0, 0, 0)
-        val (el, ec) = parts[1].split(":").takeIf { it.size == 2 }?.map { it.toIntOrNull() } ?: return LocatorBounds(0, 0, 0, 0)
-        if (sl == null || sc == null || el == null || ec == null) return LocatorBounds(0, 0, 0, 0)
-        return LocatorBounds(sl - 1, sc - 1, el - 1, ec)
-    }
+    private fun parseLocatorLines(locator: String?): LocatorBounds =
+        varResolver.parseLocatorLines(locator)
 
     private fun formatVariableValue(
         value: Any?,
         gson: Gson,
-    ): String {
-        val unwrapped = value
-        if (unwrapped !== value) return formatVariableValue(unwrapped, gson)
-        return when (value) {
-            null -> "null"
-            is String -> "\"$value\""
-            is Boolean, is Number -> value.toString()
-            is IPrimitiveType<*> -> value.getValueAsString() ?: "null"
-            is IBase ->
-                try {
-                    fhirContext.newJsonParser().encodeToString(value)
-                } catch (_: Exception) {
-                    value.toString()
-                }
-            else ->
-                try {
-                    gson.toJson(value)
-                } catch (_: Exception) {
-                    value.toString()
-                }
-        }
-    }
+    ): String =
+        varResolver.formatVariableValue(value, gson)
 
     private fun formatPropertyValue(
         value: Any?,
         gson: Gson,
-    ): String {
-        if (value is org.hl7.fhir.r4.model.Period) {
-            return formatPeriodAsInterval(value)
-        }
-        return formatVariableValue(value, gson)
-    }
+    ): String =
+        varResolver.formatPropertyValue(value, gson)
 
-    private fun isExpandable(value: Any?): Boolean {
-        if (value == null) return false
-        if (value is IPrimitiveType<*>) return false
-        if (value is IBase) return true
-        if (value is List<*> && value.isNotEmpty()) return true
-        return false
-    }
+    private fun isExpandable(value: Any?): Boolean =
+        varResolver.isExpandable(value)
 
     private fun registerIfExpandable(
         value: Any?,
         typeName: String? = null,
-    ): Int {
-        if (!isExpandable(value)) return 0
-        val ref = nextVarRef++
-        varRefs[ref] = value!!
-        if (typeName != null) varRefTypes[ref] = typeName
-        return ref
-    }
+    ): Int = varResolver.registerIfExpandable(value, typeName)
 
     private fun childrenOf(
         value: Any,
         typeName: String? = null,
-    ): List<Variable> {
-        val gson = Gson()
-        return when (value) {
-            is IBase -> {
-                if (value is IPrimitiveType<*>) {
-                    return emptyList()
-                }
-                val elementDef = fhirContext.getElementDefinition(value.javaClass) as? BaseRuntimeElementDefinition<*>
-                if (elementDef != null) {
-                    val children: List<BaseRuntimeChildDefinition> =
-                        if (typeName != null) {
-                            profileChildrenOf(typeName, elementDef)
-                        } else {
-                            elementDef.children ?: emptyList()
-                        }
-                    children.flatMap { child ->
-                        val accessor = child.getAccessor()
-                        val childValues: List<IBase> =
-                            try {
-                                @Suppress("UNCHECKED_CAST")
-                                accessor.getValues(value) as? List<IBase> ?: emptyList()
-                            } catch (_: Exception) {
-                                emptyList()
-                            }
-                        val childName = child.elementName
-                        if (childValues.size == 1) {
-                            listOf(
-                                Variable().also {
-                                    it.name = childName
-                                    it.value = formatVariableValue(childValues[0], gson)
-                                    it.variablesReference = registerIfExpandable(childValues[0])
-                                },
-                            )
-                        } else {
-                            childValues.mapIndexed { index, childValue ->
-                                Variable().also {
-                                    it.name = "$childName[$index]"
-                                    it.value = formatVariableValue(childValue, gson)
-                                    it.variablesReference = registerIfExpandable(childValue)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    emptyList()
-                }
-            }
-            is List<*> -> {
-                value.mapIndexed { index, item ->
-                    Variable().also {
-                        it.name = "[$index]"
-                        it.value = formatVariableValue(item, gson)
-                        it.variablesReference = registerIfExpandable(item)
-                    }
-                }
-            }
-            else -> emptyList()
-        }
-    }
+    ): List<Variable> = varResolver.childrenOf(value, typeName, launchCompiler)
 
-    /**
-     * Searches the expanded variable tree (varRefs) for a child variable whose display
-     * name matches [name]. This handles copy-value for expanded FHIR resource children
-     * (e.g., "name[0]", "given[0]") that are not top-level stack/context/define values.
-     */
-    private fun findInVarRefs(name: String): EvaluateResponse? {
-        for ((ref, value) in varRefs) {
-            val result = findInVarRefsChildren(name, value, varRefTypes[ref])
-            if (result != null) return result
-        }
-        return null
-    }
-
-    private fun findInVarRefsChildren(
-        name: String,
-        value: Any,
-        typeName: String?,
-    ): EvaluateResponse? {
-        val children = childrenOf(value, typeName)
-        for (child in children) {
-            if (child.name == name) {
-                return EvaluateResponse().also {
-                    it.result = child.value
-                    it.variablesReference = child.variablesReference
-                }
-            }
-            if (child.variablesReference > 0) {
-                val childValue = varRefs[child.variablesReference] ?: continue
-                val childType = varRefTypes[child.variablesReference]
-                val result = findInVarRefsChildren(name, childValue, childType)
-                if (result != null) return result
-            }
-        }
-        return null
-    }
+    private fun findInVarRefs(name: String): EvaluateResponse? =
+        varResolver.findInVarRefs(name)
 
     private fun resolvePropertyValue(
         property: Property,
         state: org.opencds.cqf.cql.engine.execution.State,
         gson: Gson,
-    ): PropertyResult? {
-        val sourceRef = property.source as? org.hl7.elm.r1.ExpressionRef ?: return null
-        val sourceName = sourceRef.name ?: return null
-        val sourceLibrary = sourceRef.libraryName
-        val propertyName = property.path ?: return null
-
-        val sourceValue =
-            streamingHandler?.runtimeRegistry?.find(sourceName, sourceLibrary)?.value
-                ?: state.contextValues[sourceName]
-                ?: state.stack.flatMap { frame -> frame.variables }.find { v -> v.name == sourceName }?.value
-                ?: return null
-
-        return when (sourceValue) {
-            is List<*> -> {
-                val pairs =
-                    sourceValue.mapNotNull { item ->
-                        if (item is IBase) {
-                            val id = getResourceId(item)
-                            val pv = extractPropertyValue(item, propertyName)
-                            if (pv != null) id to pv else null
-                        } else {
-                            null
-                        }
-                    }
-                if (pairs.isEmpty()) {
-                    null
-                } else {
-                    val display =
-                        pairs.joinToString(", ") { (id, pv) ->
-                            "$id: ${formatPropertyValue(pv, gson)}"
-                        }
-                    PropertyResult("[$display]", sourceValue as List<*>)
-                }
-            }
-            is IBase -> {
-                val pv = extractPropertyValue(sourceValue, propertyName) ?: return null
-                PropertyResult(formatPropertyValue(pv, gson), pv)
-            }
-            else -> null
+    ): PropertyResult? =
+        evaluateHelper.resolvePropertyValue(property, streamingHandler!!, gson)?.let {
+            PropertyResult(it.first, it.second)
         }
-    }
 
     private fun resolveFromCursorCategory(
         category: CursorCategory,
         state: State,
         handler: StreamingBreakpointHandler,
         gson: Gson,
-    ): EvaluateResponse? {
-        return when (category) {
-            is CursorCategory.AliasReference -> {
-                val rv = handler.runtimeRegistry.find(category.name)
-                if (rv != null) {
-                    EvaluateResponse().also {
-                        it.result = formatVariableValue(rv.value, gson)
-                        it.variablesReference = registerIfExpandable(rv.value)
-                    }
-                } else {
-                    null
-                }
-            }
-            is CursorCategory.OperandRef -> {
-                val rv = handler.runtimeRegistry.find(category.name)
-                if (rv != null) {
-                    EvaluateResponse().also {
-                        it.result = formatVariableValue(rv.value, gson)
-                        it.variablesReference = registerIfExpandable(rv.value)
-                    }
-                } else {
-                    null
-                }
-            }
-            is CursorCategory.ExpressionRef -> {
-                val rv =
-                    if (category.libraryName != null) {
-                        handler.runtimeRegistry.find(category.name, category.libraryName)
-                    } else {
-                        handler.runtimeRegistry.find(category.name)
-                    }
-                if (rv != null) {
-                    EvaluateResponse().also {
-                        it.result = formatVariableValue(rv.value, gson)
-                        it.variablesReference = registerIfExpandable(rv.value)
-                    }
-                } else {
-                    null
-                }
-            }
-            is CursorCategory.ParameterRef -> {
-                val rv = handler.runtimeRegistry.find(category.name)
-                if (rv != null) {
-                    EvaluateResponse().also {
-                        it.result = formatVariableValue(rv.value, gson)
-                        it.variablesReference = registerIfExpandable(rv.value)
-                    }
-                } else {
-                    null
-                }
-            }
-            is CursorCategory.PropertyName -> {
-                if (category.aliasName != null) {
-                    val result = resolvePropertyFromAlias(category.aliasName, category.name, state, handler, gson)
-                    if (result != null) {
-                        EvaluateResponse().also {
-                            it.result = result.displayString
-                            it.variablesReference = registerIfExpandable(result.expandableValue)
-                        }
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-            }
-            else -> null
-        }
-    }
+    ): EvaluateResponse? = evaluateHelper.resolveFromCursorCategory(category, state, handler, gson)
 
     private data class PropertyResult(val displayString: String, val expandableValue: Any?)
 
@@ -1627,146 +1221,30 @@ open class CqlDebugServer(
         state: State,
         handler: StreamingBreakpointHandler,
         gson: Gson,
-    ): PropertyResult? {
-        val sourceValue =
-            handler.runtimeRegistry.find(aliasName)?.value
-                ?: return null
-
-        return when (sourceValue) {
-            is List<*> -> {
-                val pairs =
-                    sourceValue.mapNotNull { item ->
-                        if (item is IBase) {
-                            val id = getResourceId(item)
-                            val pv = extractPropertyValue(item, propertyName)
-                            if (pv != null) id to pv else null
-                        } else {
-                            null
-                        }
-                    }
-                if (pairs.isEmpty()) {
-                    null
-                } else {
-                    val display =
-                        pairs.joinToString(", ") { (id, pv) ->
-                            "$id: ${formatPropertyValue(pv, gson)}"
-                        }
-                    PropertyResult("[$display]", sourceValue as List<*>)
-                }
-            }
-            is IBase -> {
-                val pv = extractPropertyValue(sourceValue, propertyName) ?: return null
-                PropertyResult(formatPropertyValue(pv, gson), pv)
-            }
-            else -> null
+    ): PropertyResult? =
+        evaluateHelper.resolvePropertyFromAlias(aliasName, propertyName, handler, gson)?.let {
+            PropertyResult(it.first, it.second)
         }
-    }
 
     private fun extractPropertyValue(
         resource: IBase,
         propertyName: String,
-    ): Any? {
-        val capitalized = propertyName.replaceFirstChar { it.uppercase() }
-        return try {
-            // Prefer get<Name>Element() which returns the IPrimitiveType wrapper
-            // (e.g. Enumeration<EncounterStatus>) rather than the raw Java enum.
-            // This ensures formatVariableValue can use getValueAsString() to get
-            // the canonical FHIR code string (lowercase) instead of gson serializing
-            // the Java enum name (UPPERCASE).
-            val elementGetter = resource.javaClass.getMethod("get${capitalized}Element")
-            elementGetter.invoke(resource)
-        } catch (_: Exception) {
-            try {
-                val getter = resource.javaClass.getMethod("get$capitalized")
-                getter.invoke(resource)
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    ): Any? =
+        varResolver.extractPropertyValue(resource, propertyName)
 
-    private fun getResourceId(resource: IBase): String {
-        return try {
-            // Try FHIR R4 way first
-            val idMethod = resource.javaClass.getMethod("getIdElement")
-            val idElement = idMethod.invoke(resource)
-            val idPartMethod = idElement.javaClass.getMethod("getIdPart")
-            idPartMethod.invoke(idElement) as? String ?: "unknown"
-        } catch (_: Exception) {
-            "unknown"
-        }
-    }
+    private fun getResourceId(resource: IBase): String =
+        varResolver.getResourceId(resource)
 
-    private fun getFhirContextForVersion(version: String?): FhirContext {
-        return when (version?.uppercase()) {
-            "DSTU3", "STU3" -> FhirContext.forDstu3()
-            "R5" -> FhirContext.forR5()
-            else -> fhirContext
-        }
-    }
+    private fun getFhirContextForVersion(version: String?): FhirContext =
+        varResolver.getFhirContextForVersion(version)
 
-    private fun buildTestCaseVariables(): List<Variable> {
-        val testCaseList = mutableListOf<Variable>()
-        val testCaseUri = launchArgs?.testCaseUri
-        if (!testCaseUri.isNullOrEmpty()) {
-            try {
-                // testCaseUri is a well-formed file: URI from VS Code launch args
-                val testCasePath = Paths.get(URI.create(testCaseUri))
-                if (Files.exists(testCasePath) && Files.isDirectory(testCasePath)) {
-                    val context = getFhirContextForVersion(launchArgs?.fhirVersion)
-                    val gson = Gson()
-                    Files.newDirectoryStream(testCasePath) { path ->
-                        val name = path.fileName.toString().lowercase()
-                        name.endsWith(".json") || name.endsWith(".xml")
-                    }.use { stream ->
-                        for (file in stream) {
-                            try {
-                                val content = Files.readString(file)
-                                val fileName = file.fileName.toString().lowercase()
-                                val parser = if (fileName.endsWith(".json")) context.newJsonParser() else context.newXmlParser()
-                                val resource = parser.parseResource(content)
-                                val resourceType = resource.fhirType()
-                                val idPart = resource.idElement?.idPart
-                                val varName =
-                                    if (!idPart.isNullOrEmpty()) {
-                                        "$resourceType/$idPart"
-                                    } else {
-                                        file.fileName.toString().removeSuffix(".json").removeSuffix(".xml")
-                                    }
-                                testCaseList.add(
-                                    Variable().also {
-                                        it.name = varName
-                                        it.value = formatVariableValue(resource, gson)
-                                        it.type = resourceType
-                                        it.variablesReference = registerIfExpandable(resource)
-                                    },
-                                )
-                            } catch (_: Exception) {
-                                // Ignore malformed files
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-                // Ignore path resolution errors
-            }
-        }
-        testCaseList.sortBy { it.name }
-        return testCaseList
-    }
+    private fun buildTestCaseVariables(): List<Variable> =
+        varResolver.buildTestCaseVariables(launchArgs?.testCaseUri, launchArgs?.fhirVersion)
 
-    private fun formatPeriodAsInterval(period: org.hl7.fhir.r4.model.Period): String {
-        val gson = Gson()
-        val start = period.start?.let { formatVariableValue(it, gson) } ?: "null"
-        val end = period.end?.let { formatVariableValue(it, gson) } ?: "null"
-        return "[$start, $end)"
-    }
+    private fun formatPeriodAsInterval(period: org.hl7.fhir.r4.model.Period): String =
+        varResolver.formatPeriodAsInterval(period)
 
-    private fun notAvailable(): EvaluateResponse =
-        EvaluateResponse().also {
-            it.result = "not available"
-            it.variablesReference = 0
-        }
+    private fun notAvailable(): EvaluateResponse = varResolver.notAvailable()
 
     /**
      * Parses a locator from a [DetailedExpressionResult] (1-indexed TrackBack format) into
@@ -1940,32 +1418,11 @@ open class CqlDebugServer(
         return frames
     }
 
-    private fun resolveSource(libraryId: String): Source {
-        val uri = librarySourceMap[libraryId]
-        return Source().also { s ->
-            if (uri != null && uri.scheme == "file") {
-                s.path = Paths.get(uri).toString()
-            } else if (streamingLaunchUri != null && uri == null &&
-                (libraryId.isEmpty() || libraryId == streamingHandler?.primaryLibraryId)
-            ) {
-                // Fallback: use streamingLaunchUri when the primary library's URI hasn't
-                // been added to librarySourceMap yet (e.g., during early execution or in tests
-                // that bypass executeLaunchStreaming).
-                s.path = Paths.get(URI.create(streamingLaunchUri)).toString()
-            } else {
-                val ref =
-                    sourceReferenceRegistry.entries
-                        .firstOrNull { (_, id) -> id.id == libraryId }?.key
-                s.sourceReference = ref ?: 0
-            }
-        }
-    }
+    private fun resolveSource(libraryId: String): Source =
+        breakpointManager.resolveSource(libraryId, streamingLaunchUri, streamingHandler, librarySourceMap, sourceReferenceRegistry)
 
-    private fun resolveFrameLibraryId(): String {
-        return streamingHandler?.lastPausedCallStack?.firstOrNull()?.libraryId
-            ?: streamingHandler?.primaryLibraryId
-            ?: ""
-    }
+    private fun resolveFrameLibraryId(): String =
+        breakpointManager.resolveFrameLibraryId(streamingHandler)
 
     override fun source(args: SourceArguments): CompletableFuture<SourceResponse> {
         val ref =
@@ -2047,113 +1504,19 @@ open class CqlDebugServer(
      * Covers expression definitions and aliased query sources in the primary library.
      * TODO: resolve types from included libraries.
      */
-    private fun buildVariableTypeMap(compiler: CqlCompiler?): Map<String, String> {
-        val map = mutableMapOf<String, String>()
-        val library = compiler?.library ?: return map
-        val defs = library.statements?.def ?: return map
-        for (def in defs) {
-            if (def.name != null && def.resultType != null) {
-                map[def.name!!] = def.resultType.toString()
-            }
-            collectAliasTypes(def.expression, map)
-        }
-        return map
-    }
+    private fun buildVariableTypeMap(compiler: CqlCompiler?): Map<String, String> =
+        varResolver.buildVariableTypeMap(compiler)
 
     private fun collectAliasTypes(
         elm: Element?,
         map: MutableMap<String, String>,
-    ) {
-        if (elm == null) return
-        when (elm) {
-            is AliasedQuerySource -> {
-                if (elm.alias != null && elm.resultType != null) {
-                    map[elm.alias!!] = elm.resultType.toString()
-                }
-                collectAliasTypes(elm.expression, map)
-            }
-            is LetClause -> {
-                if (elm.identifier != null && elm.resultType != null) {
-                    map[elm.identifier!!] = elm.resultType.toString()
-                }
-            }
-            is Query -> {
-                elm.source.forEach { collectAliasTypes(it, map) }
-                elm.relationship.forEach { collectAliasTypes(it, map) }
-                elm.let?.forEach { collectAliasTypes(it, map) }
-            }
-            is UnaryExpression -> collectAliasTypes(elm.operand, map)
-            is BinaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
-            is TernaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
-            is NaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
-            is AggregateExpression -> collectAliasTypes(elm.source, map)
-            is Last -> collectAliasTypes(elm.source, map)
-            is First -> collectAliasTypes(elm.source, map)
-            is If -> {
-                collectAliasTypes(elm.then, map)
-                collectAliasTypes(elm.`else`, map)
-                collectAliasTypes(elm.condition, map)
-            }
-            is FunctionRef -> elm.operand.forEach { collectAliasTypes(it, map) }
-            is Sort -> collectAliasTypes(elm.source, map)
-            is Slice -> collectAliasTypes(elm.source, map)
-            is Case -> {
-                collectAliasTypes(elm.comparand, map)
-                elm.caseItem?.forEach { item ->
-                    collectAliasTypes(item.then, map)
-                    collectAliasTypes(item.`when`, map)
-                }
-                collectAliasTypes(elm.`else`, map)
-            }
-            is Repeat -> {
-                collectAliasTypes(elm.source, map)
-                collectAliasTypes(elm.element, map)
-            }
-            is Property -> collectAliasTypes(elm.source, map)
-            is Combine -> collectAliasTypes(elm.source, map)
-        }
-    }
+    ) = varResolver.collectAliasTypes(elm, map)
 
-    /**
-     * Strips a "list<...>" wrapper from a type name for profile resolution.
-     * "list<QICore.ObservationCancelled>" → "QICore.ObservationCancelled"
-     * "QICore.ObservationCancelled" → "QICore.ObservationCancelled"
-     */
-    private fun unwrapListType(typeName: String): String {
-        val trimmed = typeName.trim()
-        return if (trimmed.startsWith("list<", ignoreCase = true) && trimmed.endsWith(">")) {
-            trimmed.removePrefix("list<").removeSuffix(">").trim()
-        } else {
-            trimmed
-        }
-    }
+    private fun unwrapListType(typeName: String): String =
+        varResolver.unwrapListType(typeName)
 
-    /**
-     * Resolves a profile's ClassType from the cached compiler and returns the
-     * HAPI child definitions in profile-specified order. Falls back to HAPI's
-     * own child list when the type is not a known profile.
-     */
     private fun profileChildrenOf(
         typeName: String,
         elementDef: BaseRuntimeElementDefinition<*>,
-    ): List<BaseRuntimeChildDefinition> {
-        val compiler = launchCompiler ?: return elementDef.children ?: emptyList()
-        val modelManager = compiler.libraryManager?.modelManager ?: return elementDef.children ?: emptyList()
-        val profileName = unwrapListType(typeName)
-        val model =
-            modelManager.globalCache.values.firstOrNull { it.resolveTypeName(profileName) != null }
-                ?: return elementDef.children ?: emptyList()
-        val classType =
-            model.resolveTypeName(profileName) as? ClassType
-                ?: return elementDef.children ?: emptyList()
-        val allChildren = elementDef.children ?: emptyList()
-        // Use allElements (not sortedElements) so inherited fields like id/meta/extension are included.
-        val profileMatched =
-            classType.allElements.sortedBy { it.name }.mapNotNull { element ->
-                allChildren.firstOrNull { it.elementName == element.name }
-            }
-        val matchedNames = profileMatched.map { it.elementName }.toSet()
-        val unmatched = allChildren.filter { it.elementName !in matchedNames }
-        return profileMatched + unmatched
-    }
+    ): List<BaseRuntimeChildDefinition> = varResolver.profileChildrenOf(typeName, elementDef, launchCompiler)
 }

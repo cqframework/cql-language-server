@@ -47,7 +47,12 @@ class VariableResolver(
     val varRefs: MutableMap<Int, Any> = varRefs
     val varRefTypes: MutableMap<Int, String> = varRefTypes
     var nextVarRef: Int = nextVarRef
-        private set
+
+    fun resetVarRefs() {
+        varRefs.clear()
+        varRefTypes.clear()
+        nextVarRef = 1000
+    }
 
     fun formatVariableValue(
         value: Any?,
