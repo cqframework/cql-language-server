@@ -459,4 +459,25 @@ class ElmAstLibraryWriterTest {
         val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
         assertTrue(result.contains("Expand"), "Expected Expand in AST: $result")
     }
+
+    // -----------------------------------------------------------------------
+    // childrenOf branches: If, TernaryExpression (Between -> And)
+    // renderFunctionDef
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun coverageFixture5_containsIf() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture5.cql")!!
+        val compiler = compilationManager.compile(uri) ?: return
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("If"), "Expected If in AST: $result")
+    }
+
+    @Test
+    fun coverageFixture5_containsBetween() {
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture5.cql")!!
+        val compiler = compilationManager.compile(uri) ?: return
+        val result = ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
+        assertTrue(result.contains("GreaterOrEqual"), "Expected GreaterOrEqual (compiler expands between) in AST: $result")
+    }
 }
