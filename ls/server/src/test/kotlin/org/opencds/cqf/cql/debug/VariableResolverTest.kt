@@ -1,6 +1,10 @@
 package org.opencds.cqf.cql.debug
 
+import ca.uhn.fhir.context.BaseRuntimeChildDefinition
+import ca.uhn.fhir.context.BaseRuntimeElementDefinition
 import com.google.gson.Gson
+import org.cqframework.cql.cql2elm.CqlCompiler
+import org.cqframework.cql.cql2elm.LibraryManager
 import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.HumanName
 import org.hl7.fhir.r4.model.Patient
@@ -14,12 +18,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import org.mockito.Mockito.`when` as whenever
 
 class VariableResolverTest {
     companion object {
@@ -455,6 +461,76 @@ class VariableResolverTest {
             val compiler = compilationManager.compile(uri) ?: return
             val map = resolver.buildVariableTypeMap(compiler)
             assertTrue(map.containsKey("AndVal"), "AndVal should be in type map")
+        }
+    }
+
+    // -- profileChildrenOf ----------------------------------------------------
+
+    /**
+     * Tests for [VariableResolver.profileChildrenOf]. This method is 0% covered
+     * (26/26 branches missed). These tests exercise the early-return branches.
+     * The success path with real ClassType requires complex FHIR model infrastructure
+     * that is better covered via integration tests.
+     */
+    @Nested
+    inner class ProfileChildrenOf {
+        private fun mockChild(name: String): BaseRuntimeChildDefinition {
+            val child = mock(BaseRuntimeChildDefinition::class.java)
+            whenever(child.elementName).thenReturn(name)
+            return child
+        }
+
+        private fun mockElementDef(children: List<BaseRuntimeChildDefinition>?): BaseRuntimeElementDefinition<*> {
+            val def = mock(BaseRuntimeElementDefinition::class.java)
+            whenever(def.children).thenReturn(children)
+            return def
+        }
+
+        @Test
+        fun `null launchCompiler returns elementDef children`() {
+            val children = listOf(mockChild("field1"), mockChild("field2"))
+            val elementDef = mockElementDef(children)
+
+            val result = resolver.profileChildrenOf("SomeType", elementDef, null)
+
+            assertEquals(children, result)
+        }
+
+        @Test
+        fun `null libraryManager returns elementDef children`() {
+            val children = listOf(mockChild("field1"), mockChild("field2"))
+            val elementDef = mockElementDef(children)
+
+            val compiler = mock(CqlCompiler::class.java)
+            whenever(compiler.libraryManager).thenReturn(null)
+
+            val result = resolver.profileChildrenOf("SomeType", elementDef, compiler)
+
+            assertEquals(children, result)
+        }
+
+        @Test
+        fun `null modelManager returns elementDef children`() {
+            val children = listOf(mockChild("field1"), mockChild("field2"))
+            val elementDef = mockElementDef(children)
+
+            val compiler = mock(CqlCompiler::class.java)
+            val libMgr = mock(LibraryManager::class.java)
+            whenever(compiler.libraryManager).thenReturn(libMgr)
+            whenever(libMgr.modelManager).thenReturn(null)
+
+            val result = resolver.profileChildrenOf("SomeType", elementDef, compiler)
+
+            assertEquals(children, result)
+        }
+
+        @Test
+        fun `elementDef children is null returns empty list`() {
+            val elementDef = mockElementDef(null)
+
+            val result = resolver.profileChildrenOf("SomeType", elementDef, null)
+
+            assertTrue(result.isEmpty())
         }
     }
 }

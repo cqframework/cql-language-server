@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -152,6 +153,83 @@ class BreakpointManagerTest {
         fun `no compiler returns just primary`() {
             val result = manager.collectTransitiveIncludes("Primary", null, null, mutableMapOf())
             assertEquals(setOf("Primary"), result)
+        }
+
+        @Test
+        fun `compiler with null compiledLibrary returns just primary`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            `when`(compiler.compiledLibrary).thenReturn(null)
+
+            val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+            assertEquals(setOf("Primary"), result)
+        }
+
+        @Test
+        fun `compiler with null library returns just primary`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
+            `when`(compiledLib.library).thenReturn(null)
+
+            val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+            assertEquals(setOf("Primary"), result)
+        }
+
+        @Test
+        fun `includeDef with null path is skipped`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+            val library = mock(org.hl7.elm.r1.Library::class.java)
+            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
+            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
+            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
+            `when`(compiledLib.library).thenReturn(library)
+            `when`(library.includes).thenReturn(includes)
+            `when`(includes.def).thenReturn(mutableListOf(includeDef))
+            `when`(includeDef.path).thenReturn(null)
+
+            val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+            assertEquals(setOf("Primary"), result)
+        }
+
+        @Test
+        fun `duplicate library in includes is deduped`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+            val library = mock(org.hl7.elm.r1.Library::class.java)
+            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
+            val includeDef1 = mock(org.hl7.elm.r1.IncludeDef::class.java)
+            val includeDef2 = mock(org.hl7.elm.r1.IncludeDef::class.java)
+            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
+            `when`(compiledLib.library).thenReturn(library)
+            `when`(library.includes).thenReturn(includes)
+            `when`(includes.def).thenReturn(mutableListOf(includeDef1, includeDef2))
+            `when`(includeDef1.path).thenReturn("DuplicateLib")
+            `when`(includeDef2.path).thenReturn("DuplicateLib")
+
+            val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+            assertEquals(setOf("Primary", "DuplicateLib"), result)
+        }
+
+        @Test
+        fun `library already in librarySourceMap skips contentService lookup`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+            val library = mock(org.hl7.elm.r1.Library::class.java)
+            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
+            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
+            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
+            `when`(compiledLib.library).thenReturn(library)
+            `when`(library.includes).thenReturn(includes)
+            `when`(includes.def).thenReturn(mutableListOf(includeDef))
+            `when`(includeDef.path).thenReturn("ExistingLib")
+            `when`(includeDef.version).thenReturn(null)
+
+            val librarySourceMap = mutableMapOf("ExistingLib" to URI.create("file:///existing.cql"))
+
+            val result = manager.collectTransitiveIncludes("Primary", compiler, null, librarySourceMap)
+
+            assertEquals(setOf("Primary", "ExistingLib"), result)
         }
     }
 

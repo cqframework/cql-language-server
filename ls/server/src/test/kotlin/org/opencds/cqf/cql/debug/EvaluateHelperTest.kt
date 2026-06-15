@@ -75,6 +75,16 @@ class EvaluateHelperTest {
         fun `only one number returns null`() {
             assertNull(helper.parseHoverPosition("@10"))
         }
+
+        @Test
+        fun `at-sign with colon but no column number returns null`() {
+            assertNull(helper.parseHoverPosition("@10:"))
+        }
+
+        @Test
+        fun `no at-sign with partial colon returns null`() {
+            assertNull(helper.parseHoverPosition("10"))
+        }
     }
 
     // -- splitParameterName -------------------------------------------------
