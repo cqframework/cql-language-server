@@ -13,7 +13,9 @@ import java.util.concurrent.ConcurrentHashMap.newKeySet
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 
-class StreamingBreakpointHandler : BreakpointHandler {
+class StreamingBreakpointHandler(
+    val runtimeRegistry: RuntimeValueRegistry = RuntimeValueRegistry(),
+) : BreakpointHandler {
     data class CallStackEntry(
         val def: ExpressionDef,
         val callSite: Element?,
@@ -47,7 +49,7 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
     @Volatile
     var lastPausedElm: Element? = null
-        private set
+        internal set
 
     @Volatile
     private var lastPausedElmIdentity: Element? = null
@@ -78,13 +80,13 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
     @Volatile
     var lastPausedState: State? = null
-        private set
+        internal set
 
     private val defineCallStack = ArrayDeque<CallStackEntry>()
 
     @Volatile
     var lastPausedCallStack: List<CallStackEntry> = emptyList()
-        private set
+        internal set
 
     @Volatile
     private var resumeLatch = CountDownLatch(0)
@@ -94,8 +96,6 @@ class StreamingBreakpointHandler : BreakpointHandler {
 
     @Volatile
     var onPauseCallback: ((Element, State) -> Unit)? = null
-
-    val runtimeRegistry = RuntimeValueRegistry()
 
     /** Maps define / stack variable names to their CQL type strings, populated by the server at launch. */
     var variableTypeMap: Map<String, String> = emptyMap()
