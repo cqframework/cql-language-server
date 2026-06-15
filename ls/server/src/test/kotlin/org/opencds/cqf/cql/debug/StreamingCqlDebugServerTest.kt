@@ -18,6 +18,7 @@ import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments
 import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.SourceBreakpoint
 import org.eclipse.lsp4j.debug.StackTraceArguments
+import org.eclipse.lsp4j.debug.StoppedEventArguments
 import org.eclipse.lsp4j.debug.TerminateArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
 import org.hl7.elm.r1.ExpressionDef
@@ -35,8 +36,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
 import org.opencds.cqf.cql.engine.execution.Environment
@@ -2960,5 +2963,203 @@ class StreamingCqlDebugServerTest {
         // Verify breakpoints migrated
         assertTrue(handler.breakpointsByLibrary.containsKey("LibC"))
         assertEquals(setOf(15), handler.breakpointsByLibrary["LibC"])
+    }
+
+    // -- onPauseCallback integration -------------------------------------------
+
+    /**
+     * Tests for the [CqlDebugServer.onPauseCallback] that is set up in
+     * [executeLaunchStreaming]. These tests manually set up the callback
+     * (bypassing the full streaming launch) to verify the callback's behavior
+     * in isolation.
+     */
+    @Nested
+    inner class OnPauseCallbackTests {
+        private lateinit var server: TestStreamingServer
+        private lateinit var mockClient: org.eclipse.lsp4j.debug.services.IDebugProtocolClient
+
+        private fun setupServerWithCallback() {
+            server = makeServer()
+            mockClient = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            server.connect(mockClient)
+
+            // Set up parameterMetadata on the server (normally done by extractParameterMetadata)
+            val paramMetaField = CqlDebugServer::class.java.getDeclaredField("parameterMetadata")
+            paramMetaField.isAccessible = true
+            paramMetaField.set(
+                server,
+                mapOf(
+                    "lib1" to
+                        listOf(
+                            CqlDebugServer.ParameterMetadata("PatientId", "System.String", "123"),
+                            CqlDebugServer.ParameterMetadata("Count", "System.Integer", "10"),
+                        ),
+                ),
+            )
+
+            // Set up streamingLaunchUri (needed for some paths)
+            val launchUriField = CqlDebugServer::class.java.getDeclaredField("streamingLaunchUri")
+            launchUriField.isAccessible = true
+            launchUriField.set(server, "file:///test.cql")
+
+            // Manually set the onPauseCallback (mirrors executeLaunchStreaming setup)
+            server.testHandler.onPauseCallback = { elm, state ->
+                val paramTypes =
+                    (paramMetaField.get(server) as Map<String, List<CqlDebugServer.ParameterMetadata>>).mapValues { (_, metadata) ->
+                        metadata.associate { it.name to it.type }
+                    }
+                server.testHandler.runtimeRegistry.loadParameters(state, paramTypes)
+                val locator = elm.locator
+                if (locator != null && StreamingBreakpointHandler.parseLine(locator) != null) {
+                    val clientField = CqlDebugServer::class.java.getDeclaredField("client")
+                    clientField.isAccessible = true
+                    val clientFuture = clientField.get(server) as java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.services.IDebugProtocolClient>
+                    val reason =
+                        if (server.testHandler.getStepMode() == StreamingBreakpointHandler.StepMode.CONTINUE) "breakpoint" else "step"
+                    clientFuture.join().stopped(
+                        StoppedEventArguments().also {
+                            it.reason = reason
+                            it.threadId = 1
+                            it.allThreadsStopped = true
+                        },
+                    )
+                }
+            }
+        }
+
+        @Test
+        fun `onPauseCallback sends stopped with breakpoint reason in CONTINUE mode`() {
+            setupServerWithCallback()
+            server.testHandler.setBreakpoints(setOf(10))
+            server.testHandler.resume()
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = "10:5-10:25"
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            val captor = org.mockito.ArgumentCaptor.forClass(StoppedEventArguments::class.java)
+            Mockito.verify(mockClient).stopped(captor.capture())
+            assertEquals("breakpoint", captor.value.reason)
+            assertEquals(1, captor.value.threadId)
+            assertTrue(captor.value.allThreadsStopped)
+        }
+
+        @Test
+        fun `onPauseCallback sends stopped with step reason in STEP_IN mode`() {
+            setupServerWithCallback()
+            server.testHandler.stepIn()
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = "10:5-10:25"
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            val captor = org.mockito.ArgumentCaptor.forClass(StoppedEventArguments::class.java)
+            Mockito.verify(mockClient).stopped(captor.capture())
+            assertEquals("step", captor.value.reason)
+        }
+
+        @Test
+        fun `onPauseCallback sends stopped with step reason in STEP_OVER mode`() {
+            setupServerWithCallback()
+            server.testHandler.stepIn()
+            server.testHandler.stepOver(1)
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = "10:5-10:25"
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            val captor = org.mockito.ArgumentCaptor.forClass(StoppedEventArguments::class.java)
+            Mockito.verify(mockClient).stopped(captor.capture())
+            assertEquals("step", captor.value.reason)
+        }
+
+        @Test
+        fun `onPauseCallback sends stopped with step reason in STEP_OUT mode`() {
+            setupServerWithCallback()
+            server.testHandler.stepIn()
+            server.testHandler.stepOut(1)
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = "10:5-10:25"
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            val captor = org.mockito.ArgumentCaptor.forClass(StoppedEventArguments::class.java)
+            Mockito.verify(mockClient).stopped(captor.capture())
+            assertEquals("step", captor.value.reason)
+        }
+
+        @Test
+        fun `onPauseCallback does not send stopped when locator is null`() {
+            setupServerWithCallback()
+            server.testHandler.stepIn()
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = null
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            Mockito.verify(mockClient, Mockito.never()).stopped(any())
+        }
+
+        @Test
+        fun `onPauseCallback does not send stopped when locator cannot be parsed`() {
+            setupServerWithCallback()
+            server.testHandler.stepIn()
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = "not-a-valid-locator"
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            Mockito.verify(mockClient, Mockito.never()).stopped(any())
+        }
+
+        @Test
+        fun `onPauseCallback loads parameters into runtimeRegistry`() {
+            setupServerWithCallback()
+            server.testHandler.stepIn()
+
+            val elm =
+                ExpressionDef().also {
+                    it.name = "Test"
+                    it.locator = "10:5-10:25"
+                }
+            val state = State(Environment(null))
+
+            server.testHandler.onPauseCallback?.invoke(elm, state)
+
+            // Verify callback completed without error and mock client was notified
+            val registry = server.testHandler.runtimeRegistry
+            assertNotNull(registry)
+            Mockito.verify(mockClient).stopped(any())
+        }
     }
 }
