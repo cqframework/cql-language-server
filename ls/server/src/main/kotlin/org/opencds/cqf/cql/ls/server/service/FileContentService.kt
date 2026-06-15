@@ -221,6 +221,7 @@ class FileContentService(
         return try {
             BufferedInputStream(FileInputStream(File(uri)))
         } catch (e: Exception) {
+            log.warn("FileContentService.read: failed to read '{}': {}", uri, e.message)
             null
         }
     }

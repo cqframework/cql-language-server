@@ -199,6 +199,15 @@ class ViewElmCommandContributionTest {
     }
 
     @Test
+    fun executeCommand_schemelessUri_returnsNull() {
+        // URI(String) succeeds for schemeless paths; compile returns null (no such classpath resource)
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(JsonParser.parseString("\"/foo/bar.cql\""))
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    @Test
     fun executeCommand_compilerReturnsNull_returnsNull() {
         // TestContentService returns null for any URI not on the classpath, so compile() returns null
         val params = ExecuteCommandParams()
