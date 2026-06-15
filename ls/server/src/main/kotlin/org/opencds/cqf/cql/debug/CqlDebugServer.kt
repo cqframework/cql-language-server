@@ -481,10 +481,21 @@ open class CqlDebugServer(
             // This runs OUTSIDE the !containsKey guard because collectTransitiveIncludes
             // pre-populates librarySourceMap for direct includes before execution starts,
             // which would otherwise prevent migration from ever running.
+            // Use Path.equals() for the lookup — on Windows this is case-insensitive,
+            // which handles drive-letter case differences (File.toURI() → uppercase C:
+            // vs VS Code source.path → lowercase c:).
             try {
                 val uri = librarySourceMap[libId] ?: return@migration
-                val pathStr = Paths.get(uri).toString()
-                val pending = sourcePathBreakpoints[pathStr] ?: return@migration
+                val uriPath = Paths.get(uri)
+                val pending =
+                    sourcePathBreakpoints.entries
+                        .firstOrNull { (key, _) ->
+                            try {
+                                Paths.get(key) == uriPath
+                            } catch (_: Exception) {
+                                false
+                            }
+                        }?.value ?: return@migration
                 breakpointsByLibrary[libId] = pending
                 handler.breakpointsByLibrary[libId] = pending
             } catch (_: Exception) {
@@ -517,12 +528,20 @@ open class CqlDebugServer(
         // Migrate breakpoints that were set before the primary library ID was known.
         // Pre-launch setBreakpoints calls store under sourcePathBreakpoints (keyed by
         // the file path) because resolveLibraryIdFromPath returns null — librarySourceMap
-        // hasn't been populated yet.  This uses the same Paths.get(uri).toString()
-        // normalization as onLibraryEnteredCallback does for included libraries.
+        // hasn't been populated yet.  Use Path.equals() for case-insensitive comparison
+        // on Windows (File.toURI() uppercases drive letters; VS Code sends lowercase).
         val primaryId = handler.primaryLibraryId
         if (primaryId != null) {
-            val primaryPathStr = Paths.get(libraryUri).toString()
-            val pendingPrimary = sourcePathBreakpoints[primaryPathStr]
+            val primaryPath = Paths.get(libraryUri)
+            val pendingPrimary =
+                sourcePathBreakpoints.entries
+                    .firstOrNull { (key, _) ->
+                        try {
+                            Paths.get(key) == primaryPath
+                        } catch (_: Exception) {
+                            false
+                        }
+                    }?.value
             if (pendingPrimary != null) {
                 breakpointsByLibrary[primaryId] = pendingPrimary
                 // Write directly to the handler — putAll already ran above, so the

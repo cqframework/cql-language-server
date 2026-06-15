@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
@@ -56,6 +58,28 @@ class BreakpointManagerTest {
             val uri = Paths.get("/a/b/c.cql").toUri()
             val map = mapOf("Lib" to uri)
             assertEquals("Lib", manager.resolveLibraryIdFromPath("/a/b/c.cql", map))
+        }
+
+        // On Windows, File.toURI() produces uppercase drive letters (file:///C:/...)
+        // while VS Code sends lowercase (c:\...).  Path.equals() is case-insensitive
+        // on Windows, so the lookup must succeed regardless of drive-letter case.
+        @Test
+        @EnabledOnOs(OS.WINDOWS)
+        fun `windows - lowercase path matches uppercase drive letter URI`() {
+            // URI produced by File.toURI() uses uppercase C:
+            val uri = URI.create("file:///C:/Users/user/project/FHIRHelpers.cql")
+            val map = mapOf("FHIRHelpers" to uri)
+            // VS Code sends source.path with lowercase c:
+            assertEquals("FHIRHelpers", manager.resolveLibraryIdFromPath("c:\\Users\\user\\project\\FHIRHelpers.cql", map))
+        }
+
+        @Test
+        @EnabledOnOs(OS.WINDOWS)
+        fun `windows - forward slash path matches URI`() {
+            val uri = URI.create("file:///C:/Users/user/project/FHIRHelpers.cql")
+            val map = mapOf("FHIRHelpers" to uri)
+            // Windows accepts forward slashes in paths
+            assertEquals("FHIRHelpers", manager.resolveLibraryIdFromPath("c:/Users/user/project/FHIRHelpers.cql", map))
         }
     }
 

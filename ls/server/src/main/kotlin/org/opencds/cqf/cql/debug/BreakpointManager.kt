@@ -20,8 +20,25 @@ class BreakpointManager(
         librarySourceMap: Map<String, URI>,
     ): String? {
         if (path == null) return null
-        val pathUri = Paths.get(path).toUri()
-        return librarySourceMap.entries.firstOrNull { (_, uri) -> uri == pathUri }?.key
+        // Use Path.equals() instead of URI.equals() so that on Windows the comparison
+        // is case-insensitive.  This handles the drive-letter case mismatch between URIs
+        // produced by File.toURI() (uppercase C:) and paths sent by VS Code (lowercase c:).
+        return try {
+            val inputPath = Paths.get(path)
+            librarySourceMap.entries.firstOrNull { (_, uri) ->
+                if ("file" == uri.scheme) {
+                    try {
+                        Paths.get(uri) == inputPath
+                    } catch (_: Exception) {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }?.key
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun isRelevantSourcePath(
