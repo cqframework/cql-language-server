@@ -23,8 +23,10 @@ class BreakpointManager(
         // Use Path.equals() instead of URI.equals() so that on Windows the comparison
         // is case-insensitive.  This handles the drive-letter case mismatch between URIs
         // produced by File.toURI() (uppercase C:) and paths sent by VS Code (lowercase c:).
+        // toAbsolutePath() is required because Paths.get("/unix/style") on Windows produces
+        // a drive-relative path (\unix\style) while Paths.get(URI) is always fully absolute.
         return try {
-            val inputPath = Paths.get(path)
+            val inputPath = Paths.get(path).toAbsolutePath()
             librarySourceMap.entries.firstOrNull { (_, uri) ->
                 if ("file" == uri.scheme) {
                     try {
