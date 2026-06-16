@@ -34,8 +34,11 @@ jobs:
           tree = ET.parse('pom.xml')
           version = tree.find('m:version', ns).text.strip()
 
-          clean_version = version.removesuffix('-SNAPSHOT')
-          expected_header = f'## v{clean_version}'
+          if version.endswith('-SNAPSHOT'):
+              print(f'Skipping changelog check for development version: {version}')
+              sys.exit(0)
+
+          expected_header = f'## v{version}'
 
           print(f'Checking for version: {version}')
 
