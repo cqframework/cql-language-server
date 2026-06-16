@@ -1,16 +1,6 @@
 # Change Log
 
 
-
-
-
-## v4.9.0
-
-Date: 2026-06-16
-
-* bump version to 4.9.0-SNAPSHOT
-
-
 ## v4.8.0
 
 Date: 2026-06-13
