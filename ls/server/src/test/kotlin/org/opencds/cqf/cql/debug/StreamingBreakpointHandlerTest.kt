@@ -1,0 +1,1050 @@
+package org.opencds.cqf.cql.debug
+
+import org.hl7.elm.r1.Element
+import org.hl7.elm.r1.ExpressionDef
+import org.hl7.elm.r1.ExpressionRef
+import org.hl7.elm.r1.Library
+import org.hl7.elm.r1.Literal
+import org.hl7.elm.r1.VersionedIdentifier
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.opencds.cqf.cql.engine.debug.BreakpointAction
+import org.opencds.cqf.cql.engine.execution.Environment
+import org.opencds.cqf.cql.engine.execution.State
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+class StreamingBreakpointHandlerTest {
+    private var nextLocalId = 0
+
+    private fun makeElement(locator: String?): Element =
+        Literal().also {
+            it.locator = locator
+            it.localId = (nextLocalId++).toString()
+        }
+
+    private fun makeState(stackDepth: Int = 0): State {
+        val state = State(Environment(null))
+        repeat(stackDepth) {
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+        }
+        return state
+    }
+
+    // -- parseLine ---------------------------------------------------------
+
+    @Test
+    fun `parseLine extracts line from standard locator`() {
+        assertEquals(10, StreamingBreakpointHandler.parseLine("10:5-10:20"))
+    }
+
+    @Test
+    fun `parseLine returns null for empty string`() {
+        assertNull(StreamingBreakpointHandler.parseLine(""))
+    }
+
+    @Test
+    fun `parseLine returns null for non-numeric locator`() {
+        assertNull(StreamingBreakpointHandler.parseLine("abc:1-2:3"))
+    }
+
+    // -- STEP_IN ----------------------------------------------------------
+
+    @Test
+    fun `onBeforeExpression in STEP_IN pauses on first expression`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm = makeElement("5:1-5:10")
+        val state = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in STEP_IN continues on same line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm1 = makeElement("5:1-5:10")
+        val elm2 = makeElement("5:12-5:20")
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in STEP_IN pauses on new line after resume`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm1 = makeElement("5:1-5:10")
+        val elm2 = makeElement("6:1-6:10")
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+        handler.stepIn()
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in STEP_IN pauses on first expression after stepIn`() {
+        val handler = StreamingBreakpointHandler()
+        val state = makeState(1)
+
+        // Switch to CONTINUE mode first
+        handler.resume()
+        val elm = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+
+        // Switch back to STEP_IN
+        handler.stepIn()
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("6:1-6:10"), state))
+    }
+
+    // -- STEP_OVER ---------------------------------------------------------
+
+    @Test
+    fun `onBeforeExpression in STEP_OVER pauses at same-or-shallower depth and new line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val state = makeState(2)
+        val elm1 = makeElement("5:1-5:10")
+
+        // First pause (STEP_IN)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Step over at depth 2
+        handler.stepOver(2)
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in STEP_OVER continues at deeper depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val state = makeState(1)
+        val elm1 = makeElement("5:1-5:10")
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Step over at depth 1
+        handler.stepOver(1)
+        // Deeper depth (2 > 1) — should not pause even on new line
+        val deeperState = makeState(2)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(makeElement("6:1-6:10"), deeperState))
+    }
+
+    @Test
+    fun `onBeforeExpression in STEP_OVER pauses when returning to shallower depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val state = makeState(2)
+        val elm1 = makeElement("5:1-5:10")
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Step over at depth 2 in a sub-expression
+        handler.stepOver(2)
+        val deeperState = makeState(3)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(makeElement("6:1-6:10"), deeperState))
+
+        // Returning to shallower depth (2) — should pause
+        val sameDepthState = makeState(2)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("7:1-7:10"), sameDepthState))
+    }
+
+    // -- STEP_OUT ----------------------------------------------------------
+
+    @Test
+    fun `onBeforeExpression in STEP_OUT pauses when depth decreases`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val state = makeState(3)
+        val elm1 = makeElement("5:1-5:10")
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Step out at depth 3
+        handler.stepOut(3)
+        // Same depth — should continue
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(makeElement("6:1-6:10"), state))
+
+        // Shallower depth (2 < 3) — should pause
+        val shallowerState = makeState(2)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("7:1-7:10"), shallowerState))
+    }
+
+    @Test
+    fun `onBeforeExpression in STEP_OUT continues at same depth`() {
+        val handler = StreamingBreakpointHandler()
+        val elm1 = makeElement("5:1-5:10")
+        handler.stepOut(2)
+        val state = makeState(2)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm1, state))
+    }
+
+    // -- CONTINUE (breakpoint) ---------------------------------------------
+
+    @Test
+    fun `onBeforeExpression in CONTINUE pauses at breakpoint line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.setBreakpoints(setOf(10))
+        handler.resume()
+        val elm = makeElement("10:1-10:15")
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in CONTINUE continues at non-breakpoint line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.setBreakpoints(setOf(10))
+        handler.resume()
+        val elm = makeElement("11:1-11:10")
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in CONTINUE continues at same line after pause`() {
+        val handler = StreamingBreakpointHandler()
+        handler.setBreakpoints(setOf(10))
+        handler.resume()
+        val state = makeState(1)
+
+        val elm1 = makeElement("10:1-10:15")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Same breakpoint line after resume in CONTINUE mode should re-pause
+        // because resume resets lastPausedLine, allowing the breakpoint to fire
+        // again (the call stack context may have changed).
+        handler.resume()
+        val elm2 = makeElement("10:20-10:25")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `onBeforeExpression in CONTINUE pauses at same breakpoint after stepping to new line and back`() {
+        val handler = StreamingBreakpointHandler()
+        handler.setBreakpoints(setOf(10, 11))
+        handler.resume()
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("10:1-10:5"), state))
+
+        handler.stepIn()
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("11:1-11:5"), state))
+
+        // After resuming from line 11, hitting line 10 again should pause
+        handler.stepIn()
+        // Manually reset lastPausedLine to simulate the step
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("10:10-10:15"), state))
+    }
+
+    // -- latch pause/resume -------------------------------------------------
+
+    @Test
+    fun `pauseAndResume via stepIn unblocks evaluation`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm = makeElement("5:1-5:10")
+        val state = makeState(1)
+
+        // First pause
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+        // Verify that waitForResume blocks (use a thread to release)
+        val released = CountDownLatch(1)
+        var actionAfterWait: BreakpointAction? = null
+
+        Thread {
+            handler.waitForResume()
+            // After release, check the next expression
+            actionAfterWait = handler.onBeforeExpression(makeElement("6:1-6:10"), makeState(1))
+            released.countDown()
+        }.apply {
+            start()
+        }
+
+        // Give the thread time to block on waitForResume
+        Thread.sleep(100)
+
+        // Release from the test thread
+        handler.stepIn()
+
+        // Wait for the worker thread to complete
+        assert(released.await(5, TimeUnit.SECONDS)) { "Thread should have been released" }
+        assertEquals(BreakpointAction.PAUSE, actionAfterWait)
+    }
+
+    @Test
+    fun `waitForResume returns immediately when latch already released`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm = makeElement("5:1-5:10")
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+        // Release before waitForResume is called
+        handler.stepIn()
+
+        // Should return immediately
+        handler.waitForResume()
+    }
+
+    // -- onPauseCallback ---------------------------------------------------
+
+    @Test
+    fun `waitForResume does not block after release in AST step mode`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+        val state = makeState(1)
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        // Simulate session teardown — release() is called, evaluation thread resumes.
+        handler.release()
+        handler.waitForResume()
+
+        // After release, a subsequent ELM node should CONTINUE.
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `release suppresses further pause callbacks`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm = makeElement("5:1-5:10")
+        val state = makeState(1)
+
+        var callbackCount = 0
+        handler.onPauseCallback = { _, _ -> callbackCount++ }
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+        // release() sets the released flag — subsequent waitForResume() must not fire the callback
+        handler.release()
+        handler.waitForResume()
+
+        assertEquals(0, callbackCount, "onPauseCallback must not fire after release()")
+    }
+
+    @Test
+    fun `onPauseCallback is invoked on pause`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+        val elm = makeElement("5:1-5:10")
+        val state = makeState(1)
+
+        var invoked = false
+        handler.onPauseCallback = { e, s ->
+            invoked = true
+            assertEquals(elm, e)
+            assertEquals(state, s)
+        }
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+        handler.stepIn()
+        handler.waitForResume()
+        assert(invoked) { "onPauseCallback should have been invoked" }
+    }
+
+    // -- element with no locator -------------------------------------------
+
+    @Test
+    fun `onBeforeExpression returns CONTINUE for element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        val elm = makeElement(null as String?) // literal at position unresolved
+        elm.locator = null
+        val state = makeState(1)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `stepMode getter returns current mode`() {
+        val handler = StreamingBreakpointHandler()
+        assertEquals(StreamingBreakpointHandler.StepMode.CONTINUE, handler.getStepMode())
+
+        handler.stepOver(1)
+        assertEquals(StreamingBreakpointHandler.StepMode.STEP_OVER, handler.getStepMode())
+
+        handler.stepOut(1)
+        assertEquals(StreamingBreakpointHandler.StepMode.STEP_OUT, handler.getStepMode())
+
+        handler.resume()
+        assertEquals(StreamingBreakpointHandler.StepMode.CONTINUE, handler.getStepMode())
+
+        handler.stepIn()
+        assertEquals(StreamingBreakpointHandler.StepMode.STEP_IN, handler.getStepMode())
+    }
+
+    @Test
+    fun `stepOut resets lastPausedLine to allow pausing on same line of caller frame`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state1 = makeState(2)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state1))
+
+        handler.stepOut(2)
+
+        val elm2 = makeElement("5:12-5:20")
+        val state2 = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state2))
+    }
+
+    @Test
+    fun `getBreakpointLines returns the set lines`() {
+        val handler = StreamingBreakpointHandler()
+        handler.setBreakpoints(setOf(5, 10, 15))
+        assertEquals(setOf(5, 10, 15), handler.getBreakpointLines())
+    }
+
+    // -- AST Granularity Tests -----------------------------------------------
+
+    @Test
+    fun `astGranularity pauses on each distinct element even on same line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val elm2 = makeElement("5:1-5:10") // same locator, different instance
+        val state = makeState(1)
+
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+        handler.stepIn()
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `astGranularity respects step over depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state1 = makeState(2)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state1))
+
+        handler.stepOver(2)
+
+        val deeperState = makeState(3)
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, deeperState))
+
+        val sameDepthState = makeState(2)
+        val elm3 = makeElement("7:1-7:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm3, sameDepthState))
+    }
+
+    @Test
+    fun `astGranularity step out unchanged`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state = makeState(3)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOut(3)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(makeElement("6:1-6:10"), state))
+
+        val shallowerState = makeState(2)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("7:1-7:10"), shallowerState))
+    }
+
+    @Test
+    fun `astGranularity breakpoint still fires on CQL line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.setBreakpoints(setOf(5))
+        handler.resume()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepIn()
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `cqlGranularity stepIn resumes and can pause on same line different element`() {
+        val handler = StreamingBreakpointHandler()
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.stepIn()
+
+        val elm1 = makeElement("5:1-5:10")
+        val state = makeState(1)
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepIn()
+        val elm2 = makeElement("5:12-5:20") // same line, different element
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `stepIn pauses for elements from non-primary library when stepping`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepIn()
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `continueMode does not pause for elements from non-primary library without breakpoint`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.resume()
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `continueMode pauses for breakpoint in non-primary library`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.resume()
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        handler.breakpointsByLibrary["FHIRHelpers"] = mutableSetOf(10)
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `callStackEntry captures libraryId`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+
+        val fhirHelpersLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "FHIRHelpers" }
+            }
+        val state = State(Environment(null)).also { it.init(fhirHelpersLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val def = ExpressionDef().also { it.name = "Foo" }
+        handler.onExpressionDefEntered(def, null, state)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
+        assertEquals(1, stack.size)
+        assertEquals("FHIRHelpers", stack.last().libraryId)
+    }
+
+    @Test
+    fun `onBeforeExpression pauses for elements from the primary library`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepIn()
+
+        val primaryLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "MyPrimaryLib" }
+            }
+        val state = State(Environment(null)).also { it.init(primaryLib) }
+        repeat(1) { state.stack.addFirst(State.ActivationFrame(null, null, null, 0L)) }
+
+        val elm = makeElement("10:1-10:20")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    // -- defineCallStack / lastPausedCallStack ------------------------------
+
+    @Test
+    fun `onExpressionDefEntered pushes to defineCallStack`() {
+        val handler = StreamingBreakpointHandler()
+        val def = ExpressionDef().also { it.name = "Foo" }
+        val ref = ExpressionRef().also { it.name = "Foo" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(def, ref, state)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
+        assertEquals(1, stack.size)
+        assertEquals("Foo", stack.last().def.name)
+        assertSame(ref, stack.last().callSite)
+    }
+
+    @Test
+    fun `onExpressionDefEvaluated pops from defineCallStack`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val defB = ExpressionDef().also { it.name = "B" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, null, state)
+        handler.onExpressionDefEvaluated(defB, state, null)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
+        assertEquals(1, stack.size)
+        assertEquals("A", stack.last().def.name)
+    }
+
+    @Test
+    fun `defineCallStack empty after full evaluation`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val defB = ExpressionDef().also { it.name = "B" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, null, state)
+        handler.onExpressionDefEvaluated(defB, state, null)
+        handler.onExpressionDefEvaluated(defA, state, null)
+
+        val field = handler::class.java.getDeclaredField("defineCallStack")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stack = field.get(handler) as ArrayDeque<StreamingBreakpointHandler.CallStackEntry>
+        assertTrue(stack.isEmpty())
+    }
+
+    @Test
+    fun `lastPausedCallStack captured at pause`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val defB = ExpressionDef().also { it.name = "B" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+        handler.onExpressionDefEntered(defB, null, state)
+
+        // Pause on an element
+        val elm = makeElement("10:1-10:20")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        val snapshot = handler.lastPausedCallStack
+        assertEquals(2, snapshot.size)
+        assertEquals("A", snapshot[0]?.def?.name)
+        assertEquals("B", snapshot[1]?.def?.name)
+    }
+
+    @Test
+    fun `lastPausedCallStack not mutated by subsequent steps`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, null, state)
+
+        val elm = makeElement("10:1-10:20")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        val snapshot = handler.lastPausedCallStack
+        assertEquals(1, snapshot.size)
+
+        // After snapshot, pop — snapshot should be unchanged
+        handler.onExpressionDefEvaluated(defA, state, null)
+        assertEquals(1, handler.lastPausedCallStack.size, "snapshot should not change when stack mutates")
+    }
+
+    @Test
+    fun `lastPausedCallStack is empty when paused outside any define`() {
+        val handler = StreamingBreakpointHandler()
+        val state = makeState()
+
+        val elm = makeElement("5:1-5:10")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        assertTrue(handler.lastPausedCallStack.isEmpty())
+    }
+
+    @Test
+    fun `callSite captured in lastPausedCallStack`() {
+        val handler = StreamingBreakpointHandler()
+        val defA = ExpressionDef().also { it.name = "A" }
+        val ref =
+            ExpressionRef().also {
+                it.name = "A"
+                it.locator = "1:1-1:10"
+            }
+        val state = makeState()
+
+        handler.onExpressionDefEntered(defA, ref, state)
+
+        val elm = makeElement("5:1-5:10")
+        handler.stepIn()
+        handler.onBeforeExpression(elm, state)
+
+        val snapshot = handler.lastPausedCallStack
+        assertEquals(1, snapshot.size)
+        assertSame(ref, snapshot[0].callSite)
+    }
+
+    // -- Included library, AST granularity, locator-less elements -----------
+
+    @Test
+    fun `astGranularity includedLibrary stepIn continues on element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val otherLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "OtherLib" }
+            }
+        val state = State(Environment(null)).also { it.init(otherLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm = makeElement(null as String?)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary stepOver continues on element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val otherLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "OtherLib" }
+            }
+        val state = State(Environment(null)).also { it.init(otherLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        handler.onBeforeExpression(elm1, state)
+
+        handler.stepOver(1)
+        val elm2 = makeElement(null as String?)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary stepOut continues on element without locator`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val otherLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "OtherLib" }
+            }
+        val state = State(Environment(null)).also { it.init(otherLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        handler.onBeforeExpression(elm1, state)
+
+        handler.stepOut(2)
+        val elm2 = makeElement(null as String?)
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
+
+    // -- CQL granularity included library ------------------------------------
+
+    @Test
+    fun `cqlGranularity includedLibrary stepOver pauses at shallower depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.stepIn()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOver(1)
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `cqlGranularity includedLibrary stepOver continues at deeper depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.stepIn()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOver(1)
+        val deeperState = State(Environment(null)).also { it.init(includedLib) }
+        deeperState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+        deeperState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, deeperState))
+    }
+
+    @Test
+    fun `cqlGranularity includedLibrary stepOut pauses at shallower depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.stepIn()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOut(2)
+        val shallowerState = State(Environment(null)).also { it.init(includedLib) }
+        shallowerState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, shallowerState))
+    }
+
+    @Test
+    fun `cqlGranularity includedLibrary stepOut continues at same depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.stepIn()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOut(1)
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `cqlGranularity includedLibrary continue pauses at breakpoint line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.breakpointsByLibrary["IncludedLib"] = mutableSetOf(10)
+        handler.resume()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm = makeElement("10:1-10:15")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `cqlGranularity includedLibrary continue continues at non-breakpoint line`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.CQL
+        handler.breakpointsByLibrary["IncludedLib"] = mutableSetOf(10)
+        handler.resume()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm = makeElement("11:1-11:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    // -- AST granularity included library - CONTINUE -------------------------
+
+    @Test
+    fun `astGranularity includedLibrary continue pauses at breakpoint`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.breakpointsByLibrary["IncludedLib"] = mutableSetOf(10)
+        handler.resume()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm = makeElement("10:1-10:15")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary continue continues at non-breakpoint`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.breakpointsByLibrary["IncludedLib"] = mutableSetOf(10)
+        handler.resume()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm = makeElement("11:1-11:10")
+        assertEquals(BreakpointAction.CONTINUE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary stepOver pauses at shallower depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOver(1)
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, state))
+    }
+
+    @Test
+    fun `astGranularity includedLibrary stepOut pauses at shallower depth`() {
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "PrimaryLib"
+        handler.stepGranularity = StreamingBreakpointHandler.StepGranularity.AST
+        handler.stepIn()
+
+        val includedLib =
+            Library().also {
+                it.identifier = VersionedIdentifier().also { vi -> vi.id = "IncludedLib" }
+            }
+        val state = State(Environment(null)).also { it.init(includedLib) }
+        state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        val elm1 = makeElement("5:1-5:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm1, state))
+
+        handler.stepOut(2)
+        val shallowerState = State(Environment(null)).also { it.init(includedLib) }
+        shallowerState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+        val elm2 = makeElement("6:1-6:10")
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm2, shallowerState))
+    }
+
+    // -- LocatorRange.contains ------------------------------------------------
+
+    @Nested
+    inner class LocatorRangeContains {
+        private val range = StreamingBreakpointHandler.LocatorRange(5, 10, 10, 20)
+
+        @Test
+        fun `position inside range returns true`() {
+            assertTrue(5 to 15 in range)
+        }
+
+        @Test
+        fun `position before range returns false`() {
+            assertFalse(4 to 10 in range)
+        }
+
+        @Test
+        fun `position after range returns false`() {
+            assertFalse(11 to 10 in range)
+        }
+
+        @Test
+        fun `on start line before start char returns false`() {
+            assertFalse(5 to 5 in range)
+        }
+
+        @Test
+        fun `on start line at start char returns true`() {
+            assertTrue(5 to 10 in range)
+        }
+
+        @Test
+        fun `on end line at end char returns true`() {
+            assertTrue(10 to 20 in range)
+        }
+
+        @Test
+        fun `on end line after end char returns false`() {
+            assertFalse(10 to 25 in range)
+        }
+    }
+}

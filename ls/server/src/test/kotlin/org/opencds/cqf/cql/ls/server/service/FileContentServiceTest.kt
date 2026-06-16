@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.ls.server.manager.JsonLibraryResolutionConfigProvider
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionConfig
@@ -431,5 +433,63 @@ class FileContentServiceTest {
         val result = svc.locate(projectAInput.toURI(), id("SharedLib", "1.0.0"))
 
         assertEquals(setOf(fromC.toURI()), result, "projectSearchOrder must put projectC ahead of projectB")
+    }
+
+    // ── Windows drive-letter case mismatch (findContainingFolder) ─────────────
+    // On Windows, File.toURI() and File.getAbsolutePath() produce uppercase drive
+    // letters (e.g. file:///C:/...) while VS Code sends lowercase (file:///c:/...).
+    // findContainingFolder() must use Path.startsWith() so the case difference
+    // does not prevent library resolution (FHIRHelpers blank-editor bug).
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    fun locate_windowsLowercaseDriveLetterFromVsCode_resolvesLibrary() {
+        // Set up a real temp directory structure: <root>/input/cql/FHIRHelpers.cql
+        val inputCqlDir = File(tempDir, "input/cql").also { it.mkdirs() }
+        val helperFile = File(inputCqlDir, "FHIRHelpers.cql").also { it.createNewFile() }
+
+        // WorkspaceFolder uses File.toURI() → uppercase drive letter
+        val folderUri = tempDir.toURI().toString() // e.g. file:///C:/...
+        val folder =
+            WorkspaceFolder().also {
+                it.uri = folderUri
+                it.name = "root"
+            }
+        val svc = FileContentService(listOf(folder), noOpConfigProvider, LibraryResolutionManager(listOf(folder)))
+
+        // VS Code sends libraryUri with lowercase drive letter (uri.toString() in TS)
+        val vsCodeUri =
+            folderUri.replace(Regex("file:///([A-Z]):")) { m ->
+                "file:///${m.groupValues[1].lowercase()}:"
+            }
+        // Locate a CQL file from inside the project using the lowercased URI
+        val measureFile = File(inputCqlDir, "MyMeasure.cql").also { it.createNewFile() }
+        val measureUri = URI.create("$vsCodeUri${if (vsCodeUri.endsWith("/")) "" else "/"}input/cql/MyMeasure.cql")
+
+        val result = svc.locate(measureUri, id("FHIRHelpers"))
+
+        assertTrue(result.isNotEmpty(), "FHIRHelpers must be found even when drive-letter case differs")
+        assertEquals(helperFile.toURI(), result.first())
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    fun locate_windowsUppercaseDriveLetterInWorkspaceFolder_resolvesLibrary() {
+        // Both workspace folder (File.toURI() uppercase) and launch URI (uppercase)
+        val inputCqlDir = File(tempDir, "input/cql").also { it.mkdirs() }
+        val helperFile = File(inputCqlDir, "FHIRHelpers.cql").also { it.createNewFile() }
+        val measureFile = File(inputCqlDir, "MyMeasure.cql").also { it.createNewFile() }
+
+        val folder =
+            WorkspaceFolder().also {
+                it.uri = tempDir.toURI().toString()
+                it.name = "root"
+            }
+        val svc = FileContentService(listOf(folder), noOpConfigProvider, LibraryResolutionManager(listOf(folder)))
+
+        // Locate using the actual File URI (uppercase, consistent)
+        val result = svc.locate(measureFile.toURI(), id("FHIRHelpers"))
+
+        assertTrue(result.isNotEmpty(), "FHIRHelpers must be found when drive-letter case is consistent")
     }
 }

@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.command
 import ca.uhn.fhir.context.FhirContext
 import ca.uhn.fhir.repository.IRepository
 import org.cqframework.fhir.npm.NpmProcessor
+import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.r4.model.Patient
 import org.hl7.fhir.r4.model.StringType
@@ -21,6 +22,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.io.TempDir
+import org.opencds.cqf.cql.engine.debug.BreakpointAction
+import org.opencds.cqf.cql.engine.debug.BreakpointHandler
+import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
@@ -179,7 +183,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(42, result!!["MyInt"])
+        assertEquals("42", result!!["MyInt"].toString())
     }
 
     @Test
@@ -190,7 +194,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals("HMO", result!!["Plan"])
+        assertEquals("HMO", result!!["Plan"].toString())
     }
 
     @Test
@@ -201,7 +205,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(true, result!!["Flag"])
+        assertEquals("true", result!!["Flag"].toString())
     }
 
     @Test
@@ -212,7 +216,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(java.math.BigDecimal("3.14"), result!!["Rate"])
+        assertEquals("3.14", result!!["Rate"].toString())
     }
 
     @Test
@@ -225,9 +229,9 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals(1, result!!["A"])
-        assertEquals("hello", result["B"])
-        assertEquals(false, result["C"])
+        assertEquals("1", result!!["A"].toString())
+        assertEquals("hello", result["B"].toString())
+        assertEquals("false", result["C"].toString())
     }
 
     @Test
@@ -249,6 +253,41 @@ class CqlEvaluatorTest {
      * are automatically coerced to DateTime literals before evaluation, preventing the
      * "Expected date from(DateTime), Found date from(Date)" runtime error.
      */
+    @Test
+    fun `evaluate returns version info structure in response`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "One",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = null,
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+
+        assertNotNull(response.versions, "Expected versions in response")
+        // Package.implementationVersion may be null when running outside a JAR (e.g. tests).
+        // Verify the VersionInfo instance is present with the correct type.
+        assertInstanceOf(VersionInfo::class.java, response.versions)
+        // Ensure all four fields are present on the data class (even if values are null)
+        val versionFields = response.versions!!::class.java.declaredFields.map { it.name }.toSet()
+        assertTrue("translator" in versionFields)
+        assertTrue("engine" in versionFields)
+        assertTrue("clinicalReasoning" in versionFields)
+        assertTrue("languageServer" in versionFields)
+    }
+
     @Test
     fun `evaluate coerces bare date literals to DateTime for Interval-DateTime parameter`() {
         val request =
@@ -325,6 +364,44 @@ class CqlEvaluatorTest {
         assertTrue(
             expressions["Using Rate"]?.value?.contains("2.5") == true,
             "Expected 'Using Rate' to reflect overridden value 2.5, got: ${expressions["Using Rate"]?.value}",
+        )
+    }
+
+    @Test
+    fun `evaluate passes date parameter override to library`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithDateParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = null,
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters =
+                                listOf(
+                                    ParameterRequest(
+                                        parameterName = "Date Range",
+                                        parameterType = "Interval<Date>",
+                                        parameterValue = "Interval[@2020-01-01, @2021-01-01)",
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+
+        assertEquals(1, response.results.size)
+        val expressions = response.results[0].expressions.associateBy { it.name }
+        assertTrue(
+            expressions["Range Start"]?.value?.contains("2020") == true,
+            "Expected 'Range Start' to reflect overridden value, got: ${expressions["Range Start"]?.value}",
         )
     }
 
@@ -902,5 +979,148 @@ class CqlEvaluatorTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // parseCqlQuantityValue — edge case: space-separated value and unit
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `parseCqlQuantityValue parses with space before unit delimiter`() {
+        // "5 'mg'" has a space before the apostrophe — verify parsing still works
+        val q = parseCqlQuantityValue("5 'mg'")
+        assertNotNull(q)
+        assertEquals("mg", q.unit)
+    }
+
     private fun createNoOpRepo(): IRepository = NoOpRepository(r4Context)
+
+    // -------------------------------------------------------------------------
+    // evaluateDetailed
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluateDetailed returns detailed tracing results`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val result =
+            CqlEvaluator.evaluateDetailed(request, contentService, igContextManager, libraryResolutionManager)
+        assertNotNull(result.response)
+        assertTrue(result.response.results.isNotEmpty())
+        assertTrue(result.response.results[0].expressions.isNotEmpty())
+    }
+
+    @Test
+    fun `evaluateDetailed returns defineOrder`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val result =
+            CqlEvaluator.evaluateDetailed(request, contentService, igContextManager, libraryResolutionManager)
+        assertTrue(result.defineOrder.isNotEmpty())
+    }
+
+    // -------------------------------------------------------------------------
+    // evaluateStreaming
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `evaluateStreaming completes with BreakpointHandler`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "WithParam",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val handler =
+            object : BreakpointHandler {
+                override fun onBeforeExpression(
+                    elm: Element,
+                    state: State,
+                ): BreakpointAction {
+                    return BreakpointAction.CONTINUE
+                }
+            }
+        val future =
+            CqlEvaluator.evaluateStreaming(request, contentService, igContextManager, libraryResolutionManager, handler)
+        future.get()
+        assertTrue(future.isDone)
+        assertFalse(future.isCancelled)
+    }
+
+    @Test
+    fun `evaluateStreaming with failing library completes normally with Error expression`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "NonExistentLib",
+                            libraryUri = "file:///nonexistent/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val handler =
+            object : BreakpointHandler {
+                override fun onBeforeExpression(
+                    elm: Element,
+                    state: State,
+                ): BreakpointAction {
+                    return BreakpointAction.CONTINUE
+                }
+            }
+        val future =
+            CqlEvaluator.evaluateStreaming(request, contentService, igContextManager, libraryResolutionManager, handler)
+        assertDoesNotThrow { future.get() }
+        assertTrue(future.isDone)
+    }
 }

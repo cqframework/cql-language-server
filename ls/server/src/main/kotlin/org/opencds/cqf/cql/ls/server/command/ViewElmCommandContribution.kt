@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.command
 
 import com.google.gson.JsonElement
+import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.elm.serializing.ElmJsonLibraryWriter
 import org.cqframework.cql.elm.serializing.ElmXmlLibraryWriter
 import org.eclipse.lsp4j.ExecuteCommandParams
@@ -8,6 +9,7 @@ import org.hl7.elm.r1.Library
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.plugin.CommandContribution
+import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 
@@ -73,10 +75,11 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
                 return CompletableFuture.completedFuture(null)
             }
             log.debug("viewElm: serializing ELM ({}) for library '{}'", elmType, library.identifier?.id)
-            if (elmType.equals("xml", ignoreCase = true)) {
-                CompletableFuture.completedFuture(convertToXml(library))
-            } else {
-                CompletableFuture.completedFuture(convertToJson(library))
+            when (elmType.lowercase()) {
+                "xml" -> CompletableFuture.completedFuture(convertToXml(library))
+                "json" -> CompletableFuture.completedFuture(convertToJson(library))
+                "ast" -> CompletableFuture.completedFuture(convertToAst(compiler))
+                else -> CompletableFuture.completedFuture(convertToXml(library))
             }
         } catch (e: Exception) {
             log.debug("viewElm: exception for '{}': {}", uriString, e.message, e)
@@ -87,4 +90,7 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
     private fun convertToXml(library: Library): String = ElmXmlLibraryWriter().writeAsString(library)
 
     private fun convertToJson(library: Library): String = ElmJsonLibraryWriter().writeAsString(library)
+
+    private fun convertToAst(compiler: CqlCompiler): String =
+        ElmAstLibraryWriter(compiler).writeAsString(compiler.library!!)
 }

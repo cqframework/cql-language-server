@@ -3,7 +3,9 @@ package org.opencds.cqf.cql.ls.server.command
 import com.google.gson.JsonParser
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -21,8 +23,8 @@ class ViewElmCommandContributionTest {
     companion object {
         private lateinit var viewElmCommandContribution: ViewElmCommandContribution
 
-        @BeforeAll
         @JvmStatic
+        @BeforeAll
         fun beforeAll() {
             val cs = TestContentService()
             val cqlCompilationManager =
@@ -135,6 +137,38 @@ class ViewElmCommandContributionTest {
         future.join()
     }
 
+    @Test
+    fun executeCommandWithAstElmType() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments =
+            listOf(
+                JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+                JsonParser.parseString("\"ast\""),
+            )
+        val future: CompletableFuture<Void> =
+            viewElmCommandContribution
+                .executeCommand(params)
+                .thenAccept { result ->
+                    try {
+                        val expectedAst =
+                            String(
+                                Files.readAllBytes(
+                                    Paths.get("src/test/resources/org/opencds/cqf/cql/ls/server/One.ast"),
+                                ),
+                            )
+                                .trim()
+                                .replace("\r\n", "\n")
+                        val actualAst = result.toString().trim().replace("\r\n", "\n")
+                        assertEquals(expectedAst, actualAst)
+                    } catch (e: IOException) {
+                        throw RuntimeException(e)
+                    }
+                }
+
+        future.join()
+    }
+
     // -----------------------------------------------------------------------
     // Early-return / null guard paths
     // -----------------------------------------------------------------------
@@ -165,12 +199,44 @@ class ViewElmCommandContributionTest {
     }
 
     @Test
+    fun executeCommand_schemelessUri_returnsNull() {
+        // URI(String) succeeds for schemeless paths; compile returns null (no such classpath resource)
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments = listOf(JsonParser.parseString("\"/foo/bar.cql\""))
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    @Test
     fun executeCommand_compilerReturnsNull_returnsNull() {
         // TestContentService returns null for any URI not on the classpath, so compile() returns null
         val params = ExecuteCommandParams()
         params.command = "org.opencds.cqf.cql.ls.viewElm"
         params.arguments = listOf(JsonParser.parseString("\"file:///nonexistent/Missing.cql\""))
         assertNull(viewElmCommandContribution.executeCommand(params).join())
+    }
+
+    // -----------------------------------------------------------------------
+    // Unknown elmType falls through to the else branch (returns XML)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun executeCommand_unknownElmType_returnsXml() {
+        // Any elmType string that isn't "xml", "json", or "ast" falls through to else → XML
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        params.arguments =
+            listOf(
+                JsonParser.parseString("\"\\/org\\/opencds\\/cqf\\/cql\\/ls\\/server\\/One.cql\""),
+                JsonParser.parseString("\"proto\""),
+            )
+        val result = viewElmCommandContribution.executeCommand(params).join()
+        assertNotNull(result)
+        val text = result.toString()
+        assertTrue(
+            text.startsWith("<?xml") || text.contains("<library"),
+            "Unknown elmType should produce XML output, got: ${text.take(200)}",
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -182,5 +248,18 @@ class ViewElmCommandContributionTest {
         val params = ExecuteCommandParams()
         params.command = "org.opencds.cqf.cql.ls.unknownCommand"
         assertThrows<RuntimeException> { viewElmCommandContribution.executeCommand(params) }
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage for uncovered branches
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun executeCommand_nonStringJsonElementArg_returnsNull() {
+        val params = ExecuteCommandParams()
+        params.command = "org.opencds.cqf.cql.ls.viewElm"
+        // Pass a JsonNumber (not a JsonString) as the first argument — asString will return null
+        params.arguments = listOf(JsonParser.parseString("123"))
+        assertNull(viewElmCommandContribution.executeCommand(params).join())
     }
 }

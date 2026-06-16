@@ -2,6 +2,26 @@
 
 
 
+
+## v4.8.0
+
+Date: 2026-06-13
+
+* add version info support
+* update cql engine to v4.9.0
+* validate breakpoints
+* add timestamp to server logs
+* add define call stack and multi-frame stack trace improve FHIR variable display formatting and profile children
+* unified runtime value registry, test case scope, and CQL type annotations
+* add debug session shutdown enhancements
+* fix DAP debugger correctness, thread safety, and protocol gaps
+* adds support for debug hover
+* adds cql debugging support
+* code cleanup - rpc related
+* add convert CQL to ELM as an AST
+* bump version to 4.8.0
+
+
 ## v4.7.0
 
 Date: 2026-05-28

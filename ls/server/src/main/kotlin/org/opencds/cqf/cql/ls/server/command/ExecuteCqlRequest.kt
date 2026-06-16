@@ -14,7 +14,6 @@ data class LibraryRequest(
     val terminologyUri: String?,
     val model: ModelRequest?,
     val context: ContextRequest?,
-    // TODO: parameter passing deferred to PR #6 (Execute CQL optimization)
     val parameters: List<ParameterRequest>,
 )
 
@@ -24,7 +23,11 @@ data class ContextRequest(val contextName: String, val contextValue: String)
 
 data class ParameterRequest(val parameterName: String, val parameterType: String, val parameterValue: String)
 
-data class ExecuteCqlResponse(val results: List<LibraryResult>, val logs: List<String>)
+data class ExecuteCqlResponse(
+    val results: List<LibraryResult>,
+    val logs: List<String>,
+    val versions: VersionInfo? = null,
+)
 
 data class LibraryResult(
     val libraryName: String,
@@ -34,4 +37,24 @@ data class LibraryResult(
 
 data class ExpressionResult(val name: String, val value: String)
 
+data class DetailedExpressionResult(
+    val name: String?,
+    val value: String,
+    val locator: String,
+    val parent: String?,
+)
+
 data class DefaultParameterResult(val name: String, val value: String)
+
+data class VersionInfo(
+    val translator: String?,
+    val engine: String?,
+    val clinicalReasoning: String?,
+    val languageServer: String?,
+)
+
+data class DetailedEvaluationResult(
+    val response: ExecuteCqlResponse,
+    val subExpressions: List<DetailedExpressionResult>,
+    val defineOrder: List<String>,
+)

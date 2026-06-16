@@ -221,6 +221,7 @@ class FileContentService(
         return try {
             BufferedInputStream(FileInputStream(File(uri)))
         } catch (e: Exception) {
+            log.warn("FileContentService.read: failed to read '{}': {}", uri, e.message)
             null
         }
     }
@@ -230,7 +231,21 @@ class FileContentService(
     private fun findContainingFolder(uri: URI): URI? {
         for (w in workspaceFolders) {
             val folderUri = Uris.parseOrNull(w.uri) ?: continue
-            if (folderUri.relativize(uri) != uri) return folderUri
+            // Use Path.startsWith() for file URIs — on Windows, Path comparison is
+            // case-insensitive, which handles drive-letter case differences between
+            // URIs produced by File.toURI() (uppercase C:) and VS Code (lowercase c:).
+            // Fall back to URI.relativize() for non-file schemes (http, etc.).
+            val contains =
+                if (folderUri.scheme == "file" && uri.scheme == "file") {
+                    try {
+                        Paths.get(uri).startsWith(Paths.get(folderUri))
+                    } catch (_: Exception) {
+                        folderUri.relativize(uri) != uri
+                    }
+                } else {
+                    folderUri.relativize(uri) != uri
+                }
+            if (contains) return folderUri
         }
         return null
     }

@@ -12,7 +12,7 @@
     <parent>
         <groupId>org.opencds.cqf.cql.ls</groupId>
         <artifactId>cql-ls</artifactId>
-        <version>4.7.0</version>
+        <version>4.8.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -119,6 +119,19 @@
 
     </dependencies>
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>versions.properties</include>
+                </includes>
+            </resource>
+        </resources>
         <!-- Override Maven's default src/main/java so the Kotlin compiler does not warn
              about a missing Java source root on a Kotlin-only module. -->
         <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>

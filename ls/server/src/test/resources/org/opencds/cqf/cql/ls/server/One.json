@@ -4,7 +4,7 @@
     "annotation": [
       {
         "type": "CqlToElmInfo",
-        "translatorVersion": "4.8.0",
+        "translatorVersion": "4.9.0",
         "translatorOptions": "EnableAnnotations,EnableLocators,DisableListDemotion,DisableListPromotion,EnableResultTypes",
         "signatureLevel": "All"
       },

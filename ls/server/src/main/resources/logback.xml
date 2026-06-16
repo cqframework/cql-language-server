@@ -7,7 +7,7 @@
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.err</target>
         <encoder>
-            <pattern>%-4relative [%thread] %-5level %logger{35} %msg %n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{35} %msg %n</pattern>
         </encoder>
     </appender>
 
@@ -20,10 +20,12 @@
             <totalSizeCap>50MB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%-4relative [%thread] %-5level %logger{35} %msg %n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{35} %msg %n</pattern>
         </encoder>
     </appender>
 
+    <!-- Debug logging for debug server / breakpoint handler diagnostics -->
+    <logger name="org.opencds.cqf.cql.debug" level="DEBUG" />
     <!-- Debug logging for View ELM / compilation diagnostics -->
     <logger name="org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution" level="DEBUG" />
     <logger name="org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager" level="DEBUG" />

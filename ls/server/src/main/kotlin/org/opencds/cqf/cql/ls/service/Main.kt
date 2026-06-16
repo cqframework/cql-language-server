@@ -1,14 +1,14 @@
 package org.opencds.cqf.cql.ls.service
 
-import org.cqframework.cql.cql2elm.CqlTranslator
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.launch.LSPLauncher
 import org.eclipse.lsp4j.services.LanguageClient
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Logger.JavaLogger
-import org.opencds.cqf.cql.engine.execution.CqlEngine
+import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
+import org.opencds.cqf.cql.ls.server.command.GetVersionInfoCommandContribution
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
@@ -27,6 +27,7 @@ import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService
 import org.opencds.cqf.cql.ls.server.service.DiagnosticsService
 import org.opencds.cqf.cql.ls.server.service.FederatedContentService
 import org.opencds.cqf.cql.ls.server.service.FileContentService
+import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
 import java.util.concurrent.CompletableFuture
@@ -83,6 +84,10 @@ fun main(args: Array<String>) {
     val contributions = mutableListOf<CommandContribution>()
     contributions.add(ViewElmCommandContribution(compilationManager))
     contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
+    contributions.add(GetVersionInfoCommandContribution())
+    contributions.add(
+        DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
+    )
     commandsFuture.complete(contributions)
 
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService)
@@ -96,9 +101,9 @@ fun main(args: Array<String>) {
     val serverThread = launcher.startListening()
 
     log.info("java.version: {}", System.getProperty("java.version"))
-    log.info("cql-language-server version: {}", CqlLanguageServer::class.java.`package`.implementationVersion)
-    log.info("cql-translator version: {}", CqlTranslator::class.java.`package`.implementationVersion)
-    log.info("cql-engine version: {}", CqlEngine::class.java.`package`.implementationVersion)
+    log.info("cql-language-server version: {}", VersionReader.loadVersion("cql-ls-server"))
+    log.info("cql-translator version: {}", VersionReader.loadVersion("cql-to-elm-jvm"))
+    log.info("cql-engine version: {}", VersionReader.loadVersion("engine-jvm"))
     log.info("cql-language-server started")
 
     val executor = Executors.newSingleThreadExecutor()
