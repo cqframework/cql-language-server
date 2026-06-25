@@ -7,7 +7,7 @@
 Date: 2026-06-25
 
 * bump version to cql-language-server to 4.9.0 
-* change clinical-reasoning to version 4.9.0
+* change clinical-reasoning to version 4.8.0
 * fix issue with library names with hyphens
 
 
