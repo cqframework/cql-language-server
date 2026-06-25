@@ -122,13 +122,22 @@ class FileContentService(
             val indexOfExtension = name.lastIndexOf(".")
             if (indexOfExtension >= 0) name = name.substring(0, indexOfExtension)
 
-            val indexOfVersionSeparator = name.lastIndexOf("-")
-            var version: Version? = null
-            if (indexOfVersionSeparator >= 0) {
-                version = tryParseVersion(name.substring(indexOfVersionSeparator + 1))
-                if (version != null) name = name.substring(0, indexOfVersionSeparator)
+            // Walk backward through hyphen-separated segments, accepting only a
+            // suffix that parses as a valid version (majorVersion != null). This
+            // handles hyphenated library names (e.g. SUR716-011Assertion.cql)
+            // alongside multi-segment MAT-style versions (e.g. "-0.1.000-cibuild").
+            var searchFrom = name.length
+            while (true) {
+                val indexOfVersionSeparator = name.lastIndexOf("-", searchFrom - 1)
+                if (indexOfVersionSeparator < 0) break
+                val candidateVersion = name.substring(indexOfVersionSeparator + 1)
+                val version = tryParseVersion(candidateVersion)
+                if (version?.majorVersion != null) {
+                    return Pair(name.substring(0, indexOfVersionSeparator), version)
+                }
+                searchFrom = indexOfVersionSeparator
             }
-            return Pair(name, version)
+            return Pair(name, null)
         }
     }
 

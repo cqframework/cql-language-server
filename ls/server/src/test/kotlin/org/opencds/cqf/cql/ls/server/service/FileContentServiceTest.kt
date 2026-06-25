@@ -296,6 +296,58 @@ class FileContentServiceTest {
         assertEquals(setOf(file.toURI()), result)
     }
 
+    // ── Hyphenated library names ─────────────────────────────────────────────
+    // Library identifiers may contain hyphens when declared with a delimited
+    // identifier (e.g. `library `SUR716-011Assertion``). The filename-to-name
+    // parser must not split on a hyphen unless the trailing segment is a valid
+    // semantic version (majorVersion != null).
+
+    @Test
+    fun searchFolder_hyphenatedLibraryName_unversionedFile_returnsFile() {
+        // Exercises getNameAndVersion through the companion searchFolder API.
+        // Without the fix, "011Assertion" is silently accepted as a version
+        // and the name is truncated to "SUR716", causing a mismatch.
+        val cqlFile = File(tempDir, "SUR716-011Assertion.cql").also { it.createNewFile() }
+
+        val result = FileContentService.searchFolder(tempDir.toURI(), id("SUR716-011Assertion"))
+
+        assertNotNull(result)
+        assertEquals(cqlFile.canonicalPath, result!!.canonicalPath)
+    }
+
+    @Test
+    fun locate_hyphenatedLibraryName_unversionedFile_returnsFile() {
+        // Primary regression test for the "Could not load source for library
+        // SUR716-011Assertion" error. getNameAndVersion must return the full
+        // name when no valid version suffix is present.
+        val cqlFile = File(tempDir, "SUR716-011Assertion.cql").also { it.createNewFile() }
+
+        val result = svc(tempDir).locate(tempDir.toURI(), id("SUR716-011Assertion"))
+
+        assertEquals(setOf(cqlFile.toURI()), result)
+    }
+
+    @Test
+    fun locate_hyphenatedLibraryName_versionedFile_exactVersionRequested_returnsFile() {
+        val cqlFile = File(tempDir, "SUR716-011Assertion-1.0.0.cql").also { it.createNewFile() }
+
+        val result = svc(tempDir).locate(tempDir.toURI(), id("SUR716-011Assertion", "1.0.0"))
+
+        assertEquals(setOf(cqlFile.toURI()), result)
+    }
+
+    @Test
+    fun locate_hyphenatedLibraryName_versionedFile_noVersionRequested_returnsFile() {
+        // Exercises the bfsCompatible path: getNameAndVersion must correctly
+        // separate the version suffix from the hyphenated library name so the
+        // name comparison succeeds.
+        val cqlFile = File(tempDir, "SUR716-011Assertion-1.0.0.cql").also { it.createNewFile() }
+
+        val result = svc(tempDir).locate(tempDir.toURI(), id("SUR716-011Assertion"))
+
+        assertEquals(setOf(cqlFile.toURI()), result)
+    }
+
     // ── Namespace-qualified resolution ────────────────────────────────────────
 
     @Test
