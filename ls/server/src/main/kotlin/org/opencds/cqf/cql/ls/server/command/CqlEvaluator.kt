@@ -416,7 +416,7 @@ object CqlEvaluator {
                 evaluationSettings.librarySourceProviders.clear()
                 if (libraryUri != null) {
                     evaluationSettings.librarySourceProviders.add(
-                        FederatedLibrarySourceProvider(libraryUri, contentService, npmProcessor),
+                        FederatedLibrarySourceProvider(Uris.getHead(libraryUri), contentService, npmProcessor),
                     )
                 } else if (libraryKotlinPath != null) {
                     evaluationSettings.librarySourceProviders.add(
@@ -452,7 +452,7 @@ object CqlEvaluator {
                 // Model info providers have no ordering concern; register after engine creation.
                 if (libraryUri != null) {
                     engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
-                        ContentServiceModelInfoProvider(libraryUri, contentService),
+                        ContentServiceModelInfoProvider(Uris.getHead(libraryUri), contentService),
                     )
                 } else if (libraryKotlinPath != null) {
                     engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
