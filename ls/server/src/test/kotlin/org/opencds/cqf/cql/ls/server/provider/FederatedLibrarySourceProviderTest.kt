@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.server.provider
 
 import org.cqframework.fhir.npm.NpmProcessor
 import org.hl7.elm.r1.VersionedIdentifier
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -118,6 +119,39 @@ class FederatedLibrarySourceProviderTest {
             }
         val provider = FederatedLibrarySourceProvider(root, throwingReadCs, null)
         assertNull(provider.getLibrarySource(VersionedIdentifier().withId("LibA")))
+    }
+
+    // -----------------------------------------------------------------------
+    // Root URI passthrough — FederatedLibrarySourceProvider does NOT normalize
+    // file URIs to directory URIs (unlike CqlCompilationManager which calls
+    // Uris.getHead first). When CqlEvaluator passes libraryUri (a .cql file),
+    // it arrives at locate() as-is — no directory normalization.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getLibrarySource_passesRootUriThroughWithoutNormalization() {
+        var capturedRoot: URI? = null
+        val capturingCs =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ): Set<URI> {
+                    capturedRoot = root
+                    return emptySet()
+                }
+
+                override fun read(uri: URI): InputStream? = null
+            }
+
+        val fileUri = URI.create("file:///workspace/input/cql/MyLibrary.cql")
+        val provider = FederatedLibrarySourceProvider(fileUri, capturingCs, null)
+        provider.getLibrarySource(VersionedIdentifier().withId("Test"))
+
+        // Root is passed through unchanged — no getHead normalization.
+        // This means locate() receives a file URI, forcing tier1 to fail
+        // (BFS requires a directory) and relying entirely on tier2 fallback.
+        assertEquals(fileUri, capturedRoot, "Root must be passed through without normalization")
     }
 
     // -----------------------------------------------------------------------
