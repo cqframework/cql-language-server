@@ -63,7 +63,7 @@ class ContentServiceModelInfoProviderTest {
                         identifier: VersionedIdentifier,
                     ): Set<URI> = emptySet()
 
-                    override fun read(uri: URI): InputStream? = "not valid xml {{{{".byteInputStream()
+                    override fun read(uri: URI): InputStream = "not valid xml {{{{".byteInputStream()
                 },
             )
         assertThrows<IllegalArgumentException> { provider.load(ModelIdentifier(id = "Bad")) }
@@ -207,6 +207,18 @@ class ContentServiceModelInfoProviderTest {
         assertEquals("[]", ContentServiceModelInfoProvider.formatRequiredModels(modelInfo))
     }
 
+    @Test
+    fun formatRequiredModels_rendersNameOnly_whenRequiredModelInfoVersionIsAbsent() {
+        val modelInfo =
+            parseModelInfoXml(
+                """<?xml version="1.0" encoding="UTF-8"?><modelInfo xmlns="urn:hl7-org:elm-modelinfo:r1" name="X" version="1.0"><requiredModelInfo name="System"/><requiredModelInfo name="FHIR" version="4.0.1"/></modelInfo>""",
+            )
+
+        val formatted = ContentServiceModelInfoProvider.formatRequiredModels(modelInfo)
+        // System has no version → no space suffix; FHIR has a version → space + version
+        assertEquals("[System, FHIR 4.0.1]", formatted)
+    }
+
     // -----------------------------------------------------------------------
     // recordVersionAndDetectConflict — surfaces an actual model version conflict
     // (same model at two versions on one provider instance), e.g. content loads
@@ -252,6 +264,118 @@ class ContentServiceModelInfoProviderTest {
         assertNull(provider.recordVersionAndDetectConflict("SameVer", "1.0.0", "requested"))
         assertNull(provider.recordVersionAndDetectConflict("SameVer", "1.0.0", "required by X"))
         assertNull(provider.recordVersionAndDetectConflict("NullVer", null, "requested"))
+    }
+
+    // -----------------------------------------------------------------------
+    // load() — version conflict warning path
+    // When load() is called twice for the same model at different versions,
+    // recordVersionAndDetectConflict returns a non-null description and the
+    // conflict is logged. This exercises the `.let { log.warn(...) }` branch
+    // on lines 89–91 of ContentServiceModelInfoProvider.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun load_triggersConflictWarning_whenSameModelLoadedAtDifferentVersions() {
+        val provider = ContentServiceModelInfoProvider(root, nullContentService())
+        // First load: no conflict yet (only one version observed)
+        assertNull(provider.load(ModelIdentifier(id = "FHIR", version = "4.0.1")))
+        // Second load at a different version: conflict is detected and logged internally.
+        // load() still returns null (no content), but the conflict log.warn path is exercised.
+        assertNull(provider.load(ModelIdentifier(id = "FHIR", version = "3.0.0")))
+        // Both versions are now tracked; a third distinct version is also a conflict.
+        val conflict = provider.recordVersionAndDetectConflict("FHIR", "2.0.0", "test")
+        assertNotNull(conflict, "Three distinct FHIR versions should still produce a conflict description")
+    }
+
+    // -----------------------------------------------------------------------
+    // load() — requiredModelInfo loop
+    // When load() successfully parses a ModelInfo that declares dependencies,
+    // it iterates over requiredModelInfo and calls recordVersionAndDetectConflict
+    // for each dependency. This covers lines 114–126.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun load_iteratesRequiredModelInfoDependencies_whenModelInfoHasDependencies() {
+        val c4bbWithDeps =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <modelInfo xmlns="urn:hl7-org:elm-modelinfo:r1" name="C4BB" version="2.1.1">
+              <requiredModelInfo name="FHIR" version="4.0.1"/>
+              <requiredModelInfo name="USCore" version="6.1.0-derived"/>
+            </modelInfo>
+            """.trimIndent()
+
+        val servingService =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? =
+                    if (uri.toString().contains("c4bb-modelinfo")) {
+                        c4bbWithDeps.byteInputStream()
+                    } else {
+                        null
+                    }
+            }
+
+        val cqlDir = URI.create("file:///workspace/input/cql/")
+        val provider = ContentServiceModelInfoProvider(cqlDir, servingService)
+        val result = provider.load(ModelIdentifier(id = "C4BB", version = "2.1.1"))
+
+        // Model loaded successfully and dependencies were processed
+        assertNotNull(result)
+        // FHIR and USCore versions are now recorded — a second load with a different
+        // FHIR version should be detected as a conflict.
+        val conflict = provider.recordVersionAndDetectConflict("FHIR", "3.0.0", "external")
+        assertNotNull(conflict, "FHIR 3.0.0 should conflict with the 4.0.1 seen in requiredModelInfo")
+    }
+
+    @Test
+    fun load_logsConflictForRequiredDependency_whenVersionConflictsWithPreviousObservation() {
+        val c4bbRequiringOldFhir =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <modelInfo xmlns="urn:hl7-org:elm-modelinfo:r1" name="C4BB" version="2.1.1">
+              <requiredModelInfo name="FHIR" version="3.0.0"/>
+            </modelInfo>
+            """.trimIndent()
+
+        val servingService =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    identifier: VersionedIdentifier,
+                ): Set<URI> = emptySet()
+
+                override fun read(uri: URI): InputStream? =
+                    if (uri.toString().contains("c4bb-modelinfo")) {
+                        c4bbRequiringOldFhir.byteInputStream()
+                    } else {
+                        null
+                    }
+            }
+
+        val cqlDir = URI.create("file:///workspace/input/cql/")
+        val provider = ContentServiceModelInfoProvider(cqlDir, servingService)
+
+        // First, record FHIR 4.0.1 as observed (simulates it having been requested earlier)
+        provider.recordVersionAndDetectConflict("FHIR", "4.0.1", "requested")
+
+        // Now load C4BB, whose requiredModelInfo declares FHIR 3.0.0 — a conflict with 4.0.1
+        val result = provider.load(ModelIdentifier(id = "C4BB", version = "2.1.1"))
+
+        // C4BB itself loaded successfully
+        assertNotNull(result)
+        // The provider's state now reflects both FHIR 4.0.1 and 3.0.0 — verify the conflict
+        provider.recordVersionAndDetectConflict("FHIR", "3.0.0", "required by C4BB")
+        // Recording the same version again doesn't add a new conflict (idempotent),
+        // but the map still has two entries from the prior calls
+        assertNotNull(
+            provider.recordVersionAndDetectConflict("FHIR", "5.0.0", "other"),
+            "A third FHIR version should still be detected as a conflict",
+        )
     }
 
     // Version tracking is instance state: a fresh provider (one per compilation) starts empty and

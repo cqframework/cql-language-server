@@ -464,6 +464,27 @@ class LibraryResolutionManagerTest {
     }
 
     // -----------------------------------------------------------------------
+    // readIgContextInfo — returns null when ig.ini has no [IG] section
+    //
+    // The guard added in the patch returns null early (before calling
+    // IGContext.initializeFromIni) when the file lacks the required [IG]
+    // section header. This prevents NPE / hang on non-IG ini files.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun readIgContextInfo_returnsNull_whenIgIniHasNoIgSection(
+        @TempDir tempDir: File,
+    ) {
+        val igIniFile = File(tempDir, "ig.ini").also { it.writeText("# not an IG ini\nfoo=bar\n") }
+        // Use a concrete subclass to access the protected method without overriding it
+        val m =
+            object : LibraryResolutionManager(emptyList()) {
+                fun testRead(f: File) = readIgContextInfo(f)
+            }
+        assertNull(m.testRead(igIniFile), "Should return null when ig.ini has no [IG] section")
+    }
+
+    // -----------------------------------------------------------------------
     // buildNamespaceIndex — two workspace folders indexed independently
     // -----------------------------------------------------------------------
 

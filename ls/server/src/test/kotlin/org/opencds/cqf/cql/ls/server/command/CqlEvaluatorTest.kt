@@ -523,6 +523,7 @@ class CqlEvaluatorTest {
         return method.invoke(CqlEvaluator, value) as Quantity
     }
 
+    @Suppress("UnstableApiUsage")
     private fun createRepository(
         fhirContext: FhirContext,
         terminologyRepo: IRepository,
@@ -765,9 +766,7 @@ class CqlEvaluatorTest {
     // -------------------------------------------------------------------------
 
     @Test
-    fun `createRepository with null modelPath returns ProxyRepository wrapping NoOpRepository`(
-        @TempDir tempDir: Path,
-    ) {
+    fun `createRepository with null modelPath returns ProxyRepository wrapping NoOpRepository`() {
         val repo = createRepository(r4Context, createNoOpRepo(), null)
         assertInstanceOf(ProxyRepository::class.java, repo)
     }
@@ -906,7 +905,7 @@ class CqlEvaluatorTest {
         val isDebugMethod = innerClass.getDeclaredMethod("isDebugLogging")
         isDebugMethod.isAccessible = true
         val result = isDebugMethod.invoke(logger)
-        assertInstanceOf(java.lang.Boolean::class.java, result)
+        assertInstanceOf(Boolean::class.javaObjectType, result)
     }
 
     // -------------------------------------------------------------------------
@@ -994,6 +993,7 @@ class CqlEvaluatorTest {
         assertEquals("mg", q.unit)
     }
 
+    @Suppress("UnstableApiUsage")
     private fun createNoOpRepo(): IRepository = NoOpRepository(r4Context)
 
     // -------------------------------------------------------------------------
@@ -1012,8 +1012,8 @@ class CqlEvaluatorTest {
 
         override fun locate(
             root: URI,
-            libraryIdentifier: VersionedIdentifier,
-        ): Set<URI> = delegate.locate(root, libraryIdentifier)
+            identifier: VersionedIdentifier,
+        ): Set<URI> = delegate.locate(root, identifier)
 
         override fun read(uri: URI): InputStream? {
             reads.add(uri)
@@ -1040,6 +1040,17 @@ class CqlEvaluatorTest {
     }
 
     @Test
+    fun `deepestCause terminates when cause is self`() {
+        // Override the Kotlin `cause` property to return `this`, exercising the `next === current` guard
+        val selfCausing =
+            object : RuntimeException("self-referential") {
+                override val cause: Throwable get() = this
+            }
+        val result = CqlEvaluator.deepestCause(selfCausing)
+        assertSame(selfCausing, result, "deepestCause should return the self-causing exception without looping")
+    }
+
+    @Test
     fun `describeCauseChain includes each distinct level deepest last`() {
         val root = IllegalStateException("version 7.0.0 conflicts with 6.1.0-derived")
         val top = RuntimeException("Could not load model information for model C4BB", root)
@@ -1059,6 +1070,43 @@ class CqlEvaluatorTest {
         val top = RuntimeException("same", root)
         // Both levels share the message "same"; it should appear once.
         assertEquals(1, CqlEvaluator.describeCauseChain(top).split(" -> ").size)
+    }
+
+    @Test
+    fun `describeCauseChain uses no message placeholder when cause has a null message`() {
+        // lastMessage starts as null, so a root-level null message is deduped away.
+        // A null message IS rendered when it follows a non-null message (null != "top").
+        val nullMessageCause = RuntimeException(null as String?)
+        val top = RuntimeException("top message", nullMessageCause)
+        val chain = CqlEvaluator.describeCauseChain(top)
+        assertTrue(chain.contains("(no message)"), "Expected '(no message)' placeholder for null-message cause, got: $chain")
+    }
+
+    @Test
+    fun `evaluate produces Error expression when library cannot be found`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "NonExistentLib",
+                            libraryUri = "file:///nonexistent/path",
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+        assertEquals(1, response.results.size)
+        val errorExpr = response.results[0].expressions.find { it.name == "Error" }
+        assertNotNull(errorExpr, "Expected an Error expression in results")
+        assertTrue(errorExpr!!.value.isNotEmpty(), "Error message should not be empty")
     }
 
     @Test
@@ -1093,13 +1141,22 @@ class CqlEvaluatorTest {
             modelInfoReads.isNotEmpty(),
             "Expected a model info read attempt for the Custom model, got reads: ${recording.reads}",
         )
+        // Use rawPath (path component only) so the assertion is platform-agnostic.
+        // On Windows, file:///project/... becomes file:////project/... (UNC form) after
+        // Uris.parseOrNull, so toString() equality against the 3-slash form fails.
+        // rawPath strips the scheme+authority and is identical on both platforms.
         assertTrue(
-            modelInfoReads.any { it.toString() == "$libDir/custom-modelinfo-1.0.0.xml" },
+            modelInfoReads.any {
+                it.rawPath?.endsWith("/project/input/cql/custom-modelinfo-1.0.0.xml") == true
+            },
             "ModelInfo must be read from the libraryUri directory. Attempts: $modelInfoReads",
         )
         // The parent-directory path is the regression signature — it must never be attempted.
+        // The /cql/ segment in the correct path prevents a false positive here.
         assertFalse(
-            modelInfoReads.any { it.toString() == "file:///project/input/custom-modelinfo-1.0.0.xml" },
+            modelInfoReads.any {
+                it.rawPath?.endsWith("/project/input/custom-modelinfo-1.0.0.xml") == true
+            },
             "ModelInfo must not be read from the parent of libraryUri. Attempts: $modelInfoReads",
         )
     }
