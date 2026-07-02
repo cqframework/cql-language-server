@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.server.command.ExecuteCqlRequest
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
@@ -822,5 +823,40 @@ class CqlDebugServerHelperTest {
         @Suppress("UNCHECKED_CAST")
         val result = method.invoke(server, null) as Map<String, String>
         assertTrue(result.isEmpty())
+    }
+
+    // -- buildExecuteCqlRequest -----------------------------------------------
+    // The DAP launch config supplies libraryUri as the .cql FILE, but CqlEvaluator (and its
+    // ContentServiceModelInfoProvider) expects the CQL *directory* — otherwise model-info lookups
+    // land at "<file>.cql/<model>-modelinfo.xml" ("Not a directory") and C4BB fails to load. The
+    // request builder must strip the filename to its parent, matching the Execute CQL flow.
+
+    private fun buildRequestLibraryUri(libraryUri: String): String {
+        val server = makeServer()
+        val method =
+            CqlDebugServer::class.java.getDeclaredMethod(
+                "buildExecuteCqlRequest",
+                DebugLaunchArgs::class.java,
+            )
+        method.isAccessible = true
+        val args = DebugLaunchArgs(libraryUri = libraryUri, libraryName = "MyLibrary", fhirVersion = "R4")
+        val request = method.invoke(server, args) as ExecuteCqlRequest
+        return request.libraries.first().libraryUri
+    }
+
+    @Test
+    fun `buildExecuteCqlRequest strips cql filename to its parent directory`() {
+        assertEquals(
+            "file:///workspace/input/cql",
+            buildRequestLibraryUri("file:///workspace/input/cql/MyLibrary.cql"),
+        )
+    }
+
+    @Test
+    fun `buildExecuteCqlRequest strips cql filename on windows forward-slash uri`() {
+        assertEquals(
+            "file:///C:/work/input/cql",
+            buildRequestLibraryUri("file:///C:/work/input/cql/MyLibrary.cql"),
+        )
     }
 }
