@@ -167,6 +167,7 @@ class CqlCompilationManager(
         root: URI,
         modelManager: ModelManager,
     ): LibraryManager {
+        log.info("Registered ContentServiceModelInfoProvider (compile) root={}", root)
         modelManager.modelInfoLoader.registerModelInfoProvider(
             ContentServiceModelInfoProvider(root, contentService),
         )
