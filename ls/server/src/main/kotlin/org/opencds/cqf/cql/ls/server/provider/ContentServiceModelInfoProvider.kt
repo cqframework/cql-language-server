@@ -9,7 +9,6 @@ import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 
 class ContentServiceModelInfoProvider(
     private val root: URI,
@@ -29,43 +28,50 @@ class ContentServiceModelInfoProvider(
                 .joinToString(prefix = "[", postfix = "]") { req ->
                     "${req.name}${req.version?.let { " $it" } ?: ""}"
                 }
+    }
 
-        /**
-         * Tracks the versions each model has been seen at, per provider root: `(rootKey, modelId)`
-         * → `version` → `source`. Populated as models are requested and as their declared
-         * dependencies (`requiredModelInfo`) are parsed. The CQL compiler allows exactly one
-         * version of a model per translation, so seeing a model at two versions under the same
-         * root is a genuine conflict (e.g. the content loads `USCore 6.1.0-derived` while a
-         * developer-supplied C4BB ModelInfo requires `USCore 7.0.0`). Keyed by root so unrelated
-         * projects in the same workspace do not cross-contaminate.
-         */
-        private val observedModelVersions =
-            ConcurrentHashMap<Pair<String, String>, ConcurrentHashMap<String, String>>()
+    /**
+     * Tracks the versions each model has been seen at during this provider's lifetime:
+     * `modelId` → `version` → `source`. Populated as models are requested and as their declared
+     * dependencies (`requiredModelInfo`) are parsed. The CQL compiler allows exactly one version
+     * of a model per translation, so seeing a model at two versions is a genuine conflict (e.g.
+     * the content loads `USCore 6.1.0-derived` while a developer-supplied C4BB ModelInfo requires
+     * `USCore 7.0.0`).
+     *
+     * This is instance state, not static: a fresh provider is constructed per compilation
+     * (see `CqlCompilationManager.createLibraryManager` and `CqlEvaluator`), so version tracking
+     * starts empty each compile and never carries stale versions across runs. Each instance is
+     * scoped to a single [root], so keying by `modelId` alone is sufficient.
+     */
+    private val observedModelVersions = HashMap<String, MutableMap<String, String>>()
 
-        /**
-         * Records that [modelId] was seen at [version] (attributed to [source]) under [rootKey],
-         * and returns a human-readable conflict description (`v1 (src1), v2 (src2)`) when that
-         * model is now known at more than one version under the same root — i.e. an actual model
-         * version conflict. Returns null when there is no conflict or [version] is null/blank.
-         */
-        internal fun recordVersionAndDetectConflict(
-            rootKey: String,
-            modelId: String,
-            version: String?,
-            source: String,
-        ): String? {
-            if (version.isNullOrBlank()) return null
-            val versions = observedModelVersions.getOrPut(rootKey to modelId) { ConcurrentHashMap() }
-            versions.putIfAbsent(version, source)
-            return if (versions.size > 1) {
-                versions.entries.joinToString(", ") { "${it.key} (${it.value})" }
-            } else {
-                null
-            }
+    /**
+     * Records that [modelId] was seen at [version] (attributed to [source]), and returns a
+     * human-readable conflict description when that model is now known at more than one version —
+     * i.e. an actual model version conflict. When the observed versions differ *only* by case
+     * (e.g. `6.1.0-Derived` vs `6.1.0-derived`), the message calls that out explicitly, since the
+     * CQL engine matches model versions with exact, case-sensitive string equality and such a
+     * mismatch is a common, easily-missed authoring error. Returns null when there is no conflict
+     * or [version] is null/blank.
+     */
+    internal fun recordVersionAndDetectConflict(
+        modelId: String,
+        version: String?,
+        source: String,
+    ): String? {
+        if (version.isNullOrBlank()) return null
+        val versions = observedModelVersions.getOrPut(modelId) { mutableMapOf() }
+        versions.putIfAbsent(version, source)
+        if (versions.size <= 1) return null
+
+        val rendered = versions.entries.joinToString(", ") { "${it.key} (${it.value})" }
+        val caseOnly = versions.keys.map { it.lowercase() }.distinct().size == 1
+        return if (caseOnly) {
+            "versions differ only by case — $rendered. The CQL engine matches model versions " +
+                "case-sensitively; make them identical."
+        } else {
+            rendered
         }
-
-        /** Clears the cross-request version tracking. Intended for tests. */
-        internal fun clearObservedVersions() = observedModelVersions.clear()
     }
 
     override fun load(modelIdentifier: ModelIdentifier): ModelInfo? {
@@ -80,7 +86,7 @@ class ContentServiceModelInfoProvider(
         )
 
         // Record the requested version; warn if this model is now known at two versions.
-        recordVersionAndDetectConflict(root.toString(), modelName, modelVersion, "requested")?.let {
+        recordVersionAndDetectConflict(modelName, modelVersion, "requested")?.let {
             log.warn("ContentServiceModelInfoProvider: model version conflict for '{}': {}", modelName, it)
         }
 
@@ -114,7 +120,7 @@ class ContentServiceModelInfoProvider(
             // (the same model now known at two versions under this root).
             for (req in modelInfo.requiredModelInfo) {
                 val depName = req.name ?: continue
-                recordVersionAndDetectConflict(root.toString(), depName, req.version, "required by $modelName")?.let {
+                recordVersionAndDetectConflict(depName, req.version, "required by $modelName")?.let {
                     log.warn("ContentServiceModelInfoProvider: model version conflict for '{}': {}", depName, it)
                 }
             }

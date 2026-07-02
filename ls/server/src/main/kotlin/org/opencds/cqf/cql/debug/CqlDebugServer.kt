@@ -57,6 +57,7 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
 import org.opencds.cqf.cql.ls.server.command.CqlEvaluator
 import org.opencds.cqf.cql.ls.server.command.DetailedExpressionResult
@@ -643,7 +644,11 @@ open class CqlDebugServer(
                 listOf(
                     LibraryRequest(
                         libraryName = args.libraryName,
-                        libraryUri = args.libraryUri,
+                        // libraryUri must be the CQL *directory* (CqlEvaluator contract); the DAP
+                        // launch config gives us the .cql file, so strip to its parent — mirrors
+                        // CqlCompilationManager.createLibraryManager and the Execute CQL flow.
+                        // Fixes model-info lookups landing at "<file>.cql/<model>-modelinfo.xml".
+                        libraryUri = Uris.getHead(URI.create(args.libraryUri)).toString(),
                         libraryVersion = null,
                         terminologyUri = args.terminologyUri,
                         model = args.testCaseUri?.let { ModelRequest("FHIR", it) },

@@ -207,43 +207,59 @@ class ContentServiceModelInfoProviderTest {
 
     // -----------------------------------------------------------------------
     // recordVersionAndDetectConflict — surfaces an actual model version conflict
-    // (same model at two versions under one root), e.g. content loads
+    // (same model at two versions on one provider instance), e.g. content loads
     // USCore 6.1.0-derived while a C4BB ModelInfo requires USCore 7.0.0.
     // -----------------------------------------------------------------------
 
     @Test
     fun recordVersionAndDetectConflict_detectsTwoVersionsOfSameModel() {
-        ContentServiceModelInfoProvider.clearObservedVersions()
-        val root = "file:///proj/input/cql"
+        val provider = ContentServiceModelInfoProvider(root, nullContentService())
         // First sighting (e.g. requested during edit) — no conflict yet.
         assertNull(
-            ContentServiceModelInfoProvider.recordVersionAndDetectConflict(
-                root, "ConflictUSCore", "6.1.0-derived", "requested",
-            ),
+            provider.recordVersionAndDetectConflict("ConflictUSCore", "6.1.0-derived", "requested"),
         )
         // Second, different version (e.g. required by C4BB) — conflict.
         val conflict =
-            ContentServiceModelInfoProvider.recordVersionAndDetectConflict(
-                root, "ConflictUSCore", "7.0.0", "required by C4BB",
-            )
+            provider.recordVersionAndDetectConflict("ConflictUSCore", "7.0.0", "required by C4BB")
         assertNotNull(conflict)
         assertTrue(conflict!!.contains("6.1.0-derived (requested)"), conflict)
         assertTrue(conflict.contains("7.0.0 (required by C4BB)"), conflict)
+        // A genuinely different version is NOT reported as a case-only difference.
+        assertTrue(!conflict.contains("differ only by case"), conflict)
+    }
+
+    // A case-only mismatch (6.1.0-Derived vs 6.1.0-derived) is the exact bug that made C4BB fail
+    // to load: the engine compares model versions case-sensitively. The message should call it out.
+    @Test
+    fun recordVersionAndDetectConflict_flagsCaseOnlyDifferenceExplicitly() {
+        val provider = ContentServiceModelInfoProvider(root, nullContentService())
+        assertNull(
+            provider.recordVersionAndDetectConflict("USCore", "6.1.0-derived", "requested"),
+        )
+        val conflict =
+            provider.recordVersionAndDetectConflict("USCore", "6.1.0-Derived", "required by C4BB")
+        assertNotNull(conflict)
+        assertTrue(conflict!!.contains("differ only by case"), conflict)
+        assertTrue(conflict.contains("6.1.0-derived (requested)"), conflict)
+        assertTrue(conflict.contains("6.1.0-Derived (required by C4BB)"), conflict)
     }
 
     @Test
     fun recordVersionAndDetectConflict_noConflictForSameVersionOrNull() {
-        ContentServiceModelInfoProvider.clearObservedVersions()
-        val root = "file:///proj/input/cql"
-        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict(root, "SameVer", "1.0.0", "requested"))
-        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict(root, "SameVer", "1.0.0", "required by X"))
-        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict(root, "NullVer", null, "requested"))
+        val provider = ContentServiceModelInfoProvider(root, nullContentService())
+        assertNull(provider.recordVersionAndDetectConflict("SameVer", "1.0.0", "requested"))
+        assertNull(provider.recordVersionAndDetectConflict("SameVer", "1.0.0", "required by X"))
+        assertNull(provider.recordVersionAndDetectConflict("NullVer", null, "requested"))
     }
 
+    // Version tracking is instance state: a fresh provider (one per compilation) starts empty and
+    // never inherits versions observed by a previous instance/run.
     @Test
-    fun recordVersionAndDetectConflict_differentRootsDoNotConflict() {
-        ContentServiceModelInfoProvider.clearObservedVersions()
-        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict("file:///a/input/cql", "M", "1.0.0", "requested"))
-        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict("file:///b/input/cql", "M", "2.0.0", "requested"))
+    fun recordVersionAndDetectConflict_separateInstancesDoNotShareState() {
+        val a = ContentServiceModelInfoProvider(root, nullContentService())
+        val b = ContentServiceModelInfoProvider(root, nullContentService())
+        assertNull(a.recordVersionAndDetectConflict("M", "1.0.0", "requested"))
+        // b never saw 1.0.0, so recording a different version on b is not a conflict.
+        assertNull(b.recordVersionAndDetectConflict("M", "2.0.0", "requested"))
     }
 }
