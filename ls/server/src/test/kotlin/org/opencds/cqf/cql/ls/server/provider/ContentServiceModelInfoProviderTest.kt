@@ -100,7 +100,7 @@ class ContentServiceModelInfoProviderTest {
         assertNotNull(capturedUri)
         assertTrue(
             capturedUri!!.toString().contains("MyLibrary.cql/c4bb-modelinfo-2.1.1.xml"),
-            "File URI root causes the .cql file to be treated as a directory: ${capturedUri}",
+            "File URI root causes the .cql file to be treated as a directory: $capturedUri",
         )
     }
 
@@ -134,7 +134,7 @@ class ContentServiceModelInfoProviderTest {
         assertNotNull(capturedUri)
         assertTrue(
             capturedUri!!.toString().endsWith("c4bb-modelinfo-2.1.1.xml"),
-            "Directory URI root produces correct flat path: ${capturedUri}",
+            "Directory URI root produces correct flat path: $capturedUri",
         )
     }
 
@@ -162,9 +162,11 @@ class ContentServiceModelInfoProviderTest {
                 override fun read(uri: URI): InputStream? {
                     // Only serve from the exact correct path — file-root constructs
                     // "MyLibrary.cql/c4bb-modelinfo-2.1.1.xml" which won't match
-                    return if (uri == correctModelinfoUri)
+                    return if (uri == correctModelinfoUri) {
                         validModelinfo.byteInputStream()
-                    else null
+                    } else {
+                        null
+                    }
                 }
             }
 
