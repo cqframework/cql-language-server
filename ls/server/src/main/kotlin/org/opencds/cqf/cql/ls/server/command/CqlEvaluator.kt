@@ -415,8 +415,12 @@ object CqlEvaluator {
                 // (local → npm → bundled FHIRHelpers) is guaranteed even if that ever changes.
                 evaluationSettings.librarySourceProviders.clear()
                 if (libraryUri != null) {
+                    // The client sends libraryUri as the CQL *directory* (input/cql), not a file, so
+                    // it is used directly as the provider root. Do NOT apply Uris.getHead here: that
+                    // would strip a segment (input/cql → input) and mis-root resolution. This matches
+                    // CqlCompilationManager, which passes the already-derived directory as the root.
                     evaluationSettings.librarySourceProviders.add(
-                        FederatedLibrarySourceProvider(Uris.getHead(libraryUri), contentService, npmProcessor),
+                        FederatedLibrarySourceProvider(libraryUri, contentService, npmProcessor),
                     )
                 } else if (libraryKotlinPath != null) {
                     evaluationSettings.librarySourceProviders.add(
@@ -451,8 +455,13 @@ object CqlEvaluator {
 
                 // Model info providers have no ordering concern; register after engine creation.
                 if (libraryUri != null) {
+                    // libraryUri is the CQL directory (input/cql); pass it directly. Applying
+                    // Uris.getHead here was the cause of ModelInfo lookups landing in input/ instead
+                    // of input/cql/ during execution (they succeed at edit time because
+                    // CqlCompilationManager already roots the provider at input/cql).
+                    log.info("Registered ContentServiceModelInfoProvider (execute) root={}", libraryUri)
                     engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
-                        ContentServiceModelInfoProvider(Uris.getHead(libraryUri), contentService),
+                        ContentServiceModelInfoProvider(libraryUri, contentService),
                     )
                 } else if (libraryKotlinPath != null) {
                     engine.environment.libraryManager!!.modelManager.modelInfoLoader.registerModelInfoProvider(
@@ -532,16 +541,63 @@ object CqlEvaluator {
                 libraryResults.add(LibraryResult(libraryRequest.libraryName, expressions, defaultParams))
             } catch (e: Exception) {
                 log.error("Error evaluating library ${libraryRequest.libraryName} for context ${libraryRequest.context?.contextValue}", e)
+                // Surface the nested cause chain on one output-channel-visible line, in addition
+                // to the stack trace above. NOTE: for engine compile failures the deepest reachable
+                // cause is the flattened CqlException message — the engine does not chain
+                // CqlCompilerException causes (LoadAndValidateLibrariesResult.wrapExceptions joins
+                // only messages). The requiredModelInfo logging in ContentServiceModelInfoProvider
+                // is what exposes model version-conflict failures.
+                val causeChain = describeCauseChain(e)
+                log.error("  cause chain: {}", causeChain)
+                val topMessage = e.message ?: e.javaClass.simpleName
+                val rootMessage = deepestCause(e).message
+                val errorText =
+                    if (rootMessage != null && rootMessage != topMessage) {
+                        "$topMessage (cause: $rootMessage)"
+                    } else {
+                        topMessage
+                    }
                 libraryResults.add(
                     LibraryResult(
                         libraryRequest.libraryName,
-                        listOf(ExpressionResult("Error", e.message ?: e.javaClass.simpleName)),
+                        listOf(ExpressionResult("Error", errorText)),
                     ),
                 )
             }
         }
 
         return libraryResults to detailedResults
+    }
+
+    /** Returns the deepest (root) cause of [t], following the `cause` chain (cycle-safe). */
+    internal fun deepestCause(t: Throwable): Throwable {
+        val seen = HashSet<Throwable>()
+        var current = t
+        while (true) {
+            val next = current.cause ?: return current
+            if (!seen.add(current) || next === current) return current
+            current = next
+        }
+    }
+
+    /**
+     * Renders [t]'s cause chain as `SimpleName: message` per level (deepest last), skipping
+     * consecutive levels whose message is identical to the previous one. Cycle-safe.
+     */
+    internal fun describeCauseChain(t: Throwable): String {
+        val parts = mutableListOf<String>()
+        val seen = HashSet<Throwable>()
+        var current: Throwable? = t
+        var lastMessage: String? = null
+        while (current != null && seen.add(current)) {
+            val message = current.message
+            if (message != lastMessage) {
+                parts.add("${current.javaClass.simpleName}: ${message ?: "(no message)"}")
+                lastMessage = message
+            }
+            current = current.cause
+        }
+        return parts.joinToString(" -> ")
     }
 
     internal fun collectDefineOrder(

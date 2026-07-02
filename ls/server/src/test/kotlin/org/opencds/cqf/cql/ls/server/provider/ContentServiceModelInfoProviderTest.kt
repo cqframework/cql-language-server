@@ -2,6 +2,8 @@ package org.opencds.cqf.cql.ls.server.provider
 
 import org.hl7.cql.model.ModelIdentifier
 import org.hl7.elm.r1.VersionedIdentifier
+import org.hl7.elm_modelinfo.r1.serializing.parseModelInfoXml
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -173,5 +175,75 @@ class ContentServiceModelInfoProviderTest {
         // File root fails — wrong path (file treated as directory)
         val fileProvider = ContentServiceModelInfoProvider(libraryFile, servingService)
         assertNull(fileProvider.load(ModelIdentifier(id = "C4BB", version = "2.1.1")))
+    }
+
+    // -----------------------------------------------------------------------
+    // formatRequiredModels — surfaces a model's declared dependencies so that
+    // version conflicts (e.g. C4BB requires USCore 7.0.0 while content loads
+    // USCore 6.1.0-derived) are visible in the logs.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun formatRequiredModels_rendersNameAndVersionForEachDependency() {
+        val modelInfo =
+            parseModelInfoXml(
+                """<?xml version="1.0" encoding="UTF-8"?><modelInfo xmlns="urn:hl7-org:elm-modelinfo:r1" name="C4BB" version="2.1.1"><requiredModelInfo name="System" version="1.0.0"/><requiredModelInfo name="FHIR" version="4.0.1"/><requiredModelInfo name="USCore" version="7.0.0"/></modelInfo>""",
+            )
+
+        val formatted = ContentServiceModelInfoProvider.formatRequiredModels(modelInfo)
+
+        assertEquals("[System 1.0.0, FHIR 4.0.1, USCore 7.0.0]", formatted)
+    }
+
+    @Test
+    fun formatRequiredModels_rendersEmptyBracketsWhenNoDependencies() {
+        val modelInfo =
+            parseModelInfoXml(
+                """<?xml version="1.0" encoding="UTF-8"?><modelInfo xmlns="urn:hl7-org:elm-modelinfo:r1" name="Solo" version="1.0.0"/>""",
+            )
+
+        assertEquals("[]", ContentServiceModelInfoProvider.formatRequiredModels(modelInfo))
+    }
+
+    // -----------------------------------------------------------------------
+    // recordVersionAndDetectConflict — surfaces an actual model version conflict
+    // (same model at two versions under one root), e.g. content loads
+    // USCore 6.1.0-derived while a C4BB ModelInfo requires USCore 7.0.0.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun recordVersionAndDetectConflict_detectsTwoVersionsOfSameModel() {
+        ContentServiceModelInfoProvider.clearObservedVersions()
+        val root = "file:///proj/input/cql"
+        // First sighting (e.g. requested during edit) — no conflict yet.
+        assertNull(
+            ContentServiceModelInfoProvider.recordVersionAndDetectConflict(
+                root, "ConflictUSCore", "6.1.0-derived", "requested",
+            ),
+        )
+        // Second, different version (e.g. required by C4BB) — conflict.
+        val conflict =
+            ContentServiceModelInfoProvider.recordVersionAndDetectConflict(
+                root, "ConflictUSCore", "7.0.0", "required by C4BB",
+            )
+        assertNotNull(conflict)
+        assertTrue(conflict!!.contains("6.1.0-derived (requested)"), conflict)
+        assertTrue(conflict.contains("7.0.0 (required by C4BB)"), conflict)
+    }
+
+    @Test
+    fun recordVersionAndDetectConflict_noConflictForSameVersionOrNull() {
+        ContentServiceModelInfoProvider.clearObservedVersions()
+        val root = "file:///proj/input/cql"
+        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict(root, "SameVer", "1.0.0", "requested"))
+        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict(root, "SameVer", "1.0.0", "required by X"))
+        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict(root, "NullVer", null, "requested"))
+    }
+
+    @Test
+    fun recordVersionAndDetectConflict_differentRootsDoNotConflict() {
+        ContentServiceModelInfoProvider.clearObservedVersions()
+        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict("file:///a/input/cql", "M", "1.0.0", "requested"))
+        assertNull(ContentServiceModelInfoProvider.recordVersionAndDetectConflict("file:///b/input/cql", "M", "2.0.0", "requested"))
     }
 }

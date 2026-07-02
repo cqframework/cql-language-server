@@ -25,13 +25,16 @@ import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 import org.opencds.cqf.fhir.cql.CqlOptions
 import org.opencds.cqf.fhir.cql.EvaluationSettings
 import org.opencds.cqf.fhir.utility.repository.ProxyRepository
+import java.io.InputStream
 import java.math.BigDecimal
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -992,6 +995,114 @@ class CqlEvaluatorTest {
     }
 
     private fun createNoOpRepo(): IRepository = NoOpRepository(r4Context)
+
+    // -------------------------------------------------------------------------
+    // ModelInfo resolution root
+    // Regression: the client sends libraryUri as the CQL *directory* (e.g. .../input/cql),
+    // so the ContentServiceModelInfoProvider must be rooted there and read
+    // .../input/cql/{model}-modelinfo-{version}.xml. A prior bug applied Uris.getHead(libraryUri),
+    // stripping a segment and reading from .../input/{model}-modelinfo-{version}.xml — which
+    // failed during execution (but not during editing, where the provider is already rooted at
+    // input/cql). See CqlEvaluator.evaluateBatch.
+    // -------------------------------------------------------------------------
+
+    private class RecordingContentService : ContentService {
+        val reads = mutableListOf<URI>()
+        private val delegate = TestContentService()
+
+        override fun locate(
+            root: URI,
+            libraryIdentifier: VersionedIdentifier,
+        ): Set<URI> = delegate.locate(root, libraryIdentifier)
+
+        override fun read(uri: URI): InputStream? {
+            reads.add(uri)
+            return delegate.read(uri)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Cause-chain surfacing (describeCauseChain / deepestCause)
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `deepestCause returns the root cause`() {
+        val root = IllegalStateException("root")
+        val mid = IllegalArgumentException("mid", root)
+        val top = RuntimeException("top", mid)
+        assertEquals("root", CqlEvaluator.deepestCause(top).message)
+    }
+
+    @Test
+    fun `deepestCause returns self when there is no cause`() {
+        val e = RuntimeException("only")
+        assertSame(e, CqlEvaluator.deepestCause(e))
+    }
+
+    @Test
+    fun `describeCauseChain includes each distinct level deepest last`() {
+        val root = IllegalStateException("version 7.0.0 conflicts with 6.1.0-derived")
+        val top = RuntimeException("Could not load model information for model C4BB", root)
+        val chain = CqlEvaluator.describeCauseChain(top)
+        assertTrue(chain.contains("Could not load model information for model C4BB"), chain)
+        assertTrue(chain.contains("version 7.0.0 conflicts with 6.1.0-derived"), chain)
+        // deepest cause rendered after the top-level message
+        assertTrue(
+            chain.indexOf("Could not load model information") < chain.indexOf("conflicts with"),
+            chain,
+        )
+    }
+
+    @Test
+    fun `describeCauseChain collapses consecutive identical messages`() {
+        val root = IllegalStateException("same")
+        val top = RuntimeException("same", root)
+        // Both levels share the message "same"; it should appear once.
+        assertEquals(1, CqlEvaluator.describeCauseChain(top).split(" -> ").size)
+    }
+
+    @Test
+    fun `evaluate resolves model info relative to the libraryUri directory not its parent`() {
+        val recording = RecordingContentService()
+        val libDir = "file:///project/input/cql"
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "UsesCustomModel",
+                            libraryUri = libDir,
+                            libraryVersion = "1",
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+
+        // Evaluation is expected to fail to resolve the Custom model (no real model info on the
+        // classpath); we only assert WHERE the provider looked for it.
+        CqlEvaluator.evaluate(request, recording, igContextManager, libraryResolutionManager)
+
+        val modelInfoReads = recording.reads.filter { it.toString().contains("custom-modelinfo") }
+        assertTrue(
+            modelInfoReads.isNotEmpty(),
+            "Expected a model info read attempt for the Custom model, got reads: ${recording.reads}",
+        )
+        assertTrue(
+            modelInfoReads.any { it.toString() == "$libDir/custom-modelinfo-1.0.0.xml" },
+            "ModelInfo must be read from the libraryUri directory. Attempts: $modelInfoReads",
+        )
+        // The parent-directory path is the regression signature — it must never be attempted.
+        assertFalse(
+            modelInfoReads.any { it.toString() == "file:///project/input/custom-modelinfo-1.0.0.xml" },
+            "ModelInfo must not be read from the parent of libraryUri. Attempts: $modelInfoReads",
+        )
+    }
 
     // -------------------------------------------------------------------------
     // evaluateDetailed
