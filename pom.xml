@@ -5,7 +5,7 @@
     <groupId>org.opencds.cqf.cql.ls</groupId>
     <artifactId>cql-ls</artifactId>
     <packaging>pom</packaging>
-    <version>4.10.0</version>
+    <version>4.11.0-SNAPSHOT</version>
 
     <name>CQL Language Server</name>
     <description>A Language Server for CQL implementing the LSP</description>
@@ -530,7 +530,9 @@
                     <publishingServerId>central</publishingServerId>
                     <deploymentName>cql-language-server</deploymentName>
                     <autoPublish>true</autoPublish>
-                    <waitUntil>published</waitUntil>
+                    <waitUntil>validated</waitUntil>
+                    <!-- This sets the label in the Maven Central Portal -->
+                    <deploymentName>${project.artifactId} - v${project.version}</deploymentName>
                 </configuration>
             </plugin>
         </plugins>
