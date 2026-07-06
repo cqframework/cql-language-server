@@ -2,11 +2,20 @@
 
 
 
+
+## v4.10.0
+
+Date: 2026-07-02
+
+* bump version to 4.10.0
+* fix model info file resolution
+
+
 ## v4.9.0
 
 Date: 2026-06-25
 
-* bump version to cql-language-server to 4.9.0 
+* bump version to cql-language-server to 4.9.0
 * change clinical-reasoning to version 4.8.0
 * fix issue with library names with hyphens
 

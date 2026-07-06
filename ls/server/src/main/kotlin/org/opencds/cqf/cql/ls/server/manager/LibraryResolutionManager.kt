@@ -109,11 +109,13 @@ open class LibraryResolutionManager(
 
     /**
      * Reads the package ID and canonical base URL from an ig.ini file.
-     * Returns null when either field is absent; throws on I/O or parse failure
+     * Returns null when either field is absent, or when the ini file is missing
+     * the [IG] section. May still throw on I/O or deeper parse failure
      * (caller catches and skips the folder).
      * Declared protected open for test overriding — see [IgContextManager.findIgContext].
      */
     protected open fun readIgContextInfo(igIniFile: File): Pair<String, String>? {
+        if (!igIniFile.useLines { lines -> lines.any { it.trim().equals("[IG]") } }) return null
         val igContext = IGContext(LoggerAdapter(log))
         igContext.initializeFromIni(igIniFile.path)
         val packageId = igContext.packageId ?: return null
