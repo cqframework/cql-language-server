@@ -17,6 +17,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.opencds.cqf.cql.ls.core.ContentService
+import java.io.InputStream
 import java.net.URI
 import java.nio.file.Paths
 
@@ -254,6 +255,96 @@ class BreakpointManagerTest {
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, librarySourceMap)
 
             assertEquals(setOf("Primary", "ExistingLib"), result)
+        }
+
+        // ── URL-based ELM path normalization (namespace-qualified includes) ──
+        //
+        // Use hand-written ContentService stubs for these tests to avoid Mockito
+        // null-pointer issues with Kotlin non-null parameters in locate().
+
+        private fun makeCompilerWithInclude(
+            path: String,
+            version: String?,
+        ): org.cqframework.cql.cql2elm.CqlCompiler {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+            val library = mock(org.hl7.elm.r1.Library::class.java)
+            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
+            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
+            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
+            `when`(compiledLib.library).thenReturn(library)
+            `when`(library.includes).thenReturn(includes)
+            `when`(includes.def).thenReturn(mutableListOf(includeDef))
+            `when`(includeDef.path).thenReturn(path)
+            `when`(includeDef.version).thenReturn(version)
+            return compiler
+        }
+
+        @Test
+        fun `url-based ELM path is normalized to local name in result`() {
+            val stub = object : ContentService {
+                override fun locate(root: URI, identifier: org.hl7.elm.r1.VersionedIdentifier) = emptySet<URI>()
+                override fun read(uri: URI): InputStream? = null
+            }
+            val m = BreakpointManager(stub)
+            val compiler = makeCompilerWithInclude("http://smiledigitalhealth.com/PolicyStatusCommon", "0.0.1")
+
+            val result = m.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+
+            assertTrue("PolicyStatusCommon" in result, "Expected local name in result, got: $result")
+            assertFalse(result.any { it.startsWith("http://") }, "URL path must not appear in result: $result")
+        }
+
+        @Test
+        fun `url-based ELM path sets system and id correctly on locate identifier`() {
+            val capturedId = mutableListOf<org.hl7.elm.r1.VersionedIdentifier>()
+            val stub = object : ContentService {
+                override fun locate(root: URI, identifier: org.hl7.elm.r1.VersionedIdentifier): Set<URI> {
+                    capturedId.add(identifier)
+                    return emptySet()
+                }
+                override fun read(uri: URI): InputStream? = null
+            }
+            val m = BreakpointManager(stub)
+            val compiler = makeCompilerWithInclude("http://smiledigitalhealth.com/PolicyStatusCommon", "0.0.1")
+
+            m.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+
+            assertEquals(1, capturedId.size)
+            assertEquals("PolicyStatusCommon", capturedId[0].id)
+            assertEquals("http://smiledigitalhealth.com", capturedId[0].system)
+            assertEquals("0.0.1", capturedId[0].version)
+        }
+
+        @Test
+        fun `url-based ELM path stores resolved uri under local name in librarySourceMap`() {
+            val resolvedUri = Paths.get("/cql/PolicyStatusCommon.cql").toUri()
+            val stub = object : ContentService {
+                override fun locate(root: URI, identifier: org.hl7.elm.r1.VersionedIdentifier) = setOf(resolvedUri)
+                override fun read(uri: URI): InputStream? = null
+            }
+            val m = BreakpointManager(stub)
+            val compiler = makeCompilerWithInclude("http://smiledigitalhealth.com/PolicyStatusCommon", "0.0.1")
+
+            val sourceMap = mutableMapOf<String, URI>()
+            m.collectTransitiveIncludes("Primary", compiler, null, sourceMap)
+
+            assertEquals(resolvedUri, sourceMap["PolicyStatusCommon"])
+            assertNull(sourceMap["http://smiledigitalhealth.com/PolicyStatusCommon"])
+        }
+
+        @Test
+        fun `plain local-name ELM path is unchanged`() {
+            val stub = object : ContentService {
+                override fun locate(root: URI, identifier: org.hl7.elm.r1.VersionedIdentifier) = emptySet<URI>()
+                override fun read(uri: URI): InputStream? = null
+            }
+            val m = BreakpointManager(stub)
+            val compiler = makeCompilerWithInclude("FHIRHelpers", "4.0.1")
+
+            val result = m.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
+
+            assertTrue("FHIRHelpers" in result)
         }
     }
 

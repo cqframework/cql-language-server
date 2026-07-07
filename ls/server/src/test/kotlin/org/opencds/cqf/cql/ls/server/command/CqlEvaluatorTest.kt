@@ -1291,4 +1291,30 @@ class CqlEvaluatorTest {
         assertDoesNotThrow { future.get() }
         assertTrue(future.isDone)
     }
+
+    // -------------------------------------------------------------------------
+    // buildCqlOptions — missing-file guard
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `buildCqlOptions with null optionsPath returns defaults without throwing`() {
+        assertDoesNotThrow { buildCqlOptions(null) }
+    }
+
+    @Test
+    fun `buildCqlOptions with non-existent file returns defaults without throwing`(@TempDir tempDir: Path) {
+        val missingFile = tempDir.resolve("cql-options.json")
+        // File intentionally NOT created
+        assertDoesNotThrow { buildCqlOptions(missingFile.toUri().toString()) }
+    }
+
+    @Test
+    fun `buildCqlOptions with existing file applies options without throwing`(@TempDir tempDir: Path) {
+        val optionsFile = tempDir.resolve("cql-options.json")
+        Files.writeString(
+            optionsFile,
+            """{"enableAnnotations":false,"enableLocators":false,"enableResultTypes":false,"enableDetailedErrors":false,"disableListDemotion":false,"disableListPromotion":false,"disableMethodInvocation":false,"requireFromKeyword":false,"signatureLevel":"None","compatibilityLevel":"1.5"}""",
+        )
+        assertDoesNotThrow { buildCqlOptions(optionsFile.toUri().toString()) }
+    }
 }

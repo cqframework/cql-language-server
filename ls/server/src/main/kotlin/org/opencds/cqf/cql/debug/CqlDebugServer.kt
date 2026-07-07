@@ -18,6 +18,7 @@ import org.eclipse.lsp4j.debug.EvaluateResponse
 import org.eclipse.lsp4j.debug.ExitedEventArguments
 import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.NextArguments
+import org.eclipse.lsp4j.debug.OutputEventArguments
 import org.eclipse.lsp4j.debug.Scope
 import org.eclipse.lsp4j.debug.ScopesArguments
 import org.eclipse.lsp4j.debug.ScopesResponse
@@ -580,6 +581,21 @@ open class CqlDebugServer(
 
         val request = buildExecuteCqlRequest(args)
 
+        // Pre-flight: warn if cql-options.json was specified but does not exist.
+        // The evaluator falls back to defaults when the file is missing, so this is
+        // non-fatal — but the user should know their options file wasn't applied.
+        val optionsPathStr = args.optionsPath
+        if (optionsPathStr != null) {
+            val optionsFile =
+                Uris.parseOrNull(optionsPathStr)?.let {
+                    runCatching { Paths.get(it).toFile() }.getOrNull()
+                }
+            if (optionsFile == null || !optionsFile.exists()) {
+                log.warn("cql-options.json not found at {}; using default compiler options", optionsPathStr)
+                notifyOutput("Warning: cql-options.json not found — using default compiler options.\n")
+            }
+        }
+
         streamingExecutor = Executors.newSingleThreadExecutor()
 
         streamingCompletion =
@@ -594,7 +610,12 @@ open class CqlDebugServer(
 
         streamingCompletion!!.whenComplete { _, error ->
             if (error != null) {
-                log.debug("streamingCompletion: error/cancellation branch [thread={}]", java.lang.Thread.currentThread().name)
+                log.error(
+                    "CQL debug session failed [thread={}]",
+                    java.lang.Thread.currentThread().name,
+                    error,
+                )
+                notifyOutput("Error: CQL debug session failed: ${error.message ?: "unknown error"}\n")
                 terminateServer()
                 exitServer(1)
             } else {
@@ -619,6 +640,20 @@ open class CqlDebugServer(
         } catch (e: Exception) {
             log.debug("loadStepLinesForLibrary: failed for $libId", e)
         }
+    }
+
+    private fun notifyOutput(
+        message: String,
+        category: String = "important",
+    ) {
+        try {
+            client.join().output(
+                OutputEventArguments().also {
+                    it.category = category
+                    it.output = message
+                },
+            )
+        } catch (_: Exception) {}
     }
 
     private fun loadVariableTypesForLibrary(libId: String) {

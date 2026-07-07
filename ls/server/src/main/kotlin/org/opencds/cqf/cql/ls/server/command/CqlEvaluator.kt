@@ -350,9 +350,13 @@ object CqlEvaluator {
     private fun buildCqlOptions(optionsPath: String?): CqlOptions {
         val cqlOptions = CqlOptions.defaultOptions()
         if (optionsPath != null) {
-            val op = Path(Paths.get(Uris.parseOrNull(optionsPath)!!).toString())
-            val translatorOptions = CqlTranslatorOptions.fromFile(op)
-            cqlOptions.setCqlCompilerOptions(translatorOptions.cqlCompilerOptions)
+            val path = Paths.get(Uris.parseOrNull(optionsPath)!!)
+            if (path.toFile().exists()) {
+                val translatorOptions = CqlTranslatorOptions.fromFile(Path(path.toString()))
+                cqlOptions.setCqlCompilerOptions(translatorOptions.cqlCompilerOptions)
+            } else {
+                log.warn("cql-options.json not found at {}; using default compiler options", optionsPath)
+            }
         }
         return cqlOptions
     }
