@@ -456,13 +456,32 @@ open class CqlDebugServer(
                     val identifier =
                         allDefs.firstOrNull { it.path == libId || it.localIdentifier == libId }
                             ?.let { def ->
+                                // ELM stores namespace-qualified includes as a canonical URL path
+                                // (e.g. "http://smiledigitalhealth.com/PolicyStatusCommon").
+                                // Split into system + local name so locate() uses the namespace
+                                // fast-path; fall back to the plain path for local libraries.
+                                val defPath = def.path ?: return@let null
+                                val (system, localId) =
+                                    if (defPath.startsWith("http://") || defPath.startsWith("https://")) {
+                                        val slash = defPath.lastIndexOf('/')
+                                        if (slash > 0) defPath.substring(0, slash) to defPath.substring(slash + 1)
+                                        else null to defPath
+                                    } else {
+                                        null to defPath
+                                    }
                                 VersionedIdentifier().also { vi ->
-                                    vi.id = def.path
+                                    vi.id = localId
+                                    vi.system = system
                                     vi.version = def.version
                                 }
                             } ?: libraryIdentifier
                     if (identifier != null) {
-                        val uris = contentService.locate(URI.create(streamingLaunchUri!!), identifier)
+                        // resolve(".") strips the filename to give the input/cql/ directory so
+                        // that unqualified BFS search finds sibling libraries.
+                        val locateRoot =
+                            runCatching { URI.create(streamingLaunchUri!!).resolve(".") }
+                                .getOrElse { URI.create(streamingLaunchUri!!) }
+                        val uris = contentService.locate(locateRoot, identifier)
                         val uri = uris.firstOrNull()
                         if (uri != null) {
                             librarySourceMap[libId] = uri

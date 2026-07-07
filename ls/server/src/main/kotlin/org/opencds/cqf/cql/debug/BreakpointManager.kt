@@ -96,7 +96,12 @@ class BreakpointManager(
                             vi.system = libSystem
                             vi.version = includeDef.version
                         }
-                    val uris = contentService.locate(URI.create(streamingLaunchUri ?: ""), identifier)
+                    // resolve(".") strips the filename to give the input/cql/ directory;
+                    // locate() needs a directory root so BFS can scan for sibling libraries.
+                    val locateRoot =
+                        runCatching { URI.create(streamingLaunchUri ?: "").resolve(".") }
+                            .getOrElse { URI.create("") }
+                    val uris = contentService.locate(locateRoot, identifier)
                     val resolvedUri = uris.firstOrNull()
                     if (resolvedUri != null) {
                         librarySourceMap[libraryId] = resolvedUri
