@@ -97,7 +97,7 @@ open class LibraryResolutionManager(
         namespaceIndex = null
     }
 
-    @Subscribe(threadMode = ThreadMode.ASYNC)
+    @Subscribe
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
         for (e in event.params().changes) {
             val uri = e.uri

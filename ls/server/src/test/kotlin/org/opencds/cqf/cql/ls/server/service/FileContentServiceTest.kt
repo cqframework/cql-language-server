@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.ls.server.service
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -522,6 +523,78 @@ class FileContentServiceTest {
 
         assertTrue(result.isNotEmpty(), "FHIRHelpers must be found even when drive-letter case differs")
         assertEquals(helperFile.toURI(), result.first())
+    }
+
+    // ── Tier 4 — bundled classpath resources (lowest priority) ───────────────
+
+    @Test
+    fun locate_bundledTier_usedOnlyWhenTiers1Through3Miss() {
+        val bundled = File(tempDir, "Bundled-1.0.0.cql").also { it.createNewFile() }
+        val svc =
+            FileContentService(
+                listOf(folder(tempDir)),
+                noOpConfigProvider,
+                manager(tempDir),
+                bundledLibraryLookup = { i -> if (i.id == "Bundled" && i.version == "1.0.0") bundled else null },
+            )
+
+        val result = svc.locate(tempDir.toURI(), id("Bundled", "1.0.0"))
+
+        assertEquals(setOf(bundled.toURI()), result)
+    }
+
+    @Test
+    fun locate_workspaceFile_winsOverBundledTier_whenBothExist() {
+        val local = File(tempDir, "Shared-1.0.0.cql").also { it.createNewFile() }
+        val bundledOnly = File(tempDir, "bundled-cache/Shared-1.0.0.cql").also { it.parentFile.mkdirs(); it.createNewFile() }
+        val svc =
+            FileContentService(
+                listOf(folder(tempDir)),
+                noOpConfigProvider,
+                manager(tempDir),
+                bundledLibraryLookup = { i -> if (i.id == "Shared" && i.version == "1.0.0") bundledOnly else null },
+            )
+
+        val result = svc.locate(tempDir.toURI(), id("Shared", "1.0.0"))
+
+        assertEquals(setOf(local.toURI()), result, "A local workspace file must win over the bundled fallback")
+    }
+
+    @Test
+    fun locate_bundledTier_notConsultedWhenNoVersionRequested() {
+        // Bundled resolution mirrors FhirLibrarySourceProvider's exact-version-only behavior —
+        // it's only tried from the version != null (Pass 1) branch.
+        var invoked = false
+        val svc =
+            FileContentService(
+                listOf(folder(tempDir)),
+                noOpConfigProvider,
+                manager(tempDir),
+                bundledLibraryLookup = { invoked = true; null },
+            )
+
+        svc.locate(tempDir.toURI(), id("NoVersionRequested"))
+
+        assertFalse(invoked, "Bundled lookup should not run for unversioned requests")
+    }
+
+    @Test
+    fun locate_bundledTier_realFHIRHelpers_materializedIntoTempCache() {
+        // End-to-end integration against the real BundledLibraryCache, pointed at a temp dir
+        // instead of the real user.home cache, proving the actual classpath resource wiring works.
+        val bundledCacheDir = File(tempDir, "bundled-cache")
+        val svc =
+            FileContentService(
+                listOf(folder(tempDir)),
+                noOpConfigProvider,
+                manager(tempDir),
+                bundledLibraryLookup = { i -> BundledLibraryCache.resolve(i, bundledCacheDir) },
+            )
+
+        val result = svc.locate(tempDir.toURI(), id("FHIRHelpers", "4.0.1"))
+
+        assertEquals(1, result.size)
+        assertTrue(result.first().toString().contains("bundled-cache"))
     }
 
     @Test

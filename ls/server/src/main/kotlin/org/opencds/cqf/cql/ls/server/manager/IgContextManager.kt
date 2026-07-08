@@ -509,7 +509,7 @@ open class IgContextManager(private val contentService: ContentService) {
         return name to version
     }
 
-    @Subscribe(threadMode = ThreadMode.ASYNC)
+    @Subscribe
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
         for (e in event.params().changes) {
             val uriString = e.uri
@@ -520,23 +520,9 @@ open class IgContextManager(private val contentService: ContentService) {
                 uriString.endsWith("/input/ig.json") ||
                     (uriString.substringAfterLast('/').startsWith("ImplementationGuide-") &&
                         uriString.endsWith(".json")) -> {
-                    Uris.parseOrNull(uriString)?.let { resourceUri ->
-                        val root = findIgIniRoot(resourceUri)
-                        if (root != null) clearContext(root)
-                    }
+                    clearAllContexts()
                 }
             }
-        }
-    }
-
-    private fun findIgIniRoot(uri: URI): URI? {
-        var current = uri
-        while (true) {
-            val parent = Uris.getHead(current)
-            if (parent == current) return null
-            current = parent
-            val iniPath = Paths.get(parent).resolve("ig.ini")
-            if (iniPath.toFile().exists()) return parent
         }
     }
 }

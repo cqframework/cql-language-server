@@ -23,6 +23,7 @@ class FileContentService(
     protected val workspaceFolders: List<WorkspaceFolder>,
     private val configProvider: LibraryResolutionConfigProvider,
     private val namespaceManager: LibraryResolutionManager,
+    private val bundledLibraryLookup: (VersionedIdentifier) -> File? = { BundledLibraryCache.resolve(it) },
 ) : ContentService {
     companion object {
         private val log = LoggerFactory.getLogger(FileContentService::class.java)
@@ -201,6 +202,10 @@ class FileContentService(
                         ?.let { return setOf(it.toURI()) }
                 }
             }
+            // Tier 4 — lowest priority: bundled classpath resources (e.g. FHIRHelpers), only
+            // materialized to disk on this miss. Exact-version match only, mirroring
+            // FhirLibrarySourceProvider's own resolution (no compatible/patch-flexible fallback).
+            bundledLibraryLookup(identifier)?.let { return setOf(it.toURI()) }
         }
 
         // Pass 2: compatible / any-version match
