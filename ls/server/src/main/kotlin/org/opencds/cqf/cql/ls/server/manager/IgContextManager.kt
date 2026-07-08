@@ -81,6 +81,7 @@ open class IgContextManager(private val contentService: ContentService) {
     }
 
     fun clearAllContexts() {
+        log.debug("Clearing all IG contexts, dev package cache, and dev project dir hints")
         cachedContext.clear()
         cachedIgContext.clear()
         devPackageCache.clear()

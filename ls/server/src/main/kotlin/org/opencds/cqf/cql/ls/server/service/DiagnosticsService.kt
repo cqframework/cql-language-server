@@ -176,9 +176,14 @@ class DiagnosticsService(
     fun didChangeWatchedFiles(e: DidChangeWatchedFilesEvent) {
         val changes = e.params().changes
         if (changes.any { isIgConfigFile(it.uri) }) {
+            val igConfigChanges = changes.filter { isIgConfigFile(it.uri) }.map { it.uri }
+            log.debug("IG config file change detected: {}", igConfigChanges)
+            val uris = cqlCompilationManager.getCompiledUris()
+            log.debug("Snapshotted {} compiled URIs for re-lint: {}", uris.size, uris)
             cqlCompilationManager.invalidateAll()
             debounce(BOUNCE_DELAY) {
-                doLint(cqlCompilationManager.getCompiledUris())
+                log.debug("Debounced re-lint running for {} URIs after IG config change", uris.size)
+                doLint(uris)
             }
             return
         }
@@ -197,8 +202,11 @@ class DiagnosticsService(
     }
 
     fun refreshAll() {
+        log.debug("refreshAll: snapshotted compiled URIs")
+        val uris = cqlCompilationManager.getCompiledUris()
+        log.debug("refreshAll: {} compiled URIs: {}", uris.size, uris)
         cqlCompilationManager.invalidateAll()
-        doLint(cqlCompilationManager.getCompiledUris())
+        doLint(uris)
     }
 
     internal fun debounce(
