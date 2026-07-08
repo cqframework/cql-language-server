@@ -575,6 +575,12 @@ class LibraryResolutionManagerTest {
         assertEquals(1, issues.size)
         assertEquals(listOf("packageId"), issues[0].missingFields)
         assertEquals(File(tempDir, "ig.ini").toURI(), issues[0].igIniUri)
+        assertEquals(
+            File(tempDir, "ImplementationGuide-test.json").toURI(),
+            issues[0].resourceUri,
+            "Diagnostic should target the ImplementationGuide resource, not ig.ini — " +
+                "packageId cannot be set in ig.ini itself",
+        )
     }
 
     @Test
@@ -587,6 +593,7 @@ class LibraryResolutionManagerTest {
         val issues = m.findIgIniIssues()
         assertEquals(1, issues.size)
         assertEquals(listOf("canonicalBase"), issues[0].missingFields)
+        assertEquals(File(tempDir, "ImplementationGuide-test.json").toURI(), issues[0].resourceUri)
     }
 
     @Test

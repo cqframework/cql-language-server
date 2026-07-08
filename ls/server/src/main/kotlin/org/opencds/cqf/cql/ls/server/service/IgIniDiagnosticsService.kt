@@ -29,19 +29,31 @@ class IgIniDiagnosticsService(
 ) {
     companion object {
         private const val SOURCE = "ig.ini"
+
+        /**
+         * Matches the ig.ini/ImplementationGuide-resource watcher globs registered in
+         * [org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService]'s `basicWatchers` — kept in
+         * sync with those patterns so every watched IG file actually triggers a re-scan here.
+         */
+        internal fun isWatchedIgFile(uri: String): Boolean {
+            val fileName = uri.substringAfterLast('/')
+            return uri.endsWith("ig.ini") ||
+                uri.endsWith("/input/ig.json") ||
+                (fileName.startsWith("ImplementationGuide-") && fileName.endsWith(".json"))
+        }
     }
 
-    // ig.ini files currently carrying a published diagnostic — used to clear it once fixed.
+    // Resource files currently carrying a published diagnostic — used to clear it once fixed.
     private val activeIssues = ConcurrentHashMap.newKeySet<URI>()
 
-    // ig.ini files already toasted this session — a warning fires once per file, not on every rescan.
+    // Resource files already toasted this session — a warning fires once per file, not on every rescan.
     private val toastedOnce = ConcurrentHashMap.newKeySet<URI>()
 
     fun validateWorkspace() = validate(libraryResolutionManager.findIgIniIssues())
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
-        if (event.params().changes.any { it.uri.endsWith("ig.ini") }) {
+        if (event.params().changes.any { isWatchedIgFile(it.uri) }) {
             validate(libraryResolutionManager.findIgIniIssues())
         }
     }
@@ -49,13 +61,13 @@ class IgIniDiagnosticsService(
     private fun validate(issues: List<LibraryResolutionManager.IgIniIssue>) {
         for (issue in issues) {
             publishDiagnostic(issue)
-            activeIssues.add(issue.igIniUri)
-            if (toastedOnce.add(issue.igIniUri)) {
+            activeIssues.add(issue.resourceUri)
+            if (toastedOnce.add(issue.resourceUri)) {
                 showToast(issue)
             }
         }
 
-        val fixedUris = activeIssues - issues.map { it.igIniUri }.toSet()
+        val fixedUris = activeIssues - issues.map { it.resourceUri }.toSet()
         for (uri in fixedUris) {
             client.join().publishDiagnostics(PublishDiagnosticsParams(Uris.toClientUri(uri), emptyList()))
             activeIssues.remove(uri)
@@ -66,14 +78,14 @@ class IgIniDiagnosticsService(
         val diagnostic =
             Diagnostic(
                 Range(Position(0, 0), Position(0, 0)),
-                "The ImplementationGuide resource for this project is missing " +
-                    "${issue.missingFields.joinToString(", ")}. Other workspace projects that depend on this " +
-                    "one will not be able to resolve its CQL libraries.",
+                "This ImplementationGuide resource is missing ${issue.missingFields.joinToString(", ")}. " +
+                    "It's the resource referenced by ${issue.igIniUri.path}'s 'ig=' setting — other workspace " +
+                    "projects that depend on this one will not be able to resolve its CQL libraries.",
                 DiagnosticSeverity.Warning,
                 SOURCE,
             )
         client.join().publishDiagnostics(
-            PublishDiagnosticsParams(Uris.toClientUri(issue.igIniUri), listOf(diagnostic)),
+            PublishDiagnosticsParams(Uris.toClientUri(issue.resourceUri), listOf(diagnostic)),
         )
     }
 
@@ -81,9 +93,9 @@ class IgIniDiagnosticsService(
         client.join().showMessage(
             MessageParams(
                 MessageType.Warning,
-                "The ImplementationGuide resource referenced by ${issue.igIniUri.path} is missing " +
-                    "${issue.missingFields.joinToString(", ")} — workspace projects that depend on it will not " +
-                    "be able to resolve its CQL libraries.",
+                "${issue.resourceUri.path} is missing ${issue.missingFields.joinToString(", ")} — it's the " +
+                    "resource referenced by ${issue.igIniUri.path}'s 'ig=' setting, and workspace projects that " +
+                    "depend on it will not be able to resolve its CQL libraries.",
             ),
         )
     }

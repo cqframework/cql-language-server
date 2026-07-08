@@ -9,6 +9,7 @@ import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
 import org.opencds.cqf.cql.ls.server.command.GetVersionInfoCommandContribution
+import org.opencds.cqf.cql.ls.server.command.RefreshIgDiagnosticsCommandContribution
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
@@ -82,17 +83,19 @@ fun main(args: Array<String>) {
             ReferencesProvider(compilationManager, federatedContentService),
         )
 
+    val igIniDiagnosticsService =
+        IgIniDiagnosticsService(languageClientFuture, libraryResolutionManager).also { eventBus.register(it) }
+
     val contributions = mutableListOf<CommandContribution>()
     contributions.add(ViewElmCommandContribution(compilationManager))
     contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
     contributions.add(GetVersionInfoCommandContribution())
+    contributions.add(RefreshIgDiagnosticsCommandContribution(igIniDiagnosticsService))
     contributions.add(
         DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
     )
     commandsFuture.complete(contributions)
 
-    val igIniDiagnosticsService =
-        IgIniDiagnosticsService(languageClientFuture, libraryResolutionManager).also { eventBus.register(it) }
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService, igIniDiagnosticsService)
     DiagnosticsService(languageClientFuture, compilationManager, federatedContentService).also { eventBus.register(it) }
 

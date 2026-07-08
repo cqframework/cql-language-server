@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.WorkspaceFolder
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.hl7.cql.model.NamespaceInfo
+import org.hl7.fhir.utilities.IniFile
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.slf4j.LoggerFactory
@@ -126,9 +127,10 @@ open class LibraryResolutionManager(
     /**
      * An ig.ini project whose ImplementationGuide resource (referenced by its `ig=` setting) is
      * missing one or more of `packageId` / `url`, surfaced here as `packageId` / `canonicalBase`
-     * to match [readIgContextInfo]'s naming.
+     * to match [readIgContextInfo]'s naming. [resourceUri] is the resource file itself — the one
+     * the user actually needs to edit, since `packageId` cannot be set in ig.ini directly.
      */
-    data class IgIniIssue(val igIniUri: URI, val missingFields: List<String>)
+    data class IgIniIssue(val resourceUri: URI, val igIniUri: URI, val missingFields: List<String>)
 
     /**
      * Scans the workspace for ig.ini projects whose ImplementationGuide resource is missing
@@ -151,7 +153,8 @@ open class LibraryResolutionManager(
                         if (igContext.canonicalBase.isNullOrEmpty()) add("canonicalBase")
                     }
                 if (missingFields.isNotEmpty()) {
-                    issues.add(IgIniIssue(igIniFile.toURI(), missingFields))
+                    val resourceUri = resolveIgResourceUri(igIniFile) ?: igIniFile.toURI()
+                    issues.add(IgIniIssue(resourceUri, igIniFile.toURI(), missingFields))
                 }
             } catch (e: Exception) {
                 log.warn("Failed to read ig context from {}: {}", igIniFile.path, e.message)
@@ -159,6 +162,22 @@ open class LibraryResolutionManager(
         }
         return issues
     }
+
+    /**
+     * Resolves the ImplementationGuide resource file referenced by an ig.ini's `ig=` setting
+     * (e.g. `input/ig.json`), relative to the ig.ini's own directory. Returns null if the `ig=`
+     * key is missing/blank or the target file doesn't exist — [findIgIniIssues] falls back to
+     * the ig.ini file itself in that case. In practice [IGContext.initializeFromIni] must have
+     * already loaded this exact file successfully for [findIgIniIssues] to reach this point, so
+     * this is a robustness net rather than an expected path.
+     */
+    private fun resolveIgResourceUri(igIniFile: File): URI? =
+        try {
+            val igPath = IniFile(igIniFile.absolutePath).getStringProperty("IG", "ig")?.takeIf { it.isNotBlank() }
+            igPath?.let { File(igIniFile.parentFile, it) }?.takeIf { it.exists() }?.toURI()
+        } catch (e: Exception) {
+            null
+        }
 
     /**
      * Returns every `ig.ini` found at the workspace folder root or one level of subdirectories.
