@@ -123,6 +123,71 @@ open class LibraryResolutionManager(
         return packageId to canonicalBase
     }
 
+    /**
+     * An ig.ini project whose ImplementationGuide resource (referenced by its `ig=` setting) is
+     * missing one or more of `packageId` / `url`, surfaced here as `packageId` / `canonicalBase`
+     * to match [readIgContextInfo]'s naming.
+     */
+    data class IgIniIssue(val igIniUri: URI, val missingFields: List<String>)
+
+    /**
+     * Scans the workspace for ig.ini projects whose ImplementationGuide resource is missing
+     * `packageId` and/or `url` (which [IGContext] surfaces as `packageId` / `canonicalBase`).
+     * Projects with these issues are silently dropped from the namespace index (see
+     * [readIgContextInfo]), which means other workspace projects that declare a dependency on
+     * them cannot resolve their CQL libraries. Surfaced to the user via diagnostics — see
+     * [org.opencds.cqf.cql.ls.server.service.IgIniDiagnosticsService].
+     */
+    open fun findIgIniIssues(): List<IgIniIssue> {
+        val issues = mutableListOf<IgIniIssue>()
+        for (igIniFile in scanIgIniFiles()) {
+            if (!igIniFile.useLines { lines -> lines.any { it.trim().equals("[IG]") } }) continue
+            try {
+                val igContext = IGContext(LoggerAdapter(log))
+                igContext.initializeFromIni(igIniFile.path)
+                val missingFields =
+                    buildList {
+                        if (igContext.packageId.isNullOrEmpty()) add("packageId")
+                        if (igContext.canonicalBase.isNullOrEmpty()) add("canonicalBase")
+                    }
+                if (missingFields.isNotEmpty()) {
+                    issues.add(IgIniIssue(igIniFile.toURI(), missingFields))
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to read ig context from {}: {}", igIniFile.path, e.message)
+            }
+        }
+        return issues
+    }
+
+    /**
+     * Returns every `ig.ini` found at the workspace folder root or one level of subdirectories.
+     * Multi-project workspaces (e.g. PAS-sample-structure-r4/{Common,Policy2,...}) keep each IG
+     * project in a subdirectory; the workspace folder itself has no ig.ini.
+     */
+    private fun scanIgIniFiles(): List<File> {
+        val result = mutableListOf<File>()
+        for (w in workspaceFolders) {
+            val folderUri = Uris.parseOrNull(w.uri) ?: continue
+            val folderFile =
+                try {
+                    Paths.get(folderUri).toFile()
+                } catch (e: Exception) {
+                    continue
+                }
+            val dirsToScan =
+                buildList {
+                    add(folderFile)
+                    folderFile.listFiles()?.filter { it.isDirectory }?.let { addAll(it) }
+                }
+            for (dir in dirsToScan) {
+                val igIniFile = File(dir, "ig.ini")
+                if (igIniFile.exists()) result.add(igIniFile)
+            }
+        }
+        return result
+    }
+
     private fun buildNamespaceIndex(): Map<String, NamespaceEntry> {
         val result = mutableMapOf<String, NamespaceEntry>()
         log.debug("buildNamespaceIndex: scanning {} workspace folder(s)", workspaceFolders.size)

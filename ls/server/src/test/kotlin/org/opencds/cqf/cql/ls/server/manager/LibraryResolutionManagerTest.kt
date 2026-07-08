@@ -510,4 +510,101 @@ class LibraryResolutionManagerTest {
         assertNotNull(m.resolveCanonicalUrl("https://one.example.org"))
         assertNotNull(m.resolveCanonicalUrl("https://two.example.org"))
     }
+
+    // -----------------------------------------------------------------------
+    // findIgIniIssues — real ig.ini + ImplementationGuide resource fixtures.
+    //
+    // Unlike igProjects()/resolveCanonicalUrl(), findIgIniIssues() does not go through the
+    // overridable readIgContextInfo() seam (it needs to know WHICH field is missing, not just
+    // whether parsing succeeded), so these tests exercise real IGContext.initializeFromIni()
+    // parsing against a minimal R4 ImplementationGuide resource.
+    // -----------------------------------------------------------------------
+
+    private fun writeIgProject(
+        dir: File,
+        igResourceJson: String,
+    ) {
+        File(dir, "ImplementationGuide-test.json").writeText(igResourceJson)
+        File(dir, "ig.ini").writeText(
+            """
+            [IG]
+            ig = ImplementationGuide-test.json
+            fhir-version = 4.0.1
+            """.trimIndent(),
+        )
+    }
+
+    private fun igResourceJson(
+        packageId: String? = "test.pkg",
+        // getImplementationGuideCanonicalBase() derives the base by splitting on "/ImplementationGuide/" —
+        // a url without that segment throws StringIndexOutOfBoundsException rather than returning null.
+        url: String? = "https://example.org/ig/ImplementationGuide/test",
+    ): String {
+        val packageIdField = packageId?.let { "\"packageId\": \"$it\"," } ?: ""
+        val urlField = url?.let { "\"url\": \"$it\"," } ?: ""
+        return """
+            {
+              "resourceType": "ImplementationGuide",
+              $urlField
+              $packageIdField
+              "name": "TestIG",
+              "status": "draft",
+              "fhirVersion": ["4.0.1"]
+            }
+        """.trimIndent()
+    }
+
+    @Test
+    fun findIgIniIssues_allFieldsPresent_returnsEmpty(
+        @TempDir tempDir: File,
+    ) {
+        writeIgProject(tempDir, igResourceJson())
+        val m = LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), tempDir.name)))
+
+        assertTrue(m.findIgIniIssues().isEmpty())
+    }
+
+    @Test
+    fun findIgIniIssues_missingPackageId_flagsPackageId(
+        @TempDir tempDir: File,
+    ) {
+        writeIgProject(tempDir, igResourceJson(packageId = null))
+        val m = LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), tempDir.name)))
+
+        val issues = m.findIgIniIssues()
+        assertEquals(1, issues.size)
+        assertEquals(listOf("packageId"), issues[0].missingFields)
+        assertEquals(File(tempDir, "ig.ini").toURI(), issues[0].igIniUri)
+    }
+
+    @Test
+    fun findIgIniIssues_missingUrl_flagsCanonicalBase(
+        @TempDir tempDir: File,
+    ) {
+        writeIgProject(tempDir, igResourceJson(url = null))
+        val m = LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), tempDir.name)))
+
+        val issues = m.findIgIniIssues()
+        assertEquals(1, issues.size)
+        assertEquals(listOf("canonicalBase"), issues[0].missingFields)
+    }
+
+    @Test
+    fun findIgIniIssues_noIgIniFiles_returnsEmpty(
+        @TempDir tempDir: File,
+    ) {
+        val m = LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), tempDir.name)))
+
+        assertTrue(m.findIgIniIssues().isEmpty())
+    }
+
+    @Test
+    fun findIgIniIssues_igIniWithNoIgSection_returnsEmpty(
+        @TempDir tempDir: File,
+    ) {
+        File(tempDir, "ig.ini").writeText("# not an IG ini\nfoo=bar\n")
+        val m = LibraryResolutionManager(listOf(WorkspaceFolder(tempDir.toURI().toString(), tempDir.name)))
+
+        assertTrue(m.findIgIniIssues().isEmpty())
+    }
 }

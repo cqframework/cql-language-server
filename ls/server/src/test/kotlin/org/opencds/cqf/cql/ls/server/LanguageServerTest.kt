@@ -32,6 +32,7 @@ import org.opencds.cqf.cql.ls.server.provider.HoverProvider
 import org.opencds.cqf.cql.ls.server.provider.ReferencesProvider
 import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService
 import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService
+import org.opencds.cqf.cql.ls.server.service.IgIniDiagnosticsService
 import org.opencds.cqf.cql.ls.server.service.TestContentService
 import java.util.concurrent.CompletableFuture
 
@@ -63,6 +64,7 @@ class LanguageServerTest {
                         DocumentSymbolProvider(compilationManager),
                         ReferencesProvider(compilationManager, cs),
                     ),
+                    IgIniDiagnosticsService(languageClientFuture, LibraryResolutionManager(emptyList())),
                 )
         }
 
@@ -85,6 +87,7 @@ class LanguageServerTest {
                     DocumentSymbolProvider(compilationManager),
                     ReferencesProvider(compilationManager, cs),
                 ),
+                IgIniDiagnosticsService(clientFuture, LibraryResolutionManager(emptyList())),
             )
         }
     }

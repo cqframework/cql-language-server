@@ -12,6 +12,7 @@ import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
 import org.opencds.cqf.cql.ls.server.service.CqlTextDocumentService
 import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService
+import org.opencds.cqf.cql.ls.server.service.IgIniDiagnosticsService
 import org.opencds.cqf.cql.ls.server.utility.Futures
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
@@ -20,6 +21,7 @@ class CqlLanguageServer(
     private val client: CompletableFuture<LanguageClient>,
     private val workspaceService: CqlWorkspaceService,
     private val textDocumentService: CqlTextDocumentService,
+    private val igIniDiagnosticsService: IgIniDiagnosticsService,
 ) : LanguageServer, LanguageClientAware {
     companion object {
         private val log = LoggerFactory.getLogger(CqlLanguageServer::class.java)
@@ -44,6 +46,7 @@ class CqlLanguageServer(
 
     override fun initialized(params: InitializedParams) {
         workspaceService.initialized()
+        igIniDiagnosticsService.validateWorkspace()
     }
 
     override fun setTrace(params: SetTraceParams) {

@@ -27,6 +27,7 @@ import org.opencds.cqf.cql.ls.server.service.CqlWorkspaceService
 import org.opencds.cqf.cql.ls.server.service.DiagnosticsService
 import org.opencds.cqf.cql.ls.server.service.FederatedContentService
 import org.opencds.cqf.cql.ls.server.service.FileContentService
+import org.opencds.cqf.cql.ls.server.service.IgIniDiagnosticsService
 import org.opencds.cqf.cql.ls.server.utility.VersionReader
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
@@ -90,7 +91,9 @@ fun main(args: Array<String>) {
     )
     commandsFuture.complete(contributions)
 
-    val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService)
+    val igIniDiagnosticsService =
+        IgIniDiagnosticsService(languageClientFuture, libraryResolutionManager).also { eventBus.register(it) }
+    val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService, igIniDiagnosticsService)
     DiagnosticsService(languageClientFuture, compilationManager, federatedContentService).also { eventBus.register(it) }
 
     val launcher = LSPLauncher.createServerLauncher(server, System.`in`, lspOut)
