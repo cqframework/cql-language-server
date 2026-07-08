@@ -1,12 +1,18 @@
 package org.opencds.cqf.cql.ls.server.provider
 
+import kotlinx.io.readString
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.core.utility.Converters
+import org.opencds.cqf.cql.ls.server.service.NpmLibraryMaterializationCache
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import java.io.File
 import java.io.InputStream
 import java.net.URI
 
@@ -14,6 +20,9 @@ class FederatedLibrarySourceProviderTest {
     // TestContentService resolves classpath resources under /org/opencds/cqf/cql/ls/server/
     private val root: URI = URI.create("file:///workspace/")
     private val cs: ContentService = TestContentService()
+
+    @TempDir
+    lateinit var npmCacheRoot: File
 
     // -----------------------------------------------------------------------
     // ContentService tier — known library returns a source
@@ -140,6 +149,26 @@ class FederatedLibrarySourceProviderTest {
         // This means locate() receives a file URI, forcing tier1 to fail
         // (BFS requires a directory) and relying entirely on tier2 fallback.
         assertEquals(fileUri, capturedRoot, "Root must be passed through without normalization")
+    }
+
+    // -----------------------------------------------------------------------
+    // materializeAndRewrap — NPM-resolved content is materialized to disk AND
+    // the returned Source is unaffected (compile path unchanged)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun materializeAndRewrap_returnsUnchangedContent_andMaterializesToCache() {
+        val provider = FederatedLibrarySourceProvider(root, cs, null)
+        val identifier =
+            VersionedIdentifier().withId("FHIRHelpers").withVersion("4.0.1").withSystem("http://hl7.org/fhir/uv/cql")
+        val cqlText = "library FHIRHelpers version '4.0.1'\ndefine function ToCode(x String): null"
+
+        val rewrapped = provider.materializeAndRewrap(identifier, Converters.stringToSource(cqlText), npmCacheRoot)
+
+        assertEquals(cqlText, rewrapped.readString(), "Returned Source content must be unchanged")
+        val materialized = NpmLibraryMaterializationCache.lookup(identifier, npmCacheRoot)
+        assertNotNull(materialized, "Expected the identifier to be materialized to disk as a side effect")
+        assertTrue(materialized!!.readText().contains(cqlText))
     }
 
     // -----------------------------------------------------------------------

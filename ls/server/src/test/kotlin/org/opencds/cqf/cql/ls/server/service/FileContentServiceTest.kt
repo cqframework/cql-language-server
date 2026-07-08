@@ -376,6 +376,68 @@ class FileContentServiceTest {
         assertTrue(result.isEmpty())
     }
 
+    // ── Tier 4b — NPM-materialized fallback for unknown (non-workspace) namespaces ──
+    // Covers namespace-qualified includes like `hl7.fhir.uv.cql.FHIRHelpers`, whose
+    // canonical URL isn't a workspace project and so isn't in namespaceManager's index,
+    // but may have already been materialized to disk by a prior successful compile
+    // (FederatedLibrarySourceProvider.materializeAndRewrap).
+
+    @Test
+    fun locate_namespacedInclude_unknownNamespace_fallsBackToNpmMaterializedCache() {
+        val projectA = File(tempDir, "projectA").also { it.mkdirs() }
+        val materialized = File(tempDir, "npm-cache/FHIRHelpers-4.0.1.cql").also { it.parentFile.mkdirs(); it.createNewFile() }
+        val m = managerWithNamespace("https://example.com/fhir", projectA)
+        val svc =
+            FileContentService(
+                listOf(folder(projectA)),
+                noOpConfigProvider,
+                m,
+                npmMaterializedLookup = { i -> if (i.id == "FHIRHelpers" && i.version == "4.0.1") materialized else null },
+            )
+
+        val result = svc.locate(projectA.toURI(), idWithSystem("FHIRHelpers", "http://hl7.org/fhir/uv/cql", "4.0.1"))
+
+        assertEquals(setOf(materialized.toURI()), result)
+    }
+
+    @Test
+    fun locate_namespacedInclude_workspaceProjectWinsOverNpmMaterializedCache() {
+        val projectA = File(tempDir, "projectA").also { it.mkdirs() }
+        val projectBInput = File(tempDir, "projectB/input/cql").also { it.mkdirs() }
+        val workspaceFile = File(projectBInput, "SharedLib-1.0.0.cql").also { it.createNewFile() }
+        val npmFallback = File(tempDir, "npm-cache/SharedLib-1.0.0.cql").also { it.parentFile.mkdirs(); it.createNewFile() }
+
+        val m = managerWithNamespace("https://example.com/fhir", projectBInput, projectA)
+        val svc =
+            FileContentService(
+                listOf(folder(projectA)),
+                noOpConfigProvider,
+                m,
+                npmMaterializedLookup = { npmFallback },
+            )
+
+        val result = svc.locate(projectA.toURI(), idWithSystem("SharedLib", "https://example.com/fhir", "1.0.0"))
+
+        assertEquals(setOf(workspaceFile.toURI()), result, "A known workspace namespace must win over the NPM-materialized fallback")
+    }
+
+    @Test
+    fun locate_namespacedInclude_unknownNamespace_noMaterializedCacheEither_returnsEmpty() {
+        val projectA = File(tempDir, "projectA").also { it.mkdirs() }
+        val m = managerWithNamespace("https://example.com/fhir", projectA)
+        val svc =
+            FileContentService(
+                listOf(folder(projectA)),
+                noOpConfigProvider,
+                m,
+                npmMaterializedLookup = { null },
+            )
+
+        val result = svc.locate(projectA.toURI(), idWithSystem("FHIRHelpers", "http://hl7.org/fhir/uv/cql", "4.0.1"))
+
+        assertTrue(result.isEmpty(), "Expected empty when neither the namespace nor the NPM cache resolves it")
+    }
+
     @Test
     fun locate_namespacedInclude_usesExactVersionFirst() {
         val projectA = File(tempDir, "projectA").also { it.mkdirs() }

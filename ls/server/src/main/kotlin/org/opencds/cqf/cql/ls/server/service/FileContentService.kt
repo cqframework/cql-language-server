@@ -24,6 +24,7 @@ class FileContentService(
     private val configProvider: LibraryResolutionConfigProvider,
     private val namespaceManager: LibraryResolutionManager,
     private val bundledLibraryLookup: (VersionedIdentifier) -> File? = { BundledLibraryCache.resolve(it) },
+    private val npmMaterializedLookup: (VersionedIdentifier) -> File? = { NpmLibraryMaterializationCache.lookup(it) },
 ) : ContentService {
     companion object {
         private val log = LoggerFactory.getLogger(FileContentService::class.java)
@@ -158,7 +159,11 @@ class FileContentService(
         if (identifierSystem != null) {
             val inputCqlUri =
                 namespaceManager.resolveCanonicalUrl(identifierSystem)
-                    ?: return emptySet() // unknown namespace — resolution error, not a crash
+                    // Not a workspace project — e.g. an NPM package namespace like
+                    // hl7.fhir.uv.cql. Fall back to whatever's already been materialized on disk
+                    // as a side effect of a prior successful compile (see
+                    // FederatedLibrarySourceProvider.materializeAndRewrap).
+                    ?: return npmMaterializedLookup(identifier)?.let { setOf(it.toURI()) } ?: emptySet()
             val rootFile = toFile(inputCqlUri) ?: return emptySet()
             val version = identifier.version
             val file =

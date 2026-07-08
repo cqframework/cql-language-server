@@ -1,6 +1,7 @@
 package org.opencds.cqf.cql.ls.server.provider
 
 import kotlinx.io.Source
+import kotlinx.io.readString
 import org.cqframework.cql.cql2elm.LibrarySourceProvider
 import org.cqframework.fhir.npm.ILibraryReader
 import org.cqframework.fhir.npm.LibraryLoader
@@ -10,6 +11,7 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.server.manager.IgPackageContext
+import org.opencds.cqf.cql.ls.server.service.NpmLibraryMaterializationCache
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -49,7 +51,31 @@ class FederatedLibrarySourceProvider(
         // Tiers 1 + 2: same-project then cross-project (FileContentService.locate() decides scope)
         contentServiceSource(libraryIdentifier)
             // Tier 3: NPM packages
-            ?: npmProvider?.getLibrarySource(libraryIdentifier)
+            ?: npmProvider?.getLibrarySource(libraryIdentifier)?.let {
+                materializeAndRewrap(libraryIdentifier, it)
+            }
+
+    /**
+     * Reads an NPM-resolved [Source] fully, best-effort materializes it to disk via
+     * [NpmLibraryMaterializationCache] (so LSP navigation and DAP debugging can later resolve a
+     * real file for this identifier — see [org.opencds.cqf.cql.ls.server.service.FileContentService]'s
+     * namespace fast-path), and returns a fresh [Source] over the same text so the actual
+     * compiler-facing behavior is unaffected by having been read once here. A materialization
+     * failure never prevents returning valid, compileable content.
+     */
+    internal fun materializeAndRewrap(
+        libraryIdentifier: VersionedIdentifier,
+        source: Source,
+        cacheRoot: java.io.File = NpmLibraryMaterializationCache.defaultCacheRoot,
+    ): Source {
+        val cqlText = source.readString()
+        try {
+            NpmLibraryMaterializationCache.materialize(libraryIdentifier, cqlText, cacheRoot)
+        } catch (e: Exception) {
+            log.warn("Failed to materialize NPM library '{}': {}", libraryIdentifier.id, e.message)
+        }
+        return Converters.stringToSource(cqlText)
+    }
 
     private fun contentServiceSource(identifier: VersionedIdentifier): Source? {
         // Use locate() + read(uri) rather than read(root, identifier) to handle the case where
