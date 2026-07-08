@@ -8,13 +8,18 @@ import org.hl7.elm.r1.ConceptRef
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
+import org.hl7.elm.r1.IncludeDef
+import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.ValueSetRef
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.utility.ElmIdentifiers
 import org.opencds.cqf.cql.ls.server.visitor.AllReferencesVisitor
 import org.opencds.cqf.cql.ls.server.visitor.DefinitionTrackBackVisitor
 import org.opencds.cqf.cql.ls.server.visitor.ExpressionTrackBackVisitor
+import org.opencds.cqf.cql.ls.server.visitor.LibraryAliasReferencesVisitor
+import java.net.URI
 
 class ReferencesProvider(
     private val compilationManager: CqlCompilationManager,
@@ -32,6 +37,11 @@ class ReferencesProvider(
                 ?: ExpressionTrackBackVisitor().visitLibrary(library, params.position)
                 ?: return emptyList()
 
+        // Include line: find every alias.XXX call site in this file and sibling files.
+        if (elm is IncludeDef) {
+            return includeDefReferences(elm, uri, library)
+        }
+
         val symbolName = nameOf(elm) ?: return emptyList()
 
         val results = mutableListOf<Location>()
@@ -46,6 +56,34 @@ class ReferencesProvider(
             val depCompiler = compilationManager.compile(depUri) ?: continue
             val depLibrary = depCompiler.library ?: continue
             results += AllReferencesVisitor(depUri).visitLibrary(depLibrary, symbolName)
+        }
+
+        return results
+    }
+
+    private fun includeDefReferences(
+        includeDef: IncludeDef,
+        uri: URI,
+        library: Library,
+    ): List<Location> {
+        val alias = includeDef.localIdentifier ?: return emptyList()
+        val results = mutableListOf<Location>()
+
+        // All alias.XXX usages in the current file
+        results += LibraryAliasReferencesVisitor(uri).visitLibrary(library, alias)
+
+        // Other files that include the same library — each may use a different alias
+        val libIdentifier = ElmIdentifiers.fromIncludeDef(includeDef) ?: return results
+        for (depUri in compilationManager.getDependentUris(libIdentifier)) {
+            if (depUri == uri) continue
+            val depLibrary = compilationManager.compile(depUri)?.library ?: continue
+            val depInclude =
+                depLibrary.includes?.def?.firstOrNull { inc ->
+                    val incId = ElmIdentifiers.fromIncludeDef(inc) ?: return@firstOrNull false
+                    incId.id == libIdentifier.id && incId.system == libIdentifier.system
+                } ?: continue
+            val depAlias = depInclude.localIdentifier ?: continue
+            results += LibraryAliasReferencesVisitor(depUri).visitLibrary(depLibrary, depAlias)
         }
 
         return results

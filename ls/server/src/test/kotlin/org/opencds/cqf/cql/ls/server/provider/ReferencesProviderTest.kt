@@ -169,4 +169,34 @@ class ReferencesProviderTest {
 
         assertFalse(locations.isEmpty(), "Expected at least one reference to 'SNOMEDCT'")
     }
+
+    // -------------------------------------------------------------------------
+    // IncludeDef — cursor on include line returns all alias.XXX usages
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun references_includeDef_findsLibraryAliasUsages() {
+        // FunctionCaller.cql line 3 (0-indexed: 2): include FunctionLib version '1.0.0' called FL
+        // Expects FL."MyValue" and FL."Double" usages — at least 2 results.
+        val pos = Position(2, 8) // mid-line, inside the include declaration
+
+        val locations =
+            provider.references(
+                ReferenceParams(
+                    TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/FunctionCaller.cql"),
+                    pos,
+                    ReferenceContext(false),
+                ),
+            )
+
+        assertFalse(locations.isEmpty(), "Expected alias usages from include line — got none")
+        assertTrue(
+            locations.size >= 2,
+            "Expected at least 2 usages of FL (MyValue + Double), got: ${locations.map { it.range }}",
+        )
+        assertTrue(
+            locations.all { it.uri.contains("FunctionCaller") },
+            "All results should be in FunctionCaller.cql",
+        )
+    }
 }
