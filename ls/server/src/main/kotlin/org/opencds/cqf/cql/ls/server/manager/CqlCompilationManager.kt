@@ -130,6 +130,26 @@ class CqlCompilationManager(
         }
     }
 
+    fun invalidateAll() {
+        indexLock.writeLock().lock()
+        try {
+            compilationCache.clear()
+            uriToIdentifier.clear()
+            reverseDeps.clear()
+        } finally {
+            indexLock.writeLock().unlock()
+        }
+    }
+
+    fun getCompiledUris(): Set<URI> {
+        indexLock.readLock().lock()
+        return try {
+            compilationCache.keys.toSet()
+        } finally {
+            indexLock.readLock().unlock()
+        }
+    }
+
     fun getDependentUris(identifier: VersionedIdentifier): Set<URI> {
         indexLock.readLock().lock()
         return try {

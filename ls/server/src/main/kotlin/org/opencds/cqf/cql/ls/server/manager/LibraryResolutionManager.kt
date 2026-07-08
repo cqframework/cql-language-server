@@ -93,11 +93,19 @@ open class LibraryResolutionManager(
         }
     }
 
+    open fun invalidateNamespaceIndex() {
+        namespaceIndex = null
+    }
+
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
         for (e in event.params().changes) {
-            if (e.uri.endsWith("ig.ini")) {
-                namespaceIndex = null
+            val uri = e.uri
+            when {
+                uri.endsWith("ig.ini") -> namespaceIndex = null
+                uri.endsWith("/input/ig.json") -> namespaceIndex = null
+                (uri.substringAfterLast('/').startsWith("ImplementationGuide-") && uri.endsWith(".json")) ->
+                    namespaceIndex = null
             }
         }
     }

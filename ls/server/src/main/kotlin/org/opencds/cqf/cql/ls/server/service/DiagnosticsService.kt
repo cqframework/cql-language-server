@@ -174,12 +174,31 @@ class DiagnosticsService(
 
     @Subscribe
     fun didChangeWatchedFiles(e: DidChangeWatchedFilesEvent) {
+        val changes = e.params().changes
+        if (changes.any { isIgConfigFile(it.uri) }) {
+            cqlCompilationManager.invalidateAll()
+            debounce(BOUNCE_DELAY) {
+                doLint(cqlCompilationManager.getCompiledUris())
+            }
+            return
+        }
         val uris =
-            e.params().changes
+            changes
                 .mapNotNull { Uris.parseOrNull(it.uri) }
                 .filter { it.toString().endsWith(".cql") }
         uris.forEach { cqlCompilationManager.invalidate(it) }
         doLint(uris)
+    }
+
+    private fun isIgConfigFile(uri: String): Boolean {
+        return uri.endsWith("ig.ini") ||
+            uri.endsWith("/input/ig.json") ||
+            (uri.substringAfterLast('/').startsWith("ImplementationGuide-") && uri.endsWith(".json"))
+    }
+
+    fun refreshAll() {
+        cqlCompilationManager.invalidateAll()
+        doLint(cqlCompilationManager.getCompiledUris())
     }
 
     internal fun debounce(

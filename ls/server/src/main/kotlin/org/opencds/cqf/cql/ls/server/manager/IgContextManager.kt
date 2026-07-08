@@ -52,6 +52,11 @@ open class IgContextManager(private val contentService: ContentService) {
         cachedIgContext.remove(root)
     }
 
+    fun clearAllContexts() {
+        cachedContext.clear()
+        cachedIgContext.clear()
+    }
+
     protected fun readContext(rootUri: URI): Optional<NpmProcessor> {
         val igContext = findIgContext(rootUri) ?: return Optional.empty()
         cachedIgContext[rootUri] = Optional.of(igContext)
@@ -272,9 +277,31 @@ open class IgContextManager(private val contentService: ContentService) {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onMessageEvent(event: DidChangeWatchedFilesEvent) {
         for (e in event.params().changes) {
-            if (e.uri.endsWith("ig.ini")) {
-                Uris.parseOrNull(e.uri)?.let { clearContext(it) }
+            val uriString = e.uri
+            when {
+                uriString.endsWith("ig.ini") -> {
+                    Uris.parseOrNull(uriString)?.let { clearContext(it) }
+                }
+                uriString.endsWith("/input/ig.json") ||
+                    (uriString.substringAfterLast('/').startsWith("ImplementationGuide-") &&
+                        uriString.endsWith(".json")) -> {
+                    Uris.parseOrNull(uriString)?.let { resourceUri ->
+                        val root = findIgIniRoot(resourceUri)
+                        if (root != null) clearContext(root)
+                    }
+                }
             }
+        }
+    }
+
+    private fun findIgIniRoot(uri: URI): URI? {
+        var current = uri
+        while (true) {
+            val parent = Uris.getHead(current)
+            if (parent == current) return null
+            current = parent
+            val iniPath = Paths.get(parent).resolve("ig.ini")
+            if (iniPath.toFile().exists()) return parent
         }
     }
 }

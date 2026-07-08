@@ -90,14 +90,18 @@ fun main(args: Array<String>) {
     contributions.add(ViewElmCommandContribution(compilationManager))
     contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
     contributions.add(GetVersionInfoCommandContribution())
-    contributions.add(RefreshIgDiagnosticsCommandContribution(igIniDiagnosticsService))
+    val diagnosticsService =
+        DiagnosticsService(languageClientFuture, compilationManager, federatedContentService)
+            .also { eventBus.register(it) }
+    contributions.add(
+        RefreshIgDiagnosticsCommandContribution(igContextManager, libraryResolutionManager, igIniDiagnosticsService, diagnosticsService),
+    )
     contributions.add(
         DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
     )
     commandsFuture.complete(contributions)
 
     val server = CqlLanguageServer(languageClientFuture, workspaceService, textDocumentService, igIniDiagnosticsService)
-    DiagnosticsService(languageClientFuture, compilationManager, federatedContentService).also { eventBus.register(it) }
 
     val launcher = LSPLauncher.createServerLauncher(server, System.`in`, lspOut)
     val client = launcher.remoteProxy
