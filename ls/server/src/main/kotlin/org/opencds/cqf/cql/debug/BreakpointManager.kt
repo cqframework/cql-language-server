@@ -206,10 +206,21 @@ class BreakpointManager(
             ) {
                 s.path = Paths.get(URI.create(streamingLaunchUri)).toString()
             } else {
-                val ref =
+                val entry =
                     sourceReferenceRegistry.entries
-                        .firstOrNull { (_, id) -> id.id == libraryId }?.key
-                s.sourceReference = ref ?: 0
+                        .firstOrNull { (_, id) -> id.id == libraryId }
+                s.sourceReference = entry?.key ?: 0
+                // Name the virtual document so the editor tab shows the library name
+                // rather than '.' (VS Code's fallback when name is null and path is absent).
+                val identifier = entry?.value
+                s.name =
+                    if (identifier?.version != null) {
+                        "${identifier.id}-${identifier.version}.cql"
+                    } else if (!libraryId.isEmpty()) {
+                        "$libraryId.cql"
+                    } else {
+                        null
+                    }
             }
         }
     }
