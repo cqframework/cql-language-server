@@ -18,6 +18,7 @@ import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
+import org.opencds.cqf.cql.ls.server.utility.ElmIdentifiers
 import org.slf4j.LoggerFactory
 import java.io.InputStream
 import java.net.URI
@@ -150,10 +151,7 @@ class CqlCompilationManager(
             if (oldId != null) reverseDeps[oldId]?.remove(uri)
             uriToIdentifier[uri] = identifier
             library.includes?.def?.forEach { includeDef ->
-                val depId =
-                    VersionedIdentifier()
-                        .withId(includeDef.path)
-                        .withVersion(includeDef.version)
+                val depId = ElmIdentifiers.fromIncludeDef(includeDef) ?: return@forEach
                 reverseDeps.getOrPut(depId) { ConcurrentHashMap.newKeySet() }.add(uri)
             }
         } finally {

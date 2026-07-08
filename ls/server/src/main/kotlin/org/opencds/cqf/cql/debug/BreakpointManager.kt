@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.debug.Source
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.server.utility.ElmIdentifiers
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -74,28 +75,14 @@ class BreakpointManager(
             if (libPath in visited) continue
             visited.add(libPath)
 
-            // ELM stores namespace-qualified includes as a canonical URL path
-            // (e.g. "http://smiledigitalhealth.com/PolicyStatusCommon"). Split into
-            // system + local name so locate() can use the namespace fast-path, and
-            // normalize the key to local name to match what the engine reports as libId.
-            val (libSystem, libLocalName) =
-                if (libPath.startsWith("http://") || libPath.startsWith("https://")) {
-                    val slash = libPath.lastIndexOf('/')
-                    if (slash > 0) libPath.substring(0, slash) to libPath.substring(slash + 1)
-                    else null to libPath
-                } else {
-                    null to libPath
-                }
-            val libraryId = libLocalName
+            // ElmIdentifiers.fromIncludeDef splits namespace-qualified URL paths into
+            // system + local name so locate() can use the namespace fast-path. The local
+            // name is the canonical key, matching what the engine reports as libId.
+            val identifier = ElmIdentifiers.fromIncludeDef(includeDef) ?: continue
+            val libraryId = identifier.id ?: continue  // guaranteed non-null by fromIncludeDef
 
             if (!librarySourceMap.containsKey(libraryId)) {
                 try {
-                    val identifier =
-                        VersionedIdentifier().also { vi ->
-                            vi.id = libLocalName
-                            vi.system = libSystem
-                            vi.version = includeDef.version
-                        }
                     // resolve(".") strips the filename to give the input/cql/ directory;
                     // locate() needs a directory root so BFS can scan for sibling libraries.
                     val locateRoot =
@@ -108,12 +95,12 @@ class BreakpointManager(
                     } else {
                         log.debug(
                             "collectTransitiveIncludes: could not locate '{}' (system='{}') — breakpoints in this library may not be verified",
-                            libLocalName,
-                            libSystem,
+                            libraryId,
+                            identifier.system,
                         )
                     }
                 } catch (e: Exception) {
-                    log.warn("collectTransitiveIncludes: failed to locate '{}': {}", libLocalName, e.message)
+                    log.warn("collectTransitiveIncludes: failed to locate '{}': {}", libraryId, e.message)
                 }
             }
             result.add(libraryId)

@@ -72,6 +72,7 @@ import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import kotlinx.io.readString
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
+import org.opencds.cqf.cql.ls.server.utility.ElmIdentifiers
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
@@ -464,24 +465,10 @@ open class CqlDebugServer(
                     val identifier =
                         allDefs.firstOrNull { it.path == libId || it.localIdentifier == libId }
                             ?.let { def ->
-                                // ELM stores namespace-qualified includes as a canonical URL path
-                                // (e.g. "http://smiledigitalhealth.com/PolicyStatusCommon").
-                                // Split into system + local name so locate() uses the namespace
+                                // ElmIdentifiers.fromIncludeDef splits namespace-qualified URL
+                                // paths into system + local name so locate() uses the namespace
                                 // fast-path; fall back to the plain path for local libraries.
-                                val defPath = def.path ?: return@let null
-                                val (system, localId) =
-                                    if (defPath.startsWith("http://") || defPath.startsWith("https://")) {
-                                        val slash = defPath.lastIndexOf('/')
-                                        if (slash > 0) defPath.substring(0, slash) to defPath.substring(slash + 1)
-                                        else null to defPath
-                                    } else {
-                                        null to defPath
-                                    }
-                                VersionedIdentifier().also { vi ->
-                                    vi.id = localId
-                                    vi.system = system
-                                    vi.version = def.version
-                                }
+                                ElmIdentifiers.fromIncludeDef(def)
                             } ?: libraryIdentifier
                     if (identifier != null) {
                         // resolve(".") strips the filename to give the input/cql/ directory so

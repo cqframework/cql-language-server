@@ -18,10 +18,10 @@ import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.OperandRef
 import org.hl7.elm.r1.ParameterRef
 import org.hl7.elm.r1.ValueSetRef
-import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.utility.ElmIdentifiers
 import org.opencds.cqf.cql.ls.server.utility.TrackBacks
 import org.opencds.cqf.cql.ls.server.visitor.DefinitionTrackBackVisitor
 import org.slf4j.LoggerFactory
@@ -137,11 +137,7 @@ class DefinitionProvider(
             }
             is IncludeDef -> {
                 // Navigate to the top of the included library file
-                val identifier =
-                    VersionedIdentifier().apply {
-                        id = refElm.path ?: return emptyList()
-                        version = refElm.version
-                    }
+                val identifier = ElmIdentifiers.fromIncludeDef(refElm) ?: return emptyList()
                 val top = Range(Position(0, 0), Position(0, 0))
                 val originRange = refElm.locator?.let { TrackBacks.toRange(it) }
                 contentService.locate(root, identifier).map { targetUri ->
@@ -193,11 +189,7 @@ class DefinitionProvider(
                 log.debug("definition: no IncludeDef found for alias '{}'", alias)
                 return null
             }
-        val identifier =
-            VersionedIdentifier().apply {
-                id = includeDef.path ?: return null
-                version = includeDef.version
-            }
+        val identifier = ElmIdentifiers.fromIncludeDef(includeDef) ?: return null
         return contentService.locate(root, identifier).firstOrNull()
     }
 

@@ -29,9 +29,10 @@ import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.ParameterDef
 import org.hl7.elm.r1.Query
 import org.hl7.elm.r1.ValueSetDef
-import org.hl7.elm.r1.VersionedIdentifier
+
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
+import org.opencds.cqf.cql.ls.server.utility.ElmIdentifiers
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.utility.Elements
 import org.opencds.cqf.cql.ls.server.visitor.CqlParseTreeVisitor
@@ -504,11 +505,7 @@ class HoverProvider(
     ): CqlCompiler? {
         val root = Uris.getHead(uri)
         val includeDef = library.includes?.def?.firstOrNull { it.localIdentifier == alias } ?: return null
-        val identifier =
-            VersionedIdentifier().apply {
-                id = includeDef.path ?: return null
-                version = includeDef.version
-            }
+        val identifier = ElmIdentifiers.fromIncludeDef(includeDef) ?: return null
         val targetUri = contentService.locate(root, identifier).firstOrNull() ?: return null
         return compilationManager.compile(targetUri)
     }
