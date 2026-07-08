@@ -306,7 +306,7 @@ class LibraryResolutionManagerTest {
     // registered under a different name) must not throw.
     //
     // This tests the IllegalStateException catch added for the case where
-    // IgContextManager.setupLibraryManager (via NpmProcessor) already registered
+    // IgContextManager.setupLibraryManager (via the npm package context) already registered
     // a namespace whose URI matches a workspace project's canonical base.
     // NamespaceManager.addNamespace throws IllegalStateException when a URI is
     // already registered under a different name (Kotlin check() convention).

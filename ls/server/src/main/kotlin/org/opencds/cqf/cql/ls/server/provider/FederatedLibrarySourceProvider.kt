@@ -5,11 +5,11 @@ import org.cqframework.cql.cql2elm.LibrarySourceProvider
 import org.cqframework.fhir.npm.ILibraryReader
 import org.cqframework.fhir.npm.LibraryLoader
 import org.cqframework.fhir.npm.NpmLibrarySourceProvider
-import org.cqframework.fhir.npm.NpmProcessor
 import org.cqframework.fhir.utilities.LoggerAdapter
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
+import org.opencds.cqf.cql.ls.server.manager.IgPackageContext
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -29,19 +29,18 @@ import java.net.URI
 class FederatedLibrarySourceProvider(
     private val root: URI,
     private val contentService: ContentService,
-    npmProcessor: NpmProcessor?,
+    pkgContext: IgPackageContext?,
 ) : LibrarySourceProvider {
     companion object {
         private val log = LoggerFactory.getLogger(FederatedLibrarySourceProvider::class.java)
     }
 
     // Build the NPM delegate eagerly at construction time, not per-lookup.
-    // Guard: getPackageManager() throws IllegalStateException when igContext is null.
     private val npmProvider: NpmLibrarySourceProvider? =
-        if (npmProcessor?.igContext != null) {
-            val fhirVersion = npmProcessor.igContext!!.fhirVersion
+        if (pkgContext != null) {
+            val fhirVersion = pkgContext.igContext.fhirVersion
             val reader: ILibraryReader = LibraryLoader(fhirVersion)
-            NpmLibrarySourceProvider(npmProcessor.getPackageManager().npmList, reader, LoggerAdapter(log))
+            NpmLibrarySourceProvider(pkgContext.packageManager.npmList, reader, LoggerAdapter(log))
         } else {
             null
         }

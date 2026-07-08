@@ -1,18 +1,25 @@
 package org.opencds.cqf.cql.ls.server.manager
 
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.io.readByteArray
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.cqframework.cql.cql2elm.LibraryManager
 import org.cqframework.cql.cql2elm.ModelManager
+import org.cqframework.fhir.npm.LibraryLoader
+import org.cqframework.fhir.npm.NpmLibrarySourceProvider
 import org.cqframework.fhir.utilities.IGContext
+import org.cqframework.fhir.utilities.LoggerAdapter
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.FileChangeType
 import org.eclipse.lsp4j.FileEvent
 import org.hl7.elm.r1.VersionedIdentifier
+import org.hl7.fhir.utilities.npm.NpmPackage
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.BeforeEach
@@ -25,13 +32,17 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.event.DidChangeWatchedFilesEvent
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import org.slf4j.LoggerFactory
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.lang.reflect.Method
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.attribute.FileTime
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
@@ -325,22 +336,20 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
-    // readContext — NpmProcessor construction failure → null, not exception
+    // readContext — package loading failure → null, not exception
     // -----------------------------------------------------------------------
 
     @Test
-    fun getContext_npmProcessorConstructionFails_returnsNull() {
-        // An uninitialized IGContext has sourceIg == null.
-        // NpmProcessor's init block calls `NpmPackageManager(igContext.sourceIg!!)`, which
-        // throws NullPointerException.  The fix in readContext must catch this and return
-        // Optional.empty() so that getContext() returns null instead of propagating the exception.
+    fun getContext_igContextWithoutSourceIg_returnsNull() {
+        // An uninitialized IGContext has sourceIg == null, so no NpmPackageManager can be
+        // built. getContext() must return null instead of propagating an exception.
         val manager =
             object : IgContextManager(TestContentService()) {
                 override fun findIgContext(uri: URI): org.cqframework.fhir.utilities.IGContext =
                     org.cqframework.fhir.utilities.IGContext()
             }
         val result = manager.getContext(TEST_URI)
-        assertNull(result, "getContext should return null when NpmProcessor construction fails")
+        assertNull(result, "getContext should return null when the IG context has no sourceIg")
     }
 
     // -----------------------------------------------------------------------
@@ -501,21 +510,18 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
-    // getContext — NpmProcessor construction succeeds when FHIR packages are
+    // getContext — package loading succeeds when FHIR packages are
     // available in the local cache.
     // -----------------------------------------------------------------------
 
     @Test
-    fun getContext_happyPath_returnsNpmProcessor(
+    fun getContext_happyPath_returnsPackageContext(
         @TempDir tempDir: Path,
     ) {
         createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
         val cqlFile = createCqlFileInSubdir(tempDir)
 
-        val r4CoreDir = File(File(System.getProperty("user.home"), ".fhir/packages"), "hl7.fhir.r4.core#4.0.1")
-        Assumptions.assumeTrue(r4CoreDir.exists()) {
-            "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
-        }
+        assumeR4CoreCached()
 
         val cs =
             object : ContentService {
@@ -525,21 +531,18 @@ class IgContextManagerTest {
                 ) = emptySet<URI>()
             }
         val manager = IgContextManager(cs)
-        val npmProcessor = manager.getContext(cqlFile.toUri())
-        assertNotNull(npmProcessor)
+        val pkgContext = manager.getContext(cqlFile.toUri())
+        assertNotNull(pkgContext)
     }
 
     @Test
-    fun getContext_cachedResult_reusesNpmProcessor(
+    fun getContext_cachedResult_reusesPackageContext(
         @TempDir tempDir: Path,
     ) {
         createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
         val cqlFile = createCqlFileInSubdir(tempDir)
 
-        val r4CoreDir = File(File(System.getProperty("user.home"), ".fhir/packages"), "hl7.fhir.r4.core#4.0.1")
-        Assumptions.assumeTrue(r4CoreDir.exists()) {
-            "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
-        }
+        assumeR4CoreCached()
 
         var readCount = 0
         val countingCs =
@@ -568,33 +571,33 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
-    // readContext — caches IGContext even when NpmProcessor construction fails
+    // readContext — caches IGContext even when package loading fails
     // so that setupLibraryManager fallback can use the partial context.
     // -----------------------------------------------------------------------
 
     @Test
-    fun getContext_npmProcessorFails_cachedIgContextStillPopulated() {
+    fun getContext_packageLoadFails_cachedIgContextStillPopulated() {
         val manager =
             object : IgContextManager(TestContentService()) {
                 override fun findIgContext(uri: URI): IGContext = IGContext()
             }
         val result = manager.getContext(TEST_URI)
-        assertNull(result, "getContext should return null when NpmProcessor construction fails")
+        assertNull(result, "getContext should return null when package loading fails")
     }
 
     // -----------------------------------------------------------------------
-    // setupLibraryManager — fallback path when NpmProcessor construction
-    // fails but findIgContext succeeded. Must not throw.
+    // setupLibraryManager — fallback path when package loading fails
+    // but findIgContext succeeded. Must not throw.
     // -----------------------------------------------------------------------
 
     @Test
-    fun setupLibraryManager_whenNpmProcessorFails_doesNotThrow() {
+    fun setupLibraryManager_whenPackageLoadFails_doesNotThrow() {
         val manager =
             object : IgContextManager(TestContentService()) {
                 override fun findIgContext(uri: URI): IGContext = IGContext()
             }
         // Populate cache: getContext → readContext → findIgContext succeeds,
-        // NpmProcessor fails → cachedIgContext is populated.
+        // package loading fails → cachedIgContext is populated.
         assertNull(manager.getContext(TEST_URI))
 
         val libraryManager = LibraryManager(ModelManager())
@@ -602,20 +605,17 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
-    // setupLibraryManager — NpmProcessor path with real packages (conditional)
+    // setupLibraryManager — package-context path with real packages (conditional)
     // -----------------------------------------------------------------------
 
     @Test
-    fun setupLibraryManager_withNpmProcessor_configuresManager(
+    fun setupLibraryManager_withPackageContext_configuresManager(
         @TempDir tempDir: Path,
     ) {
         createMinimalIg(tempDir, "test.ig", "http://test-ig.org/ig", "4.0.1")
         val cqlFile = createCqlFileInSubdir(tempDir)
 
-        val r4CoreDir = File(File(System.getProperty("user.home"), ".fhir/packages"), "hl7.fhir.r4.core#4.0.1")
-        Assumptions.assumeTrue(r4CoreDir.exists()) {
-            "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
-        }
+        assumeR4CoreCached()
 
         val cs =
             object : ContentService {
@@ -631,39 +631,298 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
-    // buildMinimalPackageTgz — structural integrity of the generated TGZ
+    // buildDevPackageTgz — in-memory dev package structure and content
     // -----------------------------------------------------------------------
 
     @Test
-    fun buildMinimalPackageTgz_outputIsValidGzipTar() {
+    fun buildDevPackageTgz_containsPackageJsonAndGeneratedLibrary(
+        @TempDir tempDir: Path,
+    ) {
+        val project = createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+        project.resolve("input/cql/Concepts.cql").toFile()
+            .writeText("library Concepts version '2.1.0'\n\ndefine \"X\": 1")
+
         val manager = IgContextManager(TestContentService())
-        val method: Method =
-            IgContextManager::class.java.getDeclaredMethod(
-                "buildMinimalPackageTgz",
-                String::class.java,
-                String::class.java,
-                String::class.java,
-            )
-        method.isAccessible = true
-        val tgz = method.invoke(manager, "test.pkg", "http://test.org/pkg", "4.0.1") as ByteArray
+        val entries = readTgzEntries(manager.buildDevPackageTgz(igContextFor(project)))
 
-        assertTrue(tgz.isNotEmpty(), "TGZ output must not be empty")
+        val packageJson = jsonMapper.readTree(entries["package/package.json"]!!)
+        assertEquals("great.reef", packageJson.path("name").asText())
+        assertEquals("http://example.org/greatreef", packageJson.path("canonical").asText())
+        assertEquals("4.0.1", packageJson.path("fhirVersions").get(0).asText())
 
-        TarArchiveInputStream(GZIPInputStream(ByteArrayInputStream(tgz))).use { tar ->
-            var foundPackageJson = false
-            var entry: TarArchiveEntry? = tar.nextEntry
-            while (entry != null) {
-                if (entry.name == "package/package.json") {
-                    foundPackageJson = true
-                    val content = tar.readAllBytes().decodeToString()
-                    assertTrue(content.contains("\"name\": \"test.pkg\"")) { "package.json must contain the package name" }
-                    assertTrue(content.contains("\"canonical\": \"http://test.org/pkg\"")) { "package.json must contain the canonical" }
-                    assertTrue(content.contains("\"fhirVersions\": [\"4.0.1\"]")) { "package.json must contain the fhir version" }
-                }
-                entry = tar.nextEntry
+        val library = jsonMapper.readTree(entries["package/Library-Concepts.json"]!!)
+        assertEquals("Library", library.path("resourceType").asText())
+        assertEquals("http://example.org/greatreef/Library/Concepts", library.path("url").asText())
+        assertEquals("2.1.0", library.path("version").asText())
+        val data = library.path("content").get(0).path("data").asText()
+        val decoded = String(java.util.Base64.getDecoder().decode(data), Charsets.UTF_8)
+        assertTrue(decoded.startsWith("library Concepts version '2.1.0'"), "content.data must round-trip the CQL")
+    }
+
+    @Test
+    fun buildDevPackageTgz_scalarFieldsPrecedeObjectFields(
+        @TempDir tempDir: Path,
+    ) {
+        // HAPI's NpmPackageIndexBuilder mis-tracks nesting when an object/array field precedes
+        // url/version, so the generated JSON must emit scalar fields first.
+        val project = createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+
+        val manager = IgContextManager(TestContentService())
+        val entries = readTgzEntries(manager.buildDevPackageTgz(igContextFor(project)))
+
+        val raw = entries["package/Library-Common.json"]!!.decodeToString()
+        val urlIdx = raw.indexOf("\"url\"")
+        val versionIdx = raw.indexOf("\"version\"")
+        val typeIdx = raw.indexOf("\"type\"")
+        val contentIdx = raw.indexOf("\"content\"")
+        assertTrue(urlIdx in 0 until typeIdx, "url must precede type in generated Library JSON")
+        assertTrue(versionIdx in 0 until typeIdx, "version must precede type in generated Library JSON")
+        assertTrue(urlIdx < contentIdx, "url must precede content in generated Library JSON")
+    }
+
+    @Test
+    fun buildDevPackageTgz_loadsViaNpmPackage_andResolvesLibrarySource(
+        @TempDir tempDir: Path,
+    ) {
+        val project = createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+
+        val manager = IgContextManager(TestContentService())
+        val tgz = manager.buildDevPackageTgz(igContextFor(project))
+        val pkg = NpmPackage.fromPackage(ByteArrayInputStream(tgz))
+        val provider = NpmLibrarySourceProvider(mutableListOf(pkg), LibraryLoader("4.0.1"), LoggerAdapter(log))
+
+        val source = provider.getLibrarySource(VersionedIdentifier().withId("Common").withVersion("1.0.0"))
+        assertNotNull(source, "NpmLibrarySourceProvider should resolve the generated library")
+        val cql = source!!.readByteArray().decodeToString()
+        assertTrue(cql.startsWith("library Common version '1.0.0'"))
+
+        // Version matching is exact — a different version must not resolve.
+        val wrongVersion = provider.getLibrarySource(VersionedIdentifier().withId("Common").withVersion("9.9.9"))
+        assertNull(wrongVersion, "A non-matching version must not resolve")
+    }
+
+    @Test
+    fun buildDevPackageTgz_generatedFromCqlWinsOverAuthoredLibrary(
+        @TempDir tempDir: Path,
+    ) {
+        val project = createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+        val libraryDir = project.resolve("input/resources/library").also { it.toFile().mkdirs() }
+        // Authored resource with the SAME url+version as the generated one, but stale content.
+        libraryDir.resolve("Library-Common.json").toFile().writeText(
+            """
+            {
+                "resourceType": "Library",
+                "url": "http://example.org/greatreef/Library/Common",
+                "version": "1.0.0",
+                "content": [{"contentType": "text/cql", "data": "c3RhbGU="}]
             }
-            assertTrue(foundPackageJson, "TGZ must contain package/package.json")
-        }
+            """.trimIndent(),
+        )
+        // Authored resource with a DIFFERENT url, with url appearing after an object field.
+        libraryDir.resolve("Library-Other.json").toFile().writeText(
+            """
+            {
+                "resourceType": "Library",
+                "type": {"coding": [{"code": "logic-library"}]},
+                "url": "http://example.org/greatreef/Library/Other",
+                "version": "3.0.0"
+            }
+            """.trimIndent(),
+        )
+
+        val manager = IgContextManager(TestContentService())
+        val entries = readTgzEntries(manager.buildDevPackageTgz(igContextFor(project)))
+
+        val common = jsonMapper.readTree(entries["package/Library-Common.json"]!!)
+        val data = common.path("content").get(0).path("data").asText()
+        val decoded = String(java.util.Base64.getDecoder().decode(data), Charsets.UTF_8)
+        assertTrue(decoded.startsWith("library Common"), "generated-from-CQL library must win the collision")
+
+        // The other authored library is copied through with url/version hoisted before object fields.
+        val otherRaw = entries["package/Library-Other.json"]!!.decodeToString()
+        assertTrue(
+            otherRaw.indexOf("\"url\"") in 0 until otherRaw.indexOf("\"type\""),
+            "copied resources must have url hoisted before object-valued fields",
+        )
+    }
+
+    @Test
+    fun buildDevPackageTgz_vocabularyFilesFlattenedIntoPackageFolder(
+        @TempDir tempDir: Path,
+    ) {
+        val project = createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+        val vocabDir = project.resolve("input/vocabulary/valueset").also { it.toFile().mkdirs() }
+        vocabDir.resolve("ValueSet-diabetes.json").toFile().writeText(
+            """{"resourceType": "ValueSet", "url": "http://example.org/greatreef/ValueSet/diabetes"}""",
+        )
+
+        val manager = IgContextManager(TestContentService())
+        val entries = readTgzEntries(manager.buildDevPackageTgz(igContextFor(project)))
+
+        // Subfolders inside the tgz are invisible to NpmPackage's canonical index — must be flat.
+        assertTrue(entries.containsKey("package/ValueSet-diabetes.json"), "vocabulary files must be flattened")
+        assertFalse(entries.keys.any { it.contains("vocabulary") }, "no vocabulary subfolder entries allowed")
+    }
+
+    // -----------------------------------------------------------------------
+    // parseCqlHeader — library declaration extraction
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun parseCqlHeader_extractsNameAndVersion() {
+        val manager = IgContextManager(TestContentService())
+        assertEquals("Foo" to "1.0.0", manager.parseCqlHeader("library Foo version '1.0.0'"))
+        assertEquals("Bar" to null, manager.parseCqlHeader("library Bar\n\nusing FHIR version '4.0.1'"))
+        assertEquals("My Lib" to "1.2", manager.parseCqlHeader("""library "My Lib" version '1.2'"""))
+    }
+
+    @Test
+    fun parseCqlHeader_namespaceQualifiedName_usesLastSegment() {
+        val manager = IgContextManager(TestContentService())
+        assertEquals("Name" to "3.0.0", manager.parseCqlHeader("library ns.sub.Name version '3.0.0'"))
+    }
+
+    @Test
+    fun parseCqlHeader_ignoresComments() {
+        val manager = IgContextManager(TestContentService())
+        assertEquals(
+            "Real" to "2.0.0",
+            manager.parseCqlHeader("// library Fake version '9.9.9'\nlibrary Real version '2.0.0'"),
+        )
+        assertEquals(
+            "Real" to "2.0.0",
+            manager.parseCqlHeader("/*\n library Fake version '9.9.9'\n*/\nlibrary Real version '2.0.0'"),
+        )
+    }
+
+    @Test
+    fun parseCqlHeader_noLibraryDeclaration_returnsNull() {
+        val manager = IgContextManager(TestContentService())
+        assertNull(manager.parseCqlHeader("define \"X\": 1"))
+        assertNull(manager.parseCqlHeader(""))
+    }
+
+    // -----------------------------------------------------------------------
+    // Dev dependencies — seeded primary path, staleness, cache hygiene
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getContext_devDependency_seedsInMemoryPackage(
+        @TempDir tempDir: Path,
+    ) {
+        assumeR4CoreCached()
+        val consumer = tempDir.resolve("consumer").also { it.toFile().mkdirs() }
+        createMinimalIg(
+            consumer, "consumer.pkg", "http://example.org/consumer", "4.0.1",
+            dependsOn = listOf("great.reef" to "dev"),
+        )
+        val cqlFile = createCqlFileInSubdir(consumer)
+        createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+
+        val manager = IgContextManager(diskContentService())
+        val ctx = manager.getContext(cqlFile.toUri())
+
+        assertNotNull(ctx, "seeded NpmPackageManager should succeed despite the dev dependency")
+        assertTrue(
+            ctx!!.packageManager.npmList.any { it.name() == "great.reef" },
+            "npmList must contain the in-memory dev package",
+        )
+        assertTrue(
+            ctx.namespaces.any { it.name == "great.reef" && it.uri == "http://example.org/greatreef" },
+            "dev package namespace must be derivable from the context",
+        )
+    }
+
+    @Test
+    fun getContext_devDependency_rebuildsWhenDevSourcesChange(
+        @TempDir tempDir: Path,
+    ) {
+        assumeR4CoreCached()
+        val consumer = tempDir.resolve("consumer").also { it.toFile().mkdirs() }
+        createMinimalIg(
+            consumer, "consumer.pkg", "http://example.org/consumer", "4.0.1",
+            dependsOn = listOf("great.reef" to "dev"),
+        )
+        val cqlFile = createCqlFileInSubdir(consumer)
+        val sibling = createSiblingProject(tempDir, "greatreef", "great.reef", "http://example.org/greatreef")
+        val siblingCql = sibling.resolve("input/cql/Common.cql")
+
+        val manager = IgContextManager(diskContentService())
+        val first = manager.getContext(cqlFile.toUri())
+        val second = manager.getContext(cqlFile.toUri())
+        assertSame(first, second, "unchanged dev sources must reuse the cached context")
+
+        // Bump the dev source mtime well past filesystem timestamp granularity.
+        Files.setLastModifiedTime(siblingCql, FileTime.fromMillis(System.currentTimeMillis() + 10_000))
+        val third = manager.getContext(cqlFile.toUri())
+        assertNotSame(first, third, "a dev source change must rebuild the context")
+    }
+
+    @Test
+    fun getContext_devDependency_writesNothingToFhirPackageCache(
+        @TempDir tempDir: Path,
+    ) {
+        assumeR4CoreCached()
+        val devPackageId = "dev.test.pkg.${UUID.randomUUID()}"
+        val consumer = tempDir.resolve("consumer").also { it.toFile().mkdirs() }
+        createMinimalIg(
+            consumer, "consumer.pkg", "http://example.org/consumer", "4.0.1",
+            dependsOn = listOf(devPackageId to "dev"),
+        )
+        val cqlFile = createCqlFileInSubdir(consumer)
+        createSiblingProject(tempDir, "devpkg", devPackageId, "http://example.org/devpkg")
+
+        val manager = IgContextManager(diskContentService())
+        manager.getContext(cqlFile.toUri())
+        manager.setupLibraryManager(cqlFile.toUri(), LibraryManager(ModelManager()))
+
+        assertFalse(
+            File(FHIR_CACHE_DIR, "$devPackageId#current").exists(),
+            "the LS must never write a #current entry to ~/.fhir/packages",
+        )
+        assertFalse(
+            File(FHIR_CACHE_DIR, "$devPackageId#dev").exists(),
+            "the LS must never write a #dev entry to ~/.fhir/packages",
+        )
+    }
+
+    @Test
+    fun setupLibraryManager_twoDevDependencies_registersBoth(
+        @TempDir tempDir: Path,
+    ) {
+        // Dev dependsOn entries are removed from the IG copy handed to NpmPackageManager
+        // (its hasPackage dedup only consults the first npmList element), so BOTH seeded
+        // in-memory dev packages must survive to namespace registration.
+        assumeR4CoreCached()
+        val consumer = tempDir.resolve("consumer").also { it.toFile().mkdirs() }
+        createMinimalIg(
+            consumer, "consumer.pkg", "http://example.org/consumer", "4.0.1",
+            dependsOn = listOf("dev.pkg.alpha" to "dev", "dev.pkg.beta" to "dev"),
+        )
+        val cqlFile = createCqlFileInSubdir(consumer)
+        createSiblingProject(
+            tempDir, "alpha", "dev.pkg.alpha", "http://example.org/alpha",
+            cqlLibrary = "library AlphaLib version '1.0.0'\n\ndefine \"A\": 1",
+        )
+        createSiblingProject(
+            tempDir, "beta", "dev.pkg.beta", "http://example.org/beta",
+            cqlLibrary = "library BetaLib version '1.0.0'\n\ndefine \"B\": 2",
+        )
+
+        val manager = IgContextManager(diskContentService())
+        val libraryManager = LibraryManager(ModelManager())
+        manager.setupLibraryManager(cqlFile.toUri(), libraryManager)
+
+        assertEquals(
+            "http://example.org/alpha",
+            libraryManager.namespaceManager.resolveNamespaceUri("dev.pkg.alpha"),
+            "the first dev package's namespace must be registered",
+        )
+        assertEquals(
+            "http://example.org/beta",
+            libraryManager.namespaceManager.resolveNamespaceUri("dev.pkg.beta"),
+            "the second dev package's namespace must be registered",
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -755,16 +1014,47 @@ class IgContextManagerTest {
 
     companion object {
         // A URI whose parent dir is /org/opencds/cqf/cql/ls/server/ —
-        // TestContentService returns null for the ig.ini probe, so NpmProcessor is never created.
+        // TestContentService returns null for the ig.ini probe, so no package context is created.
         private val TEST_URI: URI = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/One.cql")!!
+
+        private val log = LoggerFactory.getLogger(IgContextManagerTest::class.java)
+        private val jsonMapper = ObjectMapper()
+
+        private val FHIR_CACHE_DIR = File(System.getProperty("user.home"), ".fhir/packages")
+
+        private fun assumeR4CoreCached() {
+            val r4CoreDir = File(FHIR_CACHE_DIR, "hl7.fhir.r4.core#4.0.1")
+            Assumptions.assumeTrue(r4CoreDir.exists()) {
+                "Skipping: hl7.fhir.r4.core#4.0.1 not in FHIR package cache"
+            }
+        }
+
+        /** ContentService whose default read(uri) opens the URI — serves @TempDir files from disk. */
+        private fun diskContentService(): ContentService =
+            object : ContentService {
+                override fun locate(
+                    root: URI,
+                    libraryIdentifier: VersionedIdentifier,
+                ) = emptySet<URI>()
+            }
 
         private fun createMinimalIg(
             dir: Path,
             packageId: String,
             canonical: String,
             fhirVersion: String,
+            dependsOn: List<Pair<String, String>> = emptyList(),
         ) {
             dir.resolve("ig.ini").toFile().writeText("[IG]\nig = ig.json\n")
+            val dependsOnJson =
+                if (dependsOn.isEmpty()) {
+                    ""
+                } else {
+                    dependsOn.joinToString(",\n", prefix = ",\n    \"dependsOn\": [\n", postfix = "\n    ]") {
+                            (pkgId, version) ->
+                        """        {"packageId": "$pkgId", "uri": "http://example.org/$pkgId", "version": "$version"}"""
+                    }
+                }
             dir.resolve("ig.json").toFile().writeText(
                 """
                 {
@@ -774,7 +1064,7 @@ class IgContextManagerTest {
                     "version": "1.0.0",
                     "name": "$packageId",
                     "packageId": "$packageId",
-                    "fhirVersion": ["$fhirVersion"]
+                    "fhirVersion": ["$fhirVersion"]$dependsOnJson
                 }
                 """.trimIndent(),
             )
@@ -786,6 +1076,40 @@ class IgContextManagerTest {
             val cqlFile = cqlDir.resolve("dummy.cql")
             cqlFile.toFile().writeText("library Dummy version '1.0.0'")
             return cqlFile
+        }
+
+        /** Creates a sibling dev-dependency project with an ig.ini, ig.json, and one CQL library. */
+        private fun createSiblingProject(
+            workspaceRoot: Path,
+            dirName: String,
+            packageId: String,
+            canonical: String,
+            cqlLibrary: String = "library Common version '1.0.0'\n\ndefine \"One\": 1",
+        ): Path {
+            val project = workspaceRoot.resolve(dirName).also { it.toFile().mkdirs() }
+            createMinimalIg(project, packageId, canonical, "4.0.1")
+            project.resolve("input/cql").toFile().mkdirs()
+            val name = Regex("""library\s+(\w+)""").find(cqlLibrary)!!.groupValues[1]
+            project.resolve("input/cql/$name.cql").toFile().writeText(cqlLibrary)
+            return project
+        }
+
+        private fun igContextFor(projectDir: Path): IGContext {
+            val igContext = IGContext(LoggerAdapter(log))
+            igContext.initializeFromIni(projectDir.resolve("ig.ini").toString())
+            return igContext
+        }
+
+        private fun readTgzEntries(tgz: ByteArray): Map<String, ByteArray> {
+            val entries = mutableMapOf<String, ByteArray>()
+            TarArchiveInputStream(GZIPInputStream(ByteArrayInputStream(tgz))).use { tar ->
+                var entry = tar.nextEntry
+                while (entry != null) {
+                    entries[entry.name] = tar.readAllBytes()
+                    entry = tar.nextEntry
+                }
+            }
+            return entries
         }
     }
 }

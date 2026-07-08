@@ -27,6 +27,7 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.IgPackageContext
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
@@ -391,7 +392,8 @@ object CqlEvaluator {
     private fun evaluateBatch(
         batch: MutableList<LibraryRequest>,
         fhirContext: FhirContext,
-        npmProcessor: NpmProcessor?,
+        pkgContext: IgPackageContext?,
+        npmConfigured: Boolean,
         contentService: ContentService,
         terminologyRepo: IRepository,
         evaluationSettings: EvaluationSettings,
@@ -424,7 +426,7 @@ object CqlEvaluator {
                     // would strip a segment (input/cql → input) and mis-root resolution. This matches
                     // CqlCompilationManager, which passes the already-derived directory as the root.
                     evaluationSettings.librarySourceProviders.add(
-                        FederatedLibrarySourceProvider(libraryUri, contentService, npmProcessor),
+                        FederatedLibrarySourceProvider(libraryUri, contentService, pkgContext),
                     )
                 } else if (libraryKotlinPath != null) {
                     evaluationSettings.librarySourceProviders.add(
@@ -438,13 +440,14 @@ object CqlEvaluator {
                 }
                 val engine = Engines.forRepository(repository, evaluationSettings)
 
-                // Set up npm packages on the engine's LibraryManager when NpmProcessor was not set
-                // on evaluationSettings (i.e. no workspace-root ig.ini, as in multi-project
-                // workspaces).  Use the per-library URI so that each library's own project ig.ini
-                // is found — cqlRootUri points at the VS Code workspace root which has no ig.ini
-                // in multi-project layouts.  This mirrors CqlCompilationManager.createLibraryManager().
+                // Set up npm packages on the engine's LibraryManager when the NpmProcessor on
+                // evaluationSettings has no packages (no workspace-root ig.ini, as in
+                // multi-project workspaces — or a dev dependency prevented its construction).
+                // Use the per-library URI so that each library's own project ig.ini is found —
+                // cqlRootUri points at the VS Code workspace root which has no ig.ini in
+                // multi-project layouts.  This mirrors CqlCompilationManager.createLibraryManager().
                 val igSetupUri = libraryUri ?: cqlRootUri
-                if (npmProcessor == null && igSetupUri != null) {
+                if (!npmConfigured && igSetupUri != null) {
                     igContextManager.setupLibraryManager(igSetupUri, engine.environment.libraryManager!!)
                 }
 
@@ -672,23 +675,36 @@ object CqlEvaluator {
         val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
 
         var igContext: IGContext? = null
-        var npmProcessor: NpmProcessor? = null
+        var pkgContext: IgPackageContext? = null
         val rootDir = request.rootDir
         val cqlRootUri =
             rootDir?.let { Uris.addPath(Uris.addPath(Uris.parseOrNull(it)!!, "input")!!, "cql") }
         if (rootDir != null) {
-            npmProcessor =
+            pkgContext =
                 igContextManager.getContext(
                     Uris.addPath(Uris.addPath(Uris.parseOrNull(rootDir)!!, "input")!!, "cql")!!,
                 )
-            if (npmProcessor != null) {
-                igContext = npmProcessor.igContext
+            if (pkgContext != null) {
+                igContext = pkgContext.igContext
             }
         }
 
-        if (npmProcessor == null) {
-            npmProcessor = NpmProcessor(igContext)
-        }
+        // clinical-reasoning's EvaluationSettings requires a real NpmProcessor. Its constructor
+        // re-resolves every declared dependency from ~/.fhir/packages and throws when one is a
+        // "dev" dependency (never in the cache — the LS builds those in memory instead of
+        // planting stubs). Degrade to an empty NpmProcessor; the engine's LibraryManager then
+        // gets its npm setup from IgContextManager.setupLibraryManager in evaluateBatch.
+        val npmProcessor =
+            try {
+                NpmProcessor(igContext)
+            } catch (e: Exception) {
+                log.warn(
+                    "NpmProcessor unavailable for evaluation ({}); npm setup will use the language-server package context",
+                    e.message?.substringBefore(" {"),
+                )
+                NpmProcessor(null)
+            }
+        val npmConfigured = npmProcessor.igContext != null
 
         val grouped = LinkedHashMap<String, MutableList<LibraryRequest>>()
         for (lib in request.libraries) {
@@ -716,13 +732,14 @@ object CqlEvaluator {
                 val evaluationSettings =
                     buildEvaluationSettings(
                         buildCqlOptions(request.optionsPath),
-                        NpmProcessor(igContext),
+                        npmProcessor,
                     ).withLibraryCache(sharedLibraryCache)
                 val (results, detailed) =
                     evaluateBatch(
                         batch,
                         fhirContext,
-                        npmProcessor,
+                        pkgContext,
+                        npmConfigured,
                         contentService,
                         terminologyRepo,
                         evaluationSettings,

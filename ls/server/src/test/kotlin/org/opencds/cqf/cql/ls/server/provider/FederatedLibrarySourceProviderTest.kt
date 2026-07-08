@@ -1,6 +1,5 @@
 package org.opencds.cqf.cql.ls.server.provider
 
-import org.cqframework.fhir.npm.NpmProcessor
 import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -38,24 +37,13 @@ class FederatedLibrarySourceProviderTest {
     }
 
     // -----------------------------------------------------------------------
-    // NPM tier skipped — null NpmProcessor
+    // NPM tier skipped — null package context
     // -----------------------------------------------------------------------
 
     @Test
-    fun getLibrarySource_nullNpmProcessor_returnsNull() {
+    fun getLibrarySource_nullPackageContext_returnsNull() {
         val emptyCs = emptyContentService()
         val provider = FederatedLibrarySourceProvider(root, emptyCs, null)
-        assertNull(provider.getLibrarySource(VersionedIdentifier().withId("FHIRHelpers")))
-    }
-
-    // -----------------------------------------------------------------------
-    // NPM tier skipped — NpmProcessor with null igContext
-    // -----------------------------------------------------------------------
-
-    @Test
-    fun getLibrarySource_npmProcessorNullIgContext_doesNotThrow() {
-        val emptyCs = emptyContentService()
-        val provider = FederatedLibrarySourceProvider(root, emptyCs, NpmProcessor(null))
         assertNull(provider.getLibrarySource(VersionedIdentifier().withId("FHIRHelpers")))
     }
 
