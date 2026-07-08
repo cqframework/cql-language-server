@@ -69,7 +69,9 @@ import org.opencds.cqf.cql.ls.server.command.ParameterRequest
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import kotlinx.io.readString
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
+import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
@@ -133,6 +135,12 @@ open class CqlDebugServer(
 
     @Volatile
     protected var streamingLaunchUri: String? = null
+
+    // Same provider the evaluator uses — gives contentService + npm + bundled FHIRHelpers
+    // so the source handler can serve content for libraries like FHIRHelpers that only
+    // exist in the npm package cache, not on the local filesystem.
+    @Volatile
+    private var launchLibrarySourceProvider: FederatedLibrarySourceProvider? = null
 
     @Volatile
     private var launchCompiler: CqlCompiler? = null
@@ -482,7 +490,32 @@ open class CqlDebugServer(
                             runCatching { URI.create(streamingLaunchUri!!).resolve(".") }
                                 .getOrElse { URI.create(streamingLaunchUri!!) }
                         val uris = contentService.locate(locateRoot, identifier)
-                        val uri = uris.firstOrNull()
+                        var uri = uris.firstOrNull()
+
+                        // Cross-project fallback: when the primary locate fails for an unqualified
+                        // library (system=null — e.g. FHIRHelpers), search every workspace IG
+                        // project's input/cql/ directory. Transitive includes that live in a
+                        // sibling project's source tree won't be found by the primary search.
+                        if (uri == null && identifier.system == null) {
+                            for (folder in libraryResolutionManager.igProjects()) {
+                                val folderUri = Uris.parseOrNull(folder.uri) ?: continue
+                                val inputCqlUri =
+                                    Uris.addPath(folderUri, "input")
+                                        ?.let { Uris.addPath(it, "cql") }
+                                        ?: continue
+                                val fallbackUris = contentService.locate(inputCqlUri, identifier)
+                                uri = fallbackUris.firstOrNull()
+                                if (uri != null) {
+                                    log.debug(
+                                        "onLibraryEnteredCallback: found '{}' via cross-project fallback in {}",
+                                        libId,
+                                        folder.name,
+                                    )
+                                    break
+                                }
+                            }
+                        }
+
                         if (uri != null) {
                             librarySourceMap[libId] = uri
                         } else {
@@ -526,6 +559,9 @@ open class CqlDebugServer(
         streamingLaunchUri = args.libraryUri
 
         val libraryUri = URI.create(args.libraryUri)
+        launchLibrarySourceProvider =
+            FederatedLibrarySourceProvider(libraryUri, contentService, igContextManager.getContext(libraryUri))
+
         val parseTree = compilationManager.getParseTree(libraryUri)
         if (parseTree != null) {
             handler.applyCqlStepLineFilter(CqlStepPositionCollector.collect(parseTree))
@@ -1511,13 +1547,11 @@ open class CqlDebugServer(
         val content =
             identifier?.let { id ->
                 try {
-                    val uris =
-                        contentService.locate(
-                            URI.create(streamingLaunchUri ?: return@let null),
-                            id,
-                        )
-                    val uri = uris.firstOrNull() ?: return@let null
-                    contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() }
+                    // FederatedLibrarySourceProvider mirrors the evaluator's resolution order:
+                    // local filesystem → npm packages → bundled FHIRHelpers. This ensures
+                    // libraries like FHIRHelpers (only in ~/.fhir/packages/) can be served.
+                    val source = launchLibrarySourceProvider?.getLibrarySource(id) ?: return@let null
+                    source.readString()
                 } catch (_: Exception) {
                     null
                 }
