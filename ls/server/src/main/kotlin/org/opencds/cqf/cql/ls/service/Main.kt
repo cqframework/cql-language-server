@@ -11,6 +11,9 @@ import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
 import org.opencds.cqf.cql.ls.server.command.GetVersionInfoCommandContribution
 import org.opencds.cqf.cql.ls.server.command.RefreshIgDiagnosticsCommandContribution
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
+import org.opencds.cqf.cql.ls.server.command.fhirop.FhirOperationCommandContribution
+import org.opencds.cqf.cql.ls.server.command.fhirop.FhirOperationContext
+import org.opencds.cqf.cql.ls.server.command.fhirop.handlers.ApplyPlanDefinitionHandler
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
@@ -98,6 +101,10 @@ fun main(args: Array<String>) {
     )
     contributions.add(
         DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
+    )
+    val fhirOperationContext = FhirOperationContext(igContextManager, federatedContentService, libraryResolutionManager)
+    contributions.add(
+        FhirOperationCommandContribution(fhirOperationContext, listOf(ApplyPlanDefinitionHandler())),
     )
     commandsFuture.complete(contributions)
 

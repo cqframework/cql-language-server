@@ -1,0 +1,12 @@
+{
+  "resourceType": "PlanDefinition",
+  "id": "apply-test",
+  "url": "http://example.org/PlanDefinition/apply-test",
+  "status": "active",
+  "action": [
+    {
+      "id": "action-1",
+      "title": "Test Action"
+    }
+  ]
+}
