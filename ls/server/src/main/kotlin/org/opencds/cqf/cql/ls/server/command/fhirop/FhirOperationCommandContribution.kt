@@ -33,11 +33,11 @@ class FhirOperationCommandContribution(
 
         val element = params.arguments[0] as JsonElement
         val request = Gson().fromJson(element, FhirOperationRequest::class.java)
-        log.debug("fhirOperation: received {}", request.operation)
+        log.info("fhirOperation: received operation=${request.operation}, rootDir=${request.rootDir}, resourceUri=${request.resourceUri}, parameters=${request.parameters}")
 
         val handler = registry[request.operation]
         if (handler == null) {
-            log.warn("fhirOperation: no handler registered for {}", request.operation)
+            log.warn("fhirOperation: no handler registered for ${request.operation}")
             return CompletableFuture.completedFuture(
                 FhirOperationResponse(
                     operation = request.operation,
@@ -46,6 +46,7 @@ class FhirOperationCommandContribution(
             )
         }
 
+        log.info("fhirOperation: dispatching to ${handler::class.simpleName}")
         @Suppress("UNCHECKED_CAST")
         return handler.run(request, ctx) as CompletableFuture<Any>
     }

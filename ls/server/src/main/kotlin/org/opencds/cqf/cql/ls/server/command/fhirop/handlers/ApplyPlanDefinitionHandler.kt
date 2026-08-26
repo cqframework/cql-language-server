@@ -55,20 +55,25 @@ class ApplyPlanDefinitionHandler(
         request: FhirOperationRequest,
         ctx: FhirOperationContext,
     ): FhirOperationResponse {
+        log.info("PlanDefinition/\$apply: starting — rootDir=${request.rootDir}, resourceUri=${request.resourceUri}, parameters=${request.parameters}")
         val errors = mutableListOf<String>()
         try {
             val fhirContext = FhirContext.forCached(FhirVersionEnum.valueOf(request.fhirVersion))
 
             val subject = request.parameters["subject"]
             if (subject.isNullOrBlank()) {
+                log.warn("PlanDefinition/\$apply: missing required 'subject' parameter")
                 return FhirOperationResponse(request.operation, errors = listOf("Missing required parameter: 'subject'"))
             }
 
             val repository = buildRepository(request, fhirContext, ctx)
+            log.info("PlanDefinition/\$apply: repository built for rootDir=${request.rootDir}")
 
             val planDefinition =
                 resolvePlanDefinition(request, fhirContext, errors, repository, ctx)
                     ?: return FhirOperationResponse(request.operation, errors = errors)
+
+            log.info("PlanDefinition/\$apply: planDefinition resolved, subject=$subject")
 
             val dataBundle = resolveDataBundle(request, fhirContext, errors)
             if (errors.isNotEmpty()) return FhirOperationResponse(request.operation, errors = errors)
@@ -96,6 +101,7 @@ class ApplyPlanDefinitionHandler(
                 )
 
             val resultJson = fhirContext.newJsonParser().encodeResourceToString(result)
+            log.info("PlanDefinition/\$apply: success — resultType=${result.fhirType()}, resultJson length=${resultJson.length}")
             return FhirOperationResponse(
                 operation = request.operation,
                 resultJson = resultJson,
@@ -187,7 +193,7 @@ class ApplyPlanDefinitionHandler(
         val rootDir = request.rootDir
         val data: IRepository =
             if (!rootDir.isNullOrBlank()) {
-                val rootUri = Uris.parseOrNull(rootDir)
+                val rootUri = Uris.parseOrNull(rootDir)?.let { Uris.addPath(it, "input") }
                 if (rootUri != null) {
                     IgStandardRepository(fhirContext, Paths.get(rootUri))
                 } else {
