@@ -4,7 +4,12 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.opencds.cqf.cql.engine.runtime.Interval
+import org.opencds.cqf.cql.engine.runtime.Tuple
+import org.opencds.cqf.cql.engine.runtime.Integer as CqlInteger
+import org.opencds.cqf.cql.engine.runtime.List as CqlList
 
 class RuntimeValueRegistryTest {
     // -- put / find basic ---------------------------------------------------
@@ -16,6 +21,35 @@ class RuntimeValueRegistryTest {
         val result = reg.find("Initial Population")
         assertEquals(42, result?.value)
         assertEquals("System.Integer", result?.type)
+    }
+
+    // -- unwrapValue: structured/interval passthrough ------------------------
+
+    @Test
+    fun `putDefine passes Interval through unstringified`() {
+        val reg = RuntimeValueRegistry()
+        val interval = Interval(CqlInteger(1), true, CqlInteger(10), true)
+        reg.putDefine("Range", interval, "Interval<System.Integer>", null)
+        assertTrue(reg.find("Range")?.value === interval)
+    }
+
+    @Test
+    fun `putDefine passes StructuredValue through unstringified`() {
+        val reg = RuntimeValueRegistry()
+        val tuple = Tuple().withElements(mutableMapOf("id" to CqlInteger(1)))
+        reg.putDefine("Row", tuple, "Tuple", null)
+        assertTrue(reg.find("Row")?.value === tuple)
+    }
+
+    @Test
+    fun `putDefine passes the engine's own List wrapper through unstringified`() {
+        // This is the actual runtime shape of a CQL Retrieve (e.g. "define Encounters: [Encounter]"):
+        // org.opencds.cqf.cql.engine.runtime.List, NOT a kotlin.collections.List. It is a distinct
+        // type from Interval/StructuredValue and previously fell through to `toString()`.
+        val reg = RuntimeValueRegistry()
+        val cqlList = CqlList(listOf(CqlInteger(1), CqlInteger(2)))
+        reg.putDefine("Numbers", cqlList, "List<System.Integer>", null)
+        assertTrue(reg.find("Numbers")?.value === cqlList)
     }
 
     @Test
@@ -176,5 +210,45 @@ class RuntimeValueRegistryTest {
         assertEquals(2, groups.size)
         assertEquals(2, groups["LibA"]?.size)
         assertEquals(1, groups["LibB"]?.size)
+    }
+
+    // -- caseInsensitiveCandidates / displayNames ---------------------------
+
+    @Nested
+    inner class CaseInsensitiveCandidates {
+        @Test
+        fun `unique ignore-case match returns properly-cased name`() {
+            val reg = RuntimeValueRegistry()
+            reg.loadContextResource("IndexPCP", "enc", "FHIR.Encounter")
+            assertEquals(listOf("IndexPCP"), reg.caseInsensitiveCandidates("indexPCP"))
+            assertEquals(listOf("IndexPCP"), reg.caseInsensitiveCandidates("INDEXPCP"))
+            assertEquals(listOf("IndexPCP"), reg.caseInsensitiveCandidates("IndexPCP"))
+        }
+
+        @Test
+        fun `same name across categories coalesces to one candidate`() {
+            val reg = RuntimeValueRegistry()
+            reg.loadContextResource("Result", "ctx", null)
+            reg.putDefine("Result", "def", null, null)
+            reg.putStackVariable("Result", "stack", null)
+            // Distinct display names only — messaging never needs to see the same
+            // properly-cased name more than once.
+            assertEquals(listOf("Result"), reg.caseInsensitiveCandidates("RESULT"))
+        }
+
+        @Test
+        fun `returns empty when no ignore-case match`() {
+            val reg = RuntimeValueRegistry()
+            reg.putDefine("Patient", "v", null, null)
+            assertTrue(reg.caseInsensitiveCandidates("Encounter").isEmpty())
+        }
+    }
+
+    @Test
+    fun `displayNames returns all registered names sorted`() {
+        val reg = RuntimeValueRegistry()
+        reg.putDefine("Z", 1, null, null)
+        reg.loadContextResource("A", 2, null)
+        assertEquals(listOf("A", "Z"), reg.displayNames())
     }
 }

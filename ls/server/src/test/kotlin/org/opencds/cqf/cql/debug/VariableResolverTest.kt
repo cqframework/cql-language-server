@@ -19,13 +19,23 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.opencds.cqf.cql.engine.fhir.fhirModelNamespaceUri
+import org.opencds.cqf.cql.engine.runtime.ClassInstance
+import org.opencds.cqf.cql.engine.runtime.Code
+import org.opencds.cqf.cql.engine.runtime.Interval
+import org.opencds.cqf.cql.engine.runtime.Tuple
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.service.TestContentService
+import javax.xml.namespace.QName
 import org.mockito.Mockito.`when` as whenever
+import org.opencds.cqf.cql.engine.runtime.Integer as CqlInteger
+import org.opencds.cqf.cql.engine.runtime.List as CqlList
+import org.opencds.cqf.cql.engine.runtime.String as CqlString
 
 class VariableResolverTest {
     companion object {
@@ -47,6 +57,64 @@ class VariableResolverTest {
 
     private val resolver = VariableResolver()
     private val gson = Gson()
+
+    /**
+     * Builds a [ClassInstance] shaped the way the CQL engine actually represents a retrieved FHIR
+     * resource at runtime (see [org.opencds.cqf.fhir.cql.ClassInstanceHelper]) — NOT a raw HAPI
+     * object. A resource's "id" is itself a nested ClassInstance of type "id" with a "value" element.
+     */
+    private fun fhirClassInstance(
+        type: String,
+        elements: Map<String, Any?>,
+    ): ClassInstance {
+        val values =
+            elements.mapValues { (_, v) ->
+                when (v) {
+                    is Value -> v
+                    is String -> CqlString(v)
+                    else -> CqlString(v.toString())
+                }
+            }
+        return ClassInstance(QName(fhirModelNamespaceUri, type), values.toMutableMap())
+    }
+
+    private fun fhirEncounterClassInstance(id: String): ClassInstance =
+        fhirClassInstance("Encounter", mapOf("id" to fhirClassInstance("id", mapOf("value" to id))))
+
+    // -- normalizeValue --------------------------------------------------------
+
+    @Nested
+    inner class NormalizeValue {
+        @Test
+        fun `ClassInstance for a FHIR resource converts to a real FHIR resource`() {
+            val result = resolver.normalizeValue(fhirEncounterClassInstance("enc-1"))
+            assertTrue(result is Encounter)
+            assertEquals("enc-1", (result as Encounter).idElement.idPart)
+        }
+
+        @Test
+        fun `ClassInstance outside the FHIR namespace is left unchanged`() {
+            val nonFhir = ClassInstance(QName("urn:not-fhir", "Foo"), mutableMapOf("bar" to CqlInteger(1)))
+            assertEquals(nonFhir, resolver.normalizeValue(nonFhir))
+        }
+
+        @Test
+        fun `CqlList of FHIR ClassInstances converts to a list of real FHIR resources`() {
+            val cqlList = CqlList(listOf(fhirEncounterClassInstance("enc-1"), fhirEncounterClassInstance("enc-2")))
+            val result = resolver.normalizeValue(cqlList)
+            assertTrue(result is List<*>)
+            val list = result as List<*>
+            assertEquals(2, list.size)
+            assertEquals("enc-1", (list[0] as Encounter).idElement.idPart)
+            assertEquals("enc-2", (list[1] as Encounter).idElement.idPart)
+        }
+
+        @Test
+        fun `non-CQL value passes through unchanged`() {
+            assertEquals("plain", resolver.normalizeValue("plain"))
+            assertNull(resolver.normalizeValue(null))
+        }
+    }
 
     // -- formatVariableValue -------------------------------------------------
 
@@ -84,6 +152,55 @@ class VariableResolverTest {
             val result = resolver.formatVariableValue(patient, gson)
             assertTrue(result.startsWith("{"))
             assertTrue(result.endsWith("}"))
+        }
+
+        @Test
+        fun `Interval formats as closed range`() {
+            val interval = Interval(CqlInteger(1), true, CqlInteger(10), true)
+            assertEquals("[1, 10]", resolver.formatVariableValue(interval, gson))
+        }
+
+        @Test
+        fun `Interval formats open boundary`() {
+            val interval = Interval(CqlInteger(1), false, CqlInteger(10), false)
+            assertEquals("(1, 10)", resolver.formatVariableValue(interval, gson))
+        }
+
+        @Test
+        fun `StructuredValue formats as type with fields`() {
+            val tuple = Tuple().withElements(mutableMapOf("id" to CqlInteger(1)))
+            assertEquals("Tuple { id: 1 }", resolver.formatVariableValue(tuple, gson))
+        }
+
+        @Test
+        fun `List of FHIR resources returns resource-list summary`() {
+            val encounter1 = Encounter().also { it.id = "enc-1" }
+            val encounter2 = Encounter().also { it.id = "enc-2" }
+            val result = resolver.formatVariableValue(listOf(encounter1, encounter2), gson)
+            assertEquals("[Encounter/enc-1, Encounter/enc-2]", result)
+        }
+
+        @Test
+        fun `CqlList of ClassInstance FHIR resources returns resource-list summary, matching real CQL Retrieve output`() {
+            val cqlList = CqlList(listOf(fhirEncounterClassInstance("enc-1"), fhirEncounterClassInstance("enc-2")))
+            assertEquals("[Encounter/enc-1, Encounter/enc-2]", resolver.formatVariableValue(cqlList, gson))
+        }
+
+        @Test
+        fun `single ClassInstance FHIR resource returns full FHIR JSON, not a structured-value dump`() {
+            val result = resolver.formatVariableValue(fhirEncounterClassInstance("enc-1"), gson)
+            assertTrue(result.startsWith("{"), "expected FHIR JSON, got: $result")
+            assertTrue(result.contains("\"enc-1\""))
+        }
+
+        @Test
+        fun `empty list returns bracket string`() {
+            assertEquals("[]", resolver.formatVariableValue(emptyList<Any>(), gson))
+        }
+
+        @Test
+        fun `non-resource list falls back to gson`() {
+            assertEquals("[\"a\",\"b\"]", resolver.formatVariableValue(listOf("a", "b"), gson))
         }
     }
 
@@ -157,6 +274,16 @@ class VariableResolverTest {
         fun `plain string returns false`() {
             assertFalse(resolver.isExpandable("hello"))
         }
+
+        @Test
+        fun `Interval returns true`() {
+            assertTrue(resolver.isExpandable(Interval(CqlInteger(1), true, CqlInteger(10), true)))
+        }
+
+        @Test
+        fun `StructuredValue returns true`() {
+            assertTrue(resolver.isExpandable(Tuple()))
+        }
     }
 
     // -- registerIfExpandable ------------------------------------------------
@@ -222,6 +349,35 @@ class VariableResolverTest {
         }
 
         @Test
+        fun `list of FHIR resources returns ResourceType-id named entries`() {
+            val encounter1 = Encounter().also { it.id = "enc-1" }
+            val encounter2 = Encounter().also { it.id = "enc-2" }
+            val children = resolver.childrenOf(listOf(encounter1, encounter2))
+            assertEquals(2, children.size)
+            assertEquals("Encounter/enc-1", children[0].name)
+            assertEquals("Encounter/enc-2", children[1].name)
+            assertEquals("Encounter", children[0].type)
+        }
+
+        @Test
+        fun `CqlList of ClassInstance FHIR resources returns ResourceType-id named entries, matching real CQL Retrieve output`() {
+            val cqlList = CqlList(listOf(fhirEncounterClassInstance("enc-1"), fhirEncounterClassInstance("enc-2")))
+            val children = resolver.childrenOf(cqlList)
+            assertEquals(2, children.size)
+            assertEquals("Encounter/enc-1", children[0].name)
+            assertEquals("Encounter/enc-2", children[1].name)
+            assertEquals("Encounter", children[0].type)
+        }
+
+        @Test
+        fun `mixed list of resource and non-resource keeps index naming for non-resource items`() {
+            val encounter = Encounter().also { it.id = "enc-1" }
+            val children = resolver.childrenOf(listOf(encounter, "plain-value"))
+            assertEquals("Encounter/enc-1", children[0].name)
+            assertEquals("[1]", children[1].name)
+        }
+
+        @Test
         fun `empty list returns empty`() {
             assertTrue(resolver.childrenOf(emptyList<Any>()).isEmpty())
         }
@@ -229,6 +385,71 @@ class VariableResolverTest {
         @Test
         fun `non-FHIR non-list returns empty`() {
             assertTrue(resolver.childrenOf("plain string").isEmpty())
+        }
+
+        @Test
+        fun `Interval returns low, lowClosed, high, highClosed`() {
+            val interval = Interval(CqlInteger(1), true, CqlInteger(10), false)
+            val children = resolver.childrenOf(interval)
+            assertEquals(4, children.size)
+            assertEquals("1", children.first { it.name == "low" }.value)
+            assertEquals("true", children.first { it.name == "lowClosed" }.value)
+            assertEquals("10", children.first { it.name == "high" }.value)
+            assertEquals("false", children.first { it.name == "highClosed" }.value)
+        }
+
+        @Test
+        fun `StructuredValue returns elements as children`() {
+            val code = Code().withCode("123").withSystem("http://example.com").withDisplay("Example")
+            val children = resolver.childrenOf(code)
+            assertEquals(4, children.size)
+            assertTrue(children.any { it.name == "code" })
+            assertTrue(children.any { it.name == "system" })
+            assertTrue(children.any { it.name == "display" })
+        }
+    }
+
+    // -- buildResourceVariable / formatResourceList ---------------------------
+
+    @Nested
+    inner class BuildResourceVariable {
+        @Test
+        fun `uses ResourceType-id as default name`() {
+            val patient = Patient().also { it.id = "pat-1" }
+            val variable = resolver.buildResourceVariable(patient, gson)
+            assertEquals("Patient/pat-1", variable.name)
+            assertEquals("Patient", variable.type)
+            assertTrue(variable.variablesReference > 0)
+        }
+
+        @Test
+        fun `displayNameOverride wins over default naming`() {
+            val patient = Patient().also { it.id = "pat-1" }
+            val variable = resolver.buildResourceVariable(patient, gson, "custom-name")
+            assertEquals("custom-name", variable.name)
+        }
+
+        @Test
+        fun `value is full FHIR JSON`() {
+            val patient = Patient().also { it.id = "pat-1" }
+            val variable = resolver.buildResourceVariable(patient, gson)
+            assertTrue(variable.value.startsWith("{"))
+            assertTrue(variable.value.endsWith("}"))
+        }
+    }
+
+    @Nested
+    inner class FormatResourceList {
+        @Test
+        fun `empty list returns brackets`() {
+            assertEquals("[]", resolver.formatResourceList(emptyList()))
+        }
+
+        @Test
+        fun `non-empty list joins ResourceType-id entries`() {
+            val encounter1 = Encounter().also { it.id = "enc-1" }
+            val encounter2 = Encounter().also { it.id = "enc-2" }
+            assertEquals("[Encounter/enc-1, Encounter/enc-2]", resolver.formatResourceList(listOf(encounter1, encounter2)))
         }
     }
 
@@ -252,6 +473,17 @@ class VariableResolverTest {
         fun `no match returns null`() {
             assertNull(resolver.findInVarRefs("nonExistentChild"))
         }
+
+        @Test
+        fun `iterating while children register new refs does not throw ConcurrentModificationException`() {
+            val patient1 = Patient().also { it.addName(HumanName().setFamily("Smith")) }
+            val patient2 = Patient().also { it.addName(HumanName().setFamily("Jones")) }
+            resolver.registerIfExpandable(patient1)
+            resolver.registerIfExpandable(patient2)
+            // Forces the loop to expand every registered parent (each expansion registers
+            // new child refs into the same map being iterated) without finding a match.
+            assertNull(resolver.findInVarRefs("nonExistentChild"))
+        }
     }
 
     // -- extractPropertyValue ------------------------------------------------
@@ -270,6 +502,96 @@ class VariableResolverTest {
         fun `unknown property returns null`() {
             val patient = Patient()
             assertNull(resolver.extractPropertyValue(patient, "nonExistentProperty"))
+        }
+    }
+
+    // -- readProperty / navigatePropertyPath ---------------------------------
+
+    @Nested
+    inner class NavigatePropertyPath {
+        private fun encounterWithPeriod(): Encounter =
+            Encounter().also {
+                it.period =
+                    Period().also { p ->
+                        p.start = java.util.Date(1700000000000L)
+                        p.end = java.util.Date(1800000000000L)
+                    }
+            }
+
+        @Test
+        fun `fhir resource single hop resolves element`() {
+            val value = resolver.navigatePropertyPath(encounterWithPeriod(), listOf("period"))
+            assertTrue(value is Period)
+        }
+
+        @Test
+        fun `multi-hop resolves nested element`() {
+            val value = resolver.navigatePropertyPath(encounterWithPeriod(), listOf("period", "start"))
+            assertNotNull(value)
+            assertTrue(value is org.hl7.fhir.r4.model.DateTimeType)
+        }
+
+        @Test
+        fun `List root with index resolves item`() {
+            val list = listOf(Encounter().also { it.id = "enc-1" }, Encounter().also { it.id = "enc-2" })
+            val value = resolver.navigatePropertyPath(list, listOf("[1]"))
+            assertTrue(value is Encounter)
+            assertEquals("enc-2", (value as Encounter).idElement.idPart)
+        }
+
+        @Test
+        fun `IBase with indexed property resolves list item`() {
+            val encounter = Encounter().also { it.addReasonCode(org.hl7.fhir.r4.model.CodeableConcept()) }
+            val value = resolver.navigatePropertyPath(encounter, listOf("reasonCode[0]"))
+            assertTrue(value is org.hl7.fhir.r4.model.CodeableConcept)
+        }
+
+        @Test
+        fun `Interval boundaries resolve`() {
+            val interval = Interval(CqlInteger(1), true, CqlInteger(10), false)
+            assertEquals(CqlInteger(1), resolver.navigatePropertyPath(interval, listOf("low")))
+            assertEquals(CqlInteger(10), resolver.navigatePropertyPath(interval, listOf("high")))
+            assertEquals(true, resolver.navigatePropertyPath(interval, listOf("lowClosed")))
+            assertEquals(false, resolver.navigatePropertyPath(interval, listOf("highClosed")))
+        }
+
+        @Test
+        fun `unknown interval property returns null`() {
+            assertEquals(null, resolver.navigatePropertyPath(Interval(CqlInteger(1), true, CqlInteger(10), false), listOf("point")))
+        }
+
+        @Test
+        fun `non-fhir ClassInstance element resolves`() {
+            val ci = ClassInstance(QName("urn:not-fhir", "Foo"), mutableMapOf("bar" to CqlString("x")))
+            assertEquals(CqlString("x"), resolver.navigatePropertyPath(ci, listOf("bar")))
+        }
+
+        @Test
+        fun `fhir ClassInstance normalizes then navigates`() {
+            val value = resolver.navigatePropertyPath(fhirEncounterClassInstance("enc-1"), listOf("id"))
+            assertNotNull(value)
+            assertTrue(value is org.hl7.fhir.r4.model.IdType)
+        }
+
+        @Test
+        fun `unknown property returns null`() {
+            assertEquals(null, resolver.navigatePropertyPath(encounterWithPeriod(), listOf("nonExistentProperty")))
+        }
+
+        @Test
+        fun `nullable root returns null`() {
+            assertEquals(null, resolver.navigatePropertyPath(null, listOf("period")))
+        }
+
+        @Test
+        fun `empty segments returns root`() {
+            val encounter = encounterWithPeriod()
+            assertEquals(encounter, resolver.navigatePropertyPath(encounter, emptyList()))
+        }
+
+        @Test
+        fun `primitive root returns null`() {
+            assertEquals(null, resolver.navigatePropertyPath(StringType("x"), listOf("length")))
         }
     }
 
@@ -381,13 +703,13 @@ class VariableResolverTest {
         resolver.registerIfExpandable(Encounter())
         resolver.registerIfExpandable(Patient())
         assertTrue(resolver.varRefs.isNotEmpty())
-        assertTrue(resolver.nextVarRef > 1000)
+        assertTrue(resolver.nextVarRef.get() > 1000)
 
         resolver.resetVarRefs()
 
         assertTrue(resolver.varRefs.isEmpty())
         assertTrue(resolver.varRefTypes.isEmpty())
-        assertEquals(1000, resolver.nextVarRef)
+        assertEquals(1000, resolver.nextVarRef.get())
     }
 
     // -- unwrapListType additional tests -------------------------------------

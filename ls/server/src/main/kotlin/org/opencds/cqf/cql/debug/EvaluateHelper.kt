@@ -11,12 +11,17 @@ import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
+import org.slf4j.LoggerFactory
 import java.net.URI
 
 class EvaluateHelper(
     private val variableResolver: VariableResolver,
     private val compilationManager: CqlCompilationManager?,
 ) {
+    companion object {
+        private val log = LoggerFactory.getLogger(EvaluateHelper::class.java)
+    }
+
     fun lookupByName(
         expression: String,
         frameId: Int?,
@@ -235,6 +240,19 @@ class EvaluateHelper(
             }
         }
 
+        // Quoted/delimited identifiers (e.g. "IndexPCP", `My Define`) are a valid CQL form — the
+        // quotes are delimiters, not part of the name, so look up the inner name exactly.
+        val quotedRootResult =
+            variableResolver.parseIdentifier(expression)
+                ?.takeIf { it.rootDelimiter != null && it.propertySegments.isEmpty() }
+                ?.let { parsed -> registry.find(parsed.rootName) }
+        if (quotedRootResult != null) {
+            return EvaluateResponse().also {
+                it.result = variableResolver.formatVariableValue(quotedRootResult.value, gson)
+                it.variablesReference = variableResolver.registerIfExpandable(quotedRootResult.value)
+            }
+        }
+
         val libId =
             state.getCurrentLibrary()?.identifier
                 ?: streamingLaunchUri?.let { uriStr ->
@@ -310,10 +328,126 @@ class EvaluateHelper(
             }
         }
 
+        val dottedResult = resolveDottedExpression(expression, registry, gson)
+        if (dottedResult != null) return dottedResult
+
         val varRefResult = variableResolver.findInVarRefs(expression)
         if (varRefResult != null) return varRefResult
+
+        val missingResult = resolveMissingIdentifier(expression, registry)
+        if (missingResult != null) return missingResult
         return notAvailable()
     }
+
+    /**
+     * Produces a helpful response when an identifier-shaped expression cannot be resolved.
+     *
+     * CQL is case-sensitive, so this never auto-resolves a mistyped identifier; it only reports
+     * feedback:
+     *  - root not found, exactly one case-insensitive match → `CQL identifiers are case-sensitive;
+     *    did you mean <properly-cased path>?` (full corrected dotted path). Suggestion quotes are
+     *    only rendered when the user typed a quoted/delimited identifier, preserving their form.
+     *  - root not found, zero or ambiguous matches → `Identifier doesn't exist (CQL is case-sensitive)`.
+     *  - root found exactly but a dotted property segment fails → suggest the case-correct property
+     *    name from the value's canonical children; falls back to null (→ "not available") when no
+     *    unique case-insensitive child matches.
+     * Non-identifier expressions (spaces, operators, @-positions) return null so callers keep the
+     * existing "not available" behavior.
+     */
+    fun resolveMissingIdentifier(
+        expression: String,
+        registry: RuntimeValueRegistry,
+    ): EvaluateResponse? {
+        val parsed = variableResolver.parseIdentifier(expression) ?: return null
+        if (parsed.rootName.isEmpty()) return null
+        if (parsed.propertySegments.isEmpty()) {
+            return missingRootResponse(parsed, registry)
+        }
+
+        // Dotted expression: if the root already resolves exactly, a failed property segment is a
+        // property case/availability issue, not a missing identifier.
+        val rootValue = registry.find(parsed.rootName)?.value
+        if (rootValue != null) {
+            val correctedPath = caseCorrectedPath(rootValue, parsed)
+            if (correctedPath != null) {
+                return messageResponse(
+                    "CQL identifiers are case-sensitive; did you mean $correctedPath?",
+                )
+            }
+            log.debug(
+                "resolveMissingIdentifier: root '{}' found but no case-correct property suggested for {}",
+                parsed.rootName,
+                expression,
+            )
+            return null
+        }
+
+        return missingRootResponse(parsed, registry)
+    }
+
+    private fun missingRootResponse(
+        parsed: VariableResolver.IdentifierParts,
+        registry: RuntimeValueRegistry,
+    ): EvaluateResponse? {
+        val candidates = registry.caseInsensitiveCandidates(parsed.rootName)
+        log.debug(
+            "resolveMissingIdentifier: rootName={} candidates={} expression={}",
+            parsed.rootName,
+            candidates,
+        )
+        val message =
+            when {
+                candidates.size == 1 -> {
+                    val delimiter = parsed.rootDelimiter
+                    val identifier =
+                        candidates[0] + (if (delimiter == null && parsed.rootIndex != null) "[${parsed.rootIndex}]" else "")
+                    val root = if (delimiter != null) "$delimiter$identifier$delimiter" else identifier
+                    val suggested =
+                        if (parsed.renderRest.isNotEmpty()) "$root.${parsed.renderRest}" else root
+                    "CQL identifiers are case-sensitive; did you mean $suggested?"
+                }
+                else -> "Identifier doesn't exist (CQL is case-sensitive)"
+            }
+        return messageResponse(message)
+    }
+
+    private fun caseCorrectedPath(
+        rootValue: Any?,
+        parsed: VariableResolver.IdentifierParts,
+    ): String? {
+        var current = rootValue
+        var index = 0
+        val corrected = mutableListOf<String>()
+        while (index < parsed.propertySegments.size) {
+            val segment = parsed.propertySegments[index]
+            val value = variableResolver.readProperty(current, segment)
+            if (value != null) {
+                corrected.add(segment)
+                current = value
+                index++
+                continue
+            }
+            val matches = variableResolver.childrenNamesOf(current).filter { it.equals(segment, ignoreCase = true) }
+            if (matches.size != 1 || matches[0] == segment) {
+                return null
+            }
+            corrected.add(matches[0])
+            corrected.addAll(parsed.propertySegments.drop(index + 1))
+            return "${parsed.renderRoot}.${corrected.joinToString(".")}"
+        }
+        val correctedPath = corrected.joinToString(".")
+        return if (correctedPath == parsed.propertySegments.joinToString(".")) {
+            null
+        } else {
+            "${parsed.renderRoot}.$correctedPath"
+        }
+    }
+
+    private fun messageResponse(message: String): EvaluateResponse =
+        EvaluateResponse().also {
+            it.result = message
+            it.variablesReference = 0
+        }
 
     fun resolvePropertyValue(
         property: Property,
@@ -408,4 +542,70 @@ class EvaluateHelper(
             it.result = "not available"
             it.variablesReference = 0
         }
+
+    /**
+     * Resolves a dotted property path against a registered runtime value (e.g. "IndexPCP.period"
+     * where "IndexPCP" is a stack variable/define/context resource holding a FHIR Encounter).
+     * Navigates each segment through the runtime value with [VariableResolver.navigatePropertyPath]
+     * and renders the result with [VariableResolver.formatPropertyValue] (so FHIR Periods display
+     * as intervals, matching existing Debug Console conventions).
+     */
+    fun resolveDottedExpression(
+        expression: String,
+        registry: RuntimeValueRegistry,
+        gson: Gson,
+    ): EvaluateResponse? {
+        if (expression.startsWith("@")) return null
+        val parsed = variableResolver.parseIdentifier(expression) ?: return null
+        val propertySegments = parsed.propertySegments
+        if (propertySegments.isEmpty()) return null
+        val rootName = parsed.rootName
+        val rootIndex = parsed.rootIndex
+        val rest = propertySegments
+        log.debug(
+            "resolveDottedExpression: expression={} rootName={} rootIndex={} rest={}",
+            expression,
+            rootName,
+            rootIndex,
+            rest,
+        )
+        val rv = registry.find(rootName)
+        if (rv == null) {
+            log.debug(
+                "resolveDottedExpression: root '{}' not found in registry (registered names={})",
+                rootName,
+                registry.displayNames(),
+            )
+            return null
+        }
+        log.debug(
+            "resolveDottedExpression: root '{}' found (category={} type={})",
+            rootName,
+            rv.category,
+            rv.type,
+        )
+        val path =
+            buildList {
+                if (rootIndex != null) add("[$rootIndex]")
+                addAll(rest)
+            }
+        val value = variableResolver.navigatePropertyPath(rv.value, path)
+        if (value == null) {
+            log.debug(
+                "resolveDottedExpression: property navigation for path={} returned null (valueClass={})",
+                path,
+                rv.value?.javaClass?.simpleName,
+            )
+            return null
+        }
+        log.debug(
+            "resolveDottedExpression: path={} resolved to valueClass={}",
+            path,
+            value.javaClass.simpleName,
+        )
+        return EvaluateResponse().also {
+            it.result = variableResolver.formatPropertyValue(value, gson)
+            it.variablesReference = variableResolver.registerIfExpandable(value)
+        }
+    }
 }

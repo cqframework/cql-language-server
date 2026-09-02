@@ -1,6 +1,8 @@
 package org.opencds.cqf.cql.debug
 
 import org.eclipse.lsp4j.Range
+import org.hl7.fhir.r4.model.Encounter
+import org.hl7.fhir.r4.model.Period
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -402,10 +404,122 @@ class EvaluateHelperTest {
         }
 
         @Test
-        fun `registry miss falls through to not available`() {
+        fun `registry miss on identifier reports doesn't exist`() {
             val result =
                 helper.evaluateStreaming(
                     "NonExistent",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("Identifier doesn't exist (CQL is case-sensitive)", result.result)
+        }
+
+        @Test
+        fun `registry miss on case-mismatched defined name suggests corrected name`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", "enc", "FHIR.Encounter", null)
+            val result =
+                helper.evaluateStreaming(
+                    "indexPCP",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("CQL identifiers are case-sensitive; did you mean IndexPCP?", result.result)
+        }
+
+        @Test
+        fun `quoted identifier resolves exactly by inner name`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", 42, "System.Integer", null)
+            val result =
+                helper.evaluateStreaming(
+                    "\"IndexPCP\"",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("42", result.result)
+        }
+
+        @Test
+        fun `quoted case-mismatched identifier suggests with quotes preserved`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", "enc", "FHIR.Encounter", null)
+            val result =
+                helper.evaluateStreaming(
+                    "\"indexPCP\"",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("CQL identifiers are case-sensitive; did you mean \"IndexPCP\"?", result.result)
+        }
+
+        @Test
+        fun `delimited case-mismatched identifier suggests with backticks preserved`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", "enc", "FHIR.Encounter", null)
+            val result =
+                helper.evaluateStreaming(
+                    "`indexPCP`",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals("CQL identifiers are case-sensitive; did you mean `IndexPCP`?", result.result)
+        }
+
+        @Test
+        fun `dotted miss on exact root suggests case-correct property name`() {
+            val encounter = Encounter()
+            encounter.id = "enc-1"
+            encounter.period =
+                Period().also {
+                    it.start = java.util.Date(1700000000000L)
+                    it.end = java.util.Date(1800000000000L)
+                }
+            handler.runtimeRegistry.putDefine("IndexPCP", encounter, "FHIR.Encounter", null)
+            val result =
+                helper.evaluateStreaming(
+                    "IndexPCP.pERiod",
+                    state,
+                    handler,
+                    gson,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertEquals(
+                "CQL identifiers are case-sensitive; did you mean IndexPCP.period?",
+                result.result,
+            )
+        }
+
+        @Test
+        fun `dotted miss on exact root with no matching property keeps not available`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", Encounter().also { it.id = "enc-1" }, "FHIR.Encounter", null)
+            val result =
+                helper.evaluateStreaming(
+                    "IndexPCP.nonexistentProp",
                     state,
                     handler,
                     gson,
@@ -447,7 +561,7 @@ class EvaluateHelperTest {
                     null,
                     emptyMap(),
                 )
-            assertEquals("not available", result.result)
+            assertEquals("Identifier doesn't exist (CQL is case-sensitive)", result.result)
         }
     }
 
@@ -584,6 +698,115 @@ class EvaluateHelperTest {
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
             val result = helper.resolvePropertyFromAlias("Patients", "nonexistentProperty", handler, gson)
             assertNull(result)
+        }
+    }
+
+    // -- resolveDottedExpression -----------------------------------------
+
+    @Nested
+    inner class ResolveDottedExpression {
+        private lateinit var handler: StreamingBreakpointHandler
+        private val gson = com.google.gson.Gson()
+
+        @BeforeEach
+        fun setUp() {
+            handler = StreamingBreakpointHandler()
+        }
+
+        @Test
+        fun `registered IBase with property path resolves and formats`() {
+            val encounter = org.hl7.fhir.r4.model.Encounter()
+            encounter.period =
+                org.hl7.fhir.r4.model.Period().also {
+                    it.start = java.util.Date(1700000000000L)
+                    it.end = java.util.Date(1800000000000L)
+                }
+            handler.runtimeRegistry.putDefine("IndexPCP", encounter, null, null)
+            val result = helper.resolveDottedExpression("IndexPCP.period", handler.runtimeRegistry, gson)
+            assertNotNull(result)
+            assertTrue(result!!.result.startsWith("["))
+            assertTrue(result.result.endsWith(")"))
+            assertTrue(result.variablesReference > 0)
+        }
+
+        @Test
+        fun `multi-hop path resolves nested element`() {
+            val encounter = org.hl7.fhir.r4.model.Encounter()
+            encounter.period =
+                org.hl7.fhir.r4.model.Period().also {
+                    it.start = java.util.Date(1700000000000L)
+                }
+            handler.runtimeRegistry.putDefine("IndexPCP", encounter, null, null)
+            val result = helper.resolveDottedExpression("IndexPCP.period.start", handler.runtimeRegistry, gson)
+            assertNotNull(result)
+            assertTrue(result!!.result.contains("2023"))
+        }
+
+        @Test
+        fun `list root property maps over items`() {
+            val p1 = org.hl7.fhir.r4.model.Patient()
+            p1.id = "p1"
+            val p2 = org.hl7.fhir.r4.model.Patient()
+            p2.id = "p2"
+            @Suppress("UNCHECKED_CAST")
+            val list = listOf<Any>(p1, p2) as List<Any>
+            handler.runtimeRegistry.putDefine("Patients", list, null, null)
+            val result = helper.resolveDottedExpression("Patients.id", handler.runtimeRegistry, gson)
+            assertNotNull(result)
+            assertTrue(result!!.result.contains("p1"))
+            assertTrue(result.result.contains("p2"))
+        }
+
+        @Test
+        fun `list root with index resolves item property`() {
+            val p1 = org.hl7.fhir.r4.model.Patient()
+            p1.id = "p1"
+            val p2 = org.hl7.fhir.r4.model.Patient()
+            p2.id = "p2"
+            @Suppress("UNCHECKED_CAST")
+            val list = listOf<Any>(p1, p2) as List<Any>
+            handler.runtimeRegistry.putDefine("Patients", list, null, null)
+            val result = helper.resolveDottedExpression("Patients[1].id", handler.runtimeRegistry, gson)
+            assertNotNull(result)
+            assertTrue(result!!.result.contains("p2"))
+        }
+
+        @Test
+        fun `interval root with boundary property resolves`() {
+            val interval =
+                org.opencds.cqf.cql.engine.runtime.Interval(
+                    org.opencds.cqf.cql.engine.runtime.Integer(1),
+                    true,
+                    org.opencds.cqf.cql.engine.runtime.Integer(10),
+                    false,
+                )
+            handler.runtimeRegistry.putDefine("Idx", interval, null, null)
+            val result = helper.resolveDottedExpression("Idx.low", handler.runtimeRegistry, gson)
+            assertNotNull(result)
+            assertEquals("1", result!!.result)
+        }
+
+        @Test
+        fun `non-dotted expression returns null`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", org.hl7.fhir.r4.model.Encounter(), null, null)
+            assertNull(helper.resolveDottedExpression("IndexPCP", handler.runtimeRegistry, gson))
+        }
+
+        @Test
+        fun `at-sign expression returns null`() {
+            assertNull(helper.resolveDottedExpression("@12:3", handler.runtimeRegistry, gson))
+        }
+
+        @Test
+        fun `unknown root returns null`() {
+            val result = helper.resolveDottedExpression("Unknown.period", handler.runtimeRegistry, gson)
+            assertNull(result)
+        }
+
+        @Test
+        fun `unknown property returns null`() {
+            handler.runtimeRegistry.putDefine("IndexPCP", org.hl7.fhir.r4.model.Encounter(), null, null)
+            assertNull(helper.resolveDottedExpression("IndexPCP.nonexistentProperty", handler.runtimeRegistry, gson))
         }
     }
 }
