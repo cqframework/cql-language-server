@@ -9,6 +9,7 @@ import org.cqframework.cql.cql2elm.tracking.Trackable.resultType
 import org.eclipse.lsp4j.debug.EvaluateResponse
 import org.eclipse.lsp4j.debug.Variable
 import org.hl7.cql.model.ClassType
+import org.hl7.cql.model.ListType
 import org.hl7.elm.r1.AggregateExpression
 import org.hl7.elm.r1.AliasedQuerySource
 import org.hl7.elm.r1.BinaryExpression
@@ -637,7 +638,13 @@ class VariableResolver(
         when (elm) {
             is AliasedQuerySource -> {
                 if (elm.alias != null && elm.resultType != null) {
-                    map[elm.alias!!] = elm.resultType.toString()
+                    // A retrieve-backed query alias's resultType is the source's LIST type
+                    // (Cql2ElmVisitor.visitAliasedQuerySource sets it from the Retrieve). The
+                    // translator de-lists to the singular element type when building an in-body
+                    // AliasRef (LibraryBuilder.buildExpressionRef); mirror that so ad-hoc debug
+                    // expressions type query aliases as single resources, not List<...>.
+                    val singularType = (elm.resultType as? ListType)?.elementType ?: elm.resultType
+                    map[elm.alias!!] = singularType.toString()
                 }
                 collectAliasTypes(elm.expression, map)
             }

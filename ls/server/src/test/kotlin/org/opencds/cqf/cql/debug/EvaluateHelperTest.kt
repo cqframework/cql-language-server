@@ -1,5 +1,7 @@
 package org.opencds.cqf.cql.debug
 
+import org.cqframework.cql.cql2elm.LibraryManager
+import org.cqframework.cql.cql2elm.ModelManager
 import org.eclipse.lsp4j.Range
 import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.Period
@@ -807,6 +809,141 @@ class EvaluateHelperTest {
         fun `unknown property returns null`() {
             handler.runtimeRegistry.putDefine("IndexPCP", org.hl7.fhir.r4.model.Encounter(), null, null)
             assertNull(helper.resolveDottedExpression("IndexPCP.nonexistentProperty", handler.runtimeRegistry, gson))
+        }
+    }
+
+    // -- evaluateAdHocExpression ----------------------------------------------
+
+    @Nested
+    inner class EvaluateAdHocExpression {
+        private lateinit var libraryManager: LibraryManager
+
+        @BeforeEach
+        fun setUpLibraryManager() {
+            libraryManager = LibraryManager(ModelManager())
+        }
+
+        @Test
+        fun `simple comparison returns a function def wrapping the expression`() {
+            val sourceText = "library TestLib\n\ndefine \"X\": 1 + 1\n"
+            val (fn, error) = helper.evaluateAdHocExpression("1 + 1", sourceText, libraryManager)
+            assertNotNull(fn)
+            assertNull(error)
+            assertTrue(fn is org.hl7.elm.r1.FunctionDef)
+            assertTrue(fn!!.name == "__debugEval__")
+        }
+
+        @Test
+        fun `expression referencing existing define compiles`() {
+            val sourceText =
+                """
+                library TestLib
+
+                define "IndexPCP": 42
+
+                define "Other": 10
+                """.trimIndent()
+            val (fn, error) = helper.evaluateAdHocExpression("IndexPCP + Other", sourceText, libraryManager)
+            assertNotNull(fn)
+            assertNull(error)
+        }
+
+        @Test
+        fun `invalid CQL returns compile error`() {
+            val sourceText = "library TestLib\n\n"
+            // An unterminated string literal should cause a parse error
+            val (fn, error) = helper.evaluateAdHocExpression("\"unterminated", sourceText, libraryManager)
+            assertNull(fn)
+            assertNotNull(error)
+            assertTrue(error!!.result.startsWith("Compile error:"))
+        }
+
+        @Test
+        fun `unresolved name returns compile error`() {
+            val sourceText = "library TestLib\n\n"
+            // referencing a nonexistent define
+            val (fn, error) = helper.evaluateAdHocExpression("NonexistentDefine", sourceText, libraryManager)
+            assertNull(fn)
+            assertNotNull(error)
+            assertTrue(error!!.result.startsWith("Compile error:"))
+        }
+
+        @Test
+        fun `synthetic function wraps expression correctly`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, _) = helper.evaluateAdHocExpression("true", sourceText, libraryManager)
+            assertNotNull(fn)
+            // With no aliases a zero-argument function is emitted whose body is a Literal("true")
+            assertTrue(fn!!.operand.isEmpty())
+            assertTrue(fn.expression is org.hl7.elm.r1.Literal)
+        }
+
+/** Renders an ELM [TypeSpecifier] as a `(namespaceURI, localPart)` name for type assertions. */
+        private fun typeQName(spec: org.hl7.elm.r1.TypeSpecifier?): Pair<String, String> {
+            val n =
+                when (spec) {
+                    is org.hl7.elm.r1.NamedTypeSpecifier -> spec.name
+                    is org.hl7.elm.r1.IntervalTypeSpecifier ->
+                        (spec.pointType as? org.hl7.elm.r1.NamedTypeSpecifier)?.name
+                    else -> null
+                }
+            return (n?.namespaceURI ?: "") to (n?.localPart ?: "")
+        }
+
+        @Test
+        fun `query alias is emitted as a typed function parameter`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "V.value",
+                    sourceText,
+                    libraryManager,
+                    listOf("V" to "System.Quantity"),
+                )
+            assertNotNull(fn)
+            assertNull(error)
+            assertEquals(1, fn!!.operand.size)
+            assertEquals("V", fn.operand[0].name)
+            // The param is a System.namespaced type (prefix `System` is dropped in ELM).
+            val (ns, localPart) = typeQName(fn.operand[0].operandTypeSpecifier)
+            assertEquals("urn:hl7-org:elm-types:r1", ns)
+            assertEquals("Quantity", localPart)
+            assertTrue(fn.expression is org.hl7.elm.r1.Property)
+        }
+
+        @Test
+        fun `interval type string is normalized for the parameter declaration`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "I.low",
+                    sourceText,
+                    libraryManager,
+                    listOf("I" to "interval<System.DateTime>"),
+                )
+            assertNotNull(fn)
+            assertNull(error)
+            // normalizeType re-cased `interval<...>` -> `Interval<...>` so it compiles to an
+            // Interval<System.DateTime> parameter (elicited via its point type's System namespace).
+            assertTrue(fn!!.operand[0].operandTypeSpecifier is org.hl7.elm.r1.IntervalTypeSpecifier)
+            val (ns, localPart) = typeQName(fn.operand[0].operandTypeSpecifier)
+            assertEquals("urn:hl7-org:elm-types:r1", ns)
+            assertEquals("DateTime", localPart)
+        }
+
+        @Test
+        fun `two aliases preserve declaration order matching the argument order`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "X + Y",
+                    sourceText,
+                    libraryManager,
+                    listOf("X" to "System.Integer", "Y" to "System.Integer"),
+                )
+            assertNotNull(fn)
+            assertNull(error)
+            assertEquals(listOf("X", "Y"), fn!!.operand.map { it.name })
         }
     }
 }

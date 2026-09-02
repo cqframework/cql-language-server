@@ -7,12 +7,18 @@ import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
+import org.opencds.cqf.cql.engine.elm.executing.FunctionRefEvaluator
+import org.opencds.cqf.cql.engine.execution.EvaluationVisitor
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.slf4j.LoggerFactory
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentHashMap.newKeySet
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class StreamingBreakpointHandler(
     val runtimeRegistry: RuntimeValueRegistry = RuntimeValueRegistry(),
@@ -122,6 +128,32 @@ class StreamingBreakpointHandler(
 
     /** Full FHIR resources for contexts, keyed by context name (e.g., "Patient"). */
     val contextResourcesByName = ConcurrentHashMap<String, Any?>()
+
+    /**
+     * A one-shot ad-hoc evaluation request submitted by the DAP `evaluate()` thread and
+     * consumed by the parked engine thread inside [waitForResume]. The result is delivered
+     * asynchronously via [resultFuture].
+     */
+    data class AdHocEvalRequest(
+        val functionDef: FunctionDef,
+        val argumentValues: List<Value?>,
+        val resultFuture: CompletableFuture<Value?>,
+    )
+
+    /** Single-slot hand-off from the DAP evaluate() thread to the parked engine thread. */
+    private val pendingEval = AtomicReference<AdHocEvalRequest?>()
+
+    /**
+     * A no-op [BreakpointHandler] swapped in for the duration of an ad-hoc evaluation to
+     * prevent re-entrant breakpoint pausing. Only [onBeforeExpression] is abstract on the
+     * interface; every other method already has a default no-op body.
+     */
+    private object ContinueOnlyBreakpointHandler : BreakpointHandler {
+        override fun onBeforeExpression(
+            elm: org.hl7.elm.r1.Element,
+            state: State,
+        ): BreakpointAction = BreakpointAction.CONTINUE
+    }
 
     /** Evaluated results by locator range, for position-based (@line:col) lookup. */
     private val evaluatedValuesByLocator = CopyOnWriteArrayList<Pair<LocatorRange, Any?>>()
@@ -586,6 +618,7 @@ class StreamingBreakpointHandler(
     fun reset() {
         released = false
         resumeLatch = CountDownLatch(0)
+        pendingEval.set(null)
         runtimeRegistry.reset()
         contextResourcesByName.clear()
         evaluatedValuesByLocator.clear()
@@ -635,6 +668,67 @@ class StreamingBreakpointHandler(
         }
     }
 
+    /**
+     * Submits an ad-hoc CQL expression for evaluation on the parked engine thread.
+     * Called from the DAP `evaluate()` request thread.
+     *
+     * @param functionDef the compiled `__debugEval__` function (its operands are the query aliases)
+     * @param argumentValues the live alias values, in the same order as [FunctionDef.getOperand]
+     * @return a future that completes with the evaluated value (or an exception on failure)
+     */
+    fun submitAdHocEval(
+        functionDef: FunctionDef,
+        argumentValues: List<Value?>,
+    ): CompletableFuture<Value?> {
+        val future = CompletableFuture<Value?>()
+        pendingEval.set(AdHocEvalRequest(functionDef, argumentValues, future))
+        return future
+    }
+
+    /**
+     * Runs a single ad-hoc evaluation on the engine thread. Swaps in a
+     * [ContinueOnlyBreakpointHandler] to prevent re-entrant pausing, and defensively
+     * verifies that the stack depth is restored afterward.
+     */
+    private fun runAdHocEval(request: AdHocEvalRequest) {
+        val state = lastPausedState
+        if (state == null) {
+            request.resultFuture.completeExceptionally(IllegalStateException("no paused state"))
+            return
+        }
+        require(request.argumentValues.size == request.functionDef.operand.size) {
+            "ad-hoc eval argument count ${request.argumentValues.size} does not match function " +
+                "operand count ${request.functionDef.operand.size}"
+        }
+        val savedHandler = state.breakpointHandler
+        val depthBefore = state.stack.size
+        state.breakpointHandler = ContinueOnlyBreakpointHandler
+        try {
+            val value =
+                FunctionRefEvaluator.evaluateFunctionDef(
+                    request.functionDef,
+                    state,
+                    EvaluationVisitor(),
+                    request.argumentValues.toMutableList(),
+                )
+            request.resultFuture.complete(value)
+        } catch (e: Exception) {
+            request.resultFuture.completeExceptionally(e)
+        } finally {
+            state.breakpointHandler = savedHandler
+            if (state.stack.size > depthBefore) {
+                log.warn(
+                    "runAdHocEval: stack depth {} > {} after ad-hoc eval; forcibly popping",
+                    state.stack.size,
+                    depthBefore,
+                )
+                while (state.stack.size > depthBefore) {
+                    state.popActivationFrame()
+                }
+            }
+        }
+    }
+
     override fun waitForResume() {
         val t0 = System.nanoTime()
         log.debug("waitForResume: enter released={} [thread={}]", released, Thread.currentThread().name)
@@ -652,7 +746,12 @@ class StreamingBreakpointHandler(
                         lastPausedState,
                     )
                 }
-                resumeLatch.await()
+                while (!resumeLatch.await(50, TimeUnit.MILLISECONDS)) {
+                    pendingEval.getAndSet(null)?.let { request ->
+                        log.debug("waitForResume: processing ad-hoc eval [thread={}]", Thread.currentThread().name)
+                        runAdHocEval(request)
+                    }
+                }
                 log.debug("waitForResume: latch released [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
             }
         } finally {

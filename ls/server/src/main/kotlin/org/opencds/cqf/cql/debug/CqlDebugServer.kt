@@ -57,6 +57,7 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
@@ -92,6 +93,12 @@ open class CqlDebugServer(
 ) : IDebugProtocolServer, IDebugProtocolClientAware {
     companion object {
         private val log = LoggerFactory.getLogger(CqlDebugServer::class.java)
+
+        /** Debug Console contexts that should attempt ad-hoc CQL compilation. */
+        private val AD_HOC_EVAL_CONTEXTS = setOf("repl", "watch")
+
+        /** Maximum seconds to wait for an ad-hoc evaluation to complete on the engine thread. */
+        private const val AD_HOC_EVAL_TIMEOUT_SECONDS = 10L
     }
 
     // Backing fields shared with varResolver so inline code and helpers use the same maps.
@@ -1173,6 +1180,65 @@ open class CqlDebugServer(
                     )
                     return@supplyAsync missingResult
                 }
+                // Ad-hoc CQL expression compilation and evaluation (repl/watch only).
+                // Attempts a real compile + engine evaluation on the parked thread for
+                // expressions that aren't simple name/property lookups (e.g. comparisons,
+                // arithmetic, function calls). Only when every cheap lookup has failed.
+                if (args.context in AD_HOC_EVAL_CONTEXTS) {
+                    val sourceUri = streamingLaunchUri
+                    val libManager = handler.libraryManager
+                    if (sourceUri != null && libManager != null) {
+                        val sourceText = compilationManager.getSourceText(URI.create(sourceUri))
+                        if (sourceText != null) {
+                            // Query-local aliases (from VTEStudy, let ) are not top-level defines and
+                            // so are otherwise invisible to the synthetic compile. Detect which
+                            // referenced identifiers are stack variables and pass them (with their
+                            // concrete translator-resolved type) as function parameters, bound to
+                            // their live runtime values at eval time.
+                            val aliases = buildAdHocAliases(args.expression, registry)
+                            if (aliases == null) {
+                                log.debug(
+                                    "evaluate: ad-hoc alias lacks a resolvable type expression={}",
+                                    args.expression,
+                                )
+                                return@supplyAsync noResolvableTypeResponse
+                            }
+                            val (functionDef, errorResponse) =
+                                evaluateHelper.evaluateAdHocExpression(
+                                    args.expression,
+                                    sourceText,
+                                    libManager,
+                                    aliases.map { (name, value) -> name to requireNotNull(resolveAdHocType(name, value)) },
+                                )
+                            if (errorResponse != null) {
+                                log.debug("evaluate: ad-hoc compile error expression={}", args.expression)
+                                return@supplyAsync errorResponse
+                            }
+                            if (functionDef != null) {
+                                val argumentValues: List<Value?> = aliases.map { (_, value) -> value as? Value }
+                                log.debug("evaluate: ad-hoc eval expression={} submitting to engine", args.expression)
+                                val resultFuture = handler.submitAdHocEval(functionDef, argumentValues)
+                                return@supplyAsync try {
+                                    val value = resultFuture.get(AD_HOC_EVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                                    EvaluateResponse().also {
+                                        it.result = formatVariableValue(value, gson)
+                                        it.variablesReference = registerIfExpandable(value)
+                                    }
+                                } catch (e: java.util.concurrent.TimeoutException) {
+                                    log.debug("evaluate: ad-hoc eval timed out expression={}", args.expression)
+                                    notAvailable()
+                                } catch (e: Exception) {
+                                    val message = e.cause?.message ?: e.message ?: "Evaluation error"
+                                    log.debug("evaluate: ad-hoc eval failed expression={} error={}", args.expression, message)
+                                    EvaluateResponse().also {
+                                        it.result = "Runtime error: $message"
+                                        it.variablesReference = 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 log.debug("evaluate: falling back to not available expression={}", args.expression)
                 notAvailable()
             }
@@ -1330,6 +1396,115 @@ open class CqlDebugServer(
         varResolver.formatPeriodAsInterval(period)
 
     private fun notAvailable(): EvaluateResponse = varResolver.notAvailable()
+
+    /** Response used when a referenced query alias has no concrete, compiler-resolvable type. */
+    private val noResolvableTypeResponse: EvaluateResponse
+        get() =
+            EvaluateResponse().also {
+                it.result =
+                    "not supported for this alias type: one or more referenced query variables " +
+                    "have no resolvable CQL type"
+                it.variablesReference = 0
+            }
+
+    /**
+     * Detects which identifiers referenced in [expression] are live query-local stack variables
+     * (e.g. `VTEStudy` from a `from ... VTEStudy`). Returns an ordered `(name, value)` list — the
+     * signature order for the synthetic function AND the argument order for evaluation are both
+     * derived from this single pass to guarantee positional agreement. Returns `null` if a
+     * referenced alias has no resolvable type.
+     *
+     * Lexical rules: single-quoted `'...'` string-literal contents are skipped so stray value
+     * literals are never read as references; double-quoted `"..."` tokens are delimited identifiers
+     * (quotes stripped for matching).
+     */
+    private fun buildAdHocAliases(
+        expression: String,
+        registry: RuntimeValueRegistry,
+    ): List<Pair<String, Any?>>? {
+        val stackNames = registry.getStackVariables().associateBy { it.name }.keys
+        if (stackNames.isEmpty()) return emptyList()
+        val referenced = linkedSetOf<String>()
+        for (id in extractIdentifiers(expression)) {
+            if (id in stackNames) referenced.add(id)
+        }
+        if (referenced.isEmpty()) return emptyList()
+        val result = ArrayList<Pair<String, Any?>>(referenced.size)
+        for (name in referenced) {
+            val stackValue = registry.getStackVariables().firstOrNull { it.name == name }?.value
+            if (stackValue == null) return null
+            if (resolveAdHocType(name, stackValue) == null) return null
+            result.add(name to stackValue)
+        }
+        return result
+    }
+
+    /** Resolves the concrete CQL type for an ad-hoc query alias, or `null` if unknown. */
+    private fun resolveAdHocType(
+        name: String,
+        value: Any?,
+    ): String? {
+        variableTypeMap[name]?.let { return it }
+        streamingHandler?.variableTypeMap?.get(name)?.let { return it }
+        return varResolver.fhirResourceTypeOf(value)
+    }
+
+    /**
+     * Extracts CQL identifier tokens from [expression], skipping `'...'` string-literal contents
+     * and capturing `"..."` delimited identifiers (without the quotes). Used only to detect which
+     * referenced names are live query aliases; not a full CQL parser.
+     */
+    private fun extractIdentifiers(expression: String): List<String> {
+        val result = ArrayList<String>()
+        var i = 0
+        val n = expression.length
+        while (i < n) {
+            val c = expression[i]
+            when {
+                c == '\'' -> {
+                    i++
+                    while (i < n) {
+                        if (expression[i] == '\'') {
+                            if (i + 1 < n && expression[i + 1] == '\'') {
+                                i += 2
+                            } else {
+                                i++
+                                break
+                            }
+                        } else {
+                            i++
+                        }
+                    }
+                }
+                c == '"' -> {
+                    i++
+                    val sb = StringBuilder()
+                    while (i < n) {
+                        if (expression[i] == '"') {
+                            if (i + 1 < n && expression[i + 1] == '"') {
+                                sb.append('"')
+                                i += 2
+                            } else {
+                                i++
+                                break
+                            }
+                        } else {
+                            sb.append(expression[i])
+                            i++
+                        }
+                    }
+                    if (sb.isNotEmpty()) result.add(sb.toString())
+                }
+                c.isLetter() || c == '_' -> {
+                    val start = i
+                    while (i < n && (expression[i].isLetterOrDigit() || expression[i] == '_')) i++
+                    result.add(expression.substring(start, i))
+                }
+                else -> i++
+            }
+        }
+        return result
+    }
 
     /**
      * Parses a locator from a [DetailedExpressionResult] (1-indexed TrackBack format) into

@@ -762,6 +762,18 @@ class VariableResolverTest {
         }
 
         @Test
+        fun `query alias over a list source maps to its singular element type`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture2.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            // "AliasRefVal": {1, 2, 3} X where X > 1  =>  X is a query alias whose source is the
+            // list {1,2,3}, so its AliasedQuerySource.resultType is List<System.Integer>. The debug
+            // type map must de-list to the singular element type, mirroring the translator's in-body
+            // AliasRef handling, so ad-hoc expressions type the alias as a single Integer.
+            assertEquals("System.Integer", map["X"])
+        }
+
+        @Test
         fun `CoverageFixture4_cql processes if expression`() {
             val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/CoverageFixture4.cql")!!
             val compiler = compilationManager.compile(uri) ?: return

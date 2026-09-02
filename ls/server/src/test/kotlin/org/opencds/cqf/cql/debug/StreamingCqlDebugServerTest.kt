@@ -44,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
+import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.execution.Environment
 import org.opencds.cqf.cql.engine.execution.State
 import org.opencds.cqf.cql.engine.runtime.Value
@@ -51,6 +52,7 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import java.io.InputStream
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -3528,6 +3530,400 @@ class StreamingCqlDebugServerTest {
             val registry = server.testHandler.runtimeRegistry
             assertNotNull(registry)
             Mockito.verify(mockClient).stopped(any())
+        }
+    }
+
+    // -- Ad-hoc CQL expression evaluation -------------------------------------
+
+    @Nested
+    inner class AdHocEval {
+        private val cqlSourceText =
+            """
+            library AdHocTest
+
+            define "X": 10
+
+            define "Y": 20
+            """.trimIndent()
+
+        /**
+         * Sets up a server with a real [org.cqframework.cql.cql2elm.LibraryManager] on the
+         * handler and a [CqlCompilationManager] (built from a [ContentService] that serves the
+         * test CQL) which returns [cqlSourceText] from [CqlCompilationManager.getSourceText].
+         * Does NOT park an engine thread — callers pause, then [parkEngineThread].
+         */
+        private fun setupServerWithAdHocEval(): TestStreamingServer {
+            val sourceUri = URI.create("file:///test.cql")
+
+            val cs =
+                object : ContentService {
+                    override fun locate(
+                        root: URI,
+                        libraryIdentifier: VersionedIdentifier,
+                    ): Set<URI> = setOf(sourceUri)
+
+                    override fun read(uri: URI): InputStream? {
+                        if (uri == sourceUri) return cqlSourceText.byteInputStream()
+                        return null
+                    }
+                }
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            // Precompile so getSourceText(uri) has an entry in the cache
+            cm.compile(sourceUri)
+
+            val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            val server = TestStreamingServer(cm, cs, Mockito.mock(IgContextManager::class.java), Mockito.mock(LibraryResolutionManager::class.java))
+            server.connect(client)
+
+            val handler = server.testHandler
+            server.setLaunchUri(sourceUri.toString())
+
+            // Real LibraryManager so CqlCompiler can actually compile
+            val modelManager = org.cqframework.cql.cql2elm.ModelManager()
+            val libraryManager = org.cqframework.cql.cql2elm.LibraryManager(modelManager)
+            handler.libraryManager = libraryManager
+
+            return server
+        }
+
+        /**
+         * Pauses on the handler (arming the resume latch), then parks a daemon engine thread in
+         * [StreamingBreakpointHandler.waitForResume] so ad-hoc eval requests get drained. The
+         * returned thread must be released with [StreamingBreakpointHandler.release] + [Thread.join].
+         */
+        private fun parkEngineThread(
+            handler: StreamingBreakpointHandler,
+            elm: ExpressionDef,
+            state: State,
+        ): Thread {
+            assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+            val engineReady = java.util.concurrent.CyclicBarrier(2)
+            val engineThread =
+                Thread {
+                    engineReady.await()
+                    handler.waitForResume()
+                }
+            engineThread.isDaemon = true
+            engineThread.start()
+            engineReady.await()
+            Thread.sleep(50) // let the engine thread enter waitForResume and start polling
+            return engineThread
+        }
+
+        private fun pauseState(server: TestStreamingServer): Pair<Library, State> {
+            // Build the state's library from the ACTUAL compiled library so that ExpressionRefs
+            // in ad-hoc expressions (e.g. "X + Y") can resolve to the real define ELM.
+            val compiled = compileLibrary(cqlSourceText)
+            val state = State(Environment(null))
+            state.init(compiled)
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+            return compiled to state
+        }
+
+        private fun compileLibrary(sourceText: String): Library {
+            val modelManager = org.cqframework.cql.cql2elm.ModelManager()
+            val libraryManager = org.cqframework.cql.cql2elm.LibraryManager(modelManager)
+            val compiler: org.cqframework.cql.cql2elm.CqlCompiler =
+                org.cqframework.cql.cql2elm.CqlCompiler(null, null, libraryManager)
+            return compiler.run(sourceText)
+        }
+
+        @Test
+        fun `ad-hoc expression evaluating arithmetic returns correct result`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.stepIn()
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = "1 + 2"
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                assertNotNull(response.result)
+                // The result should be 3 (integer)
+                assertEquals("3", response.result)
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc expression referencing defines returns correct result`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.stepIn()
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = "X + Y"
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                assertNotNull(response.result)
+                assertEquals("30", response.result)
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc invalid expression returns compile error`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.stepIn()
+            // Compile errors are returned before the thread hand-off, so no parked thread needed,
+            // but park one anyway to mirror the real flow.
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = "NonexistentDefine + 1"
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                assertNotNull(response.result)
+                assertTrue(response.result.startsWith("Compile error:"))
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc eval skipped for hover context`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            handler.stepIn()
+            val lib =
+                Library().also {
+                    it.identifier = VersionedIdentifier().also { vi -> vi.id = "AdHocTest" }
+                }
+            val state = State(Environment(null))
+            state.init(lib)
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.onBeforeExpression(elm, state)
+
+            // "hover" context should NOT attempt ad-hoc compilation
+            val response =
+                server.evaluate(
+                    EvaluateArguments().also {
+                        it.expression = "1 + 2"
+                        it.context = "hover"
+                        it.frameId = 0
+                    },
+                ).get()
+
+            // Should fall through to notAvailable since 1+2 isn't a known name
+            assertEquals("not available", response.result)
+        }
+
+        @Test
+        fun `ad-hoc eval returns notAvailable when sourceText is null`() {
+            val server = setupServer()
+            val handler = server.testHandler
+            server.setLaunchUri("file:///missing.cql")
+
+            // Set a real libraryManager but don't populate the compilation cache
+            val modelManager = org.cqframework.cql.cql2elm.ModelManager()
+            handler.libraryManager = org.cqframework.cql.cql2elm.LibraryManager(modelManager)
+
+            handler.stepIn()
+            val state = State(Environment(null))
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.onBeforeExpression(elm, state)
+
+            val response =
+                server.evaluate(
+                    EvaluateArguments().also {
+                        it.expression = "1 + 2"
+                        it.context = "repl"
+                        it.frameId = 0
+                    },
+                ).get()
+
+            assertEquals("not available", response.result)
+        }
+
+        /** Registers a transient stack variable so query-alias resolution sees it as live. */
+        private fun registerStackVar(
+            handler: StreamingBreakpointHandler,
+            name: String,
+            value: Any,
+        ) {
+            handler.runtimeRegistry.putStackVariable(name, value, null)
+        }
+
+        private fun evaluateRepl(
+            server: TestStreamingServer,
+            expression: String,
+            register: (StreamingBreakpointHandler) -> Unit = {},
+        ): String {
+            val handler = server.testHandler
+            handler.stepIn()
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                // Register query-alias stack variables only AFTER the pause (which clears
+                // transient stack variables), mirroring how a real query frame would have
+                // populated them before the DAP evaluate arrived.
+                register(handler)
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = expression
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+                return response.result
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc query alias with injected runtime value evaluates property`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // The alias type resolves via the handler's variableTypeMap (translator-resolved),
+            // then the synthetic function binds the live runtime value positionally.
+            handler.variableTypeMap = mapOf("VTEStudy" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "VTEStudy.value") { h ->
+                    registerStackVar(
+                        h,
+                        "VTEStudy",
+                        org.opencds.cqf.cql.engine.runtime.Quantity()
+                            .withValue(java.math.BigDecimal("5")),
+                    )
+                }
+            assertEquals("5", result)
+        }
+
+        @Test
+        fun `two query aliases bind positionally in signature order`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("A" to "System.Quantity", "B" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "A.value + B.value") { h ->
+                    registerStackVar(
+                        h,
+                        "A",
+                        org.opencds.cqf.cql.engine.runtime.Quantity().withValue(java.math.BigDecimal("5")),
+                    )
+                    registerStackVar(
+                        h,
+                        "B",
+                        org.opencds.cqf.cql.engine.runtime.Quantity().withValue(java.math.BigDecimal("7")),
+                    )
+                }
+            assertEquals("12", result)
+        }
+
+        @Test
+        fun `ad-hoc query alias without resolvable type returns degraded response`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // No translator type and no FHIR resource fallback -> type is unresolvable.
+            handler.variableTypeMap = emptyMap()
+
+            val result =
+                evaluateRepl(server, "VTEStudy.effective") { h ->
+                    registerStackVar(h, "VTEStudy", "a-plain-string-lacking-a-type")
+                }
+            assertTrue(result.startsWith("not supported for this alias type"))
+        }
+
+        @Test
+        fun `ad-hoc query alias singular type enables arithmetic`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // collectAliasTypes now maps a list-backed query alias to its SINGULAR element type
+            // (System.Quantity, not list<System.Quantity>). A singular Quantity alias lets
+            // `W.value * 2` type-check and evaluate; a List<System.Quantity> alias would distribute
+            // `.value` to a list and fail to compile the multiplication.
+            handler.variableTypeMap = mapOf("W" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "W.value * 2") { h ->
+                    registerStackVar(
+                        h,
+                        "W",
+                        org.opencds.cqf.cql.engine.runtime.Quantity()
+                            .withValue(java.math.BigDecimal("5")),
+                    )
+                }
+            assertEquals("10", result)
+        }
+
+        @Test
+        fun `ad-hoc expression referencing unknown top-level define still returns compile error`() {
+            val server = setupServerWithAdHocEval()
+            // "NoSuchTopLevelDefine" is neither a query alias (not on the stack) nor a real define,
+            // so the synthetic compile fails and the error is surfaced.
+            val result = evaluateRepl(server, "NoSuchTopLevelDefine + 1")
+            assertTrue(result.startsWith("Compile error:"))
         }
     }
 }

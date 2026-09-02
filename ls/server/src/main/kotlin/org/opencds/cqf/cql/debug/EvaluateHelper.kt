@@ -1,6 +1,8 @@
 package org.opencds.cqf.cql.debug
 
 import com.google.gson.Gson
+import org.cqframework.cql.cql2elm.CqlCompiler
+import org.cqframework.cql.cql2elm.CqlCompilerException
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.EvaluateResponse
 import org.hl7.elm.r1.Element
@@ -536,6 +538,115 @@ class EvaluateHelper(
             else -> null
         }
     }
+
+    /**
+     * Compiles a typed CQL expression against the paused library and returns the compiled ELM
+     * [FunctionDef] ready for evaluation, or an [EvaluateResponse] containing a compile-error
+     * message.
+     *
+     * The expression is wrapped in a synthetic `define function "__debugEval__"(<aliases>): <expression>`.
+     * A function (rather than a plain define) is used so that query-local aliases (e.g. `VTEStudy`
+     * in a `from ... VTEStudy, where ...`) can be made visible: query aliases have no top-level
+     * scope, so they are declared as function parameters and bound to their live runtime values at
+     * evaluation time. With no aliases a zero-argument function is emitted.
+     *
+     * @param expression the raw CQL expression text typed by the user
+     * @param sourceText the original CQL source of the paused document (from [CqlCompilationManager.getSourceText])
+     * @param libraryManager the live session's [org.cqframework.cql.cql2elm.LibraryManager], already
+     *   containing resolved includes/FHIRHelpers
+     * @param aliases ordered `(identifier, concreteType)` pairs for the query aliases referenced by
+     *   [expression], in signature order (which must match the argument order used at evaluation time).
+     * @return a [Pair] of `(functionDef, null)` on success, or `(null, errorResponse)` on failure
+     */
+    fun evaluateAdHocExpression(
+        expression: String,
+        sourceText: String,
+        libraryManager: org.cqframework.cql.cql2elm.LibraryManager,
+        aliases: List<Pair<String, String>> = emptyList(),
+    ): Pair<org.hl7.elm.r1.FunctionDef?, EvaluateResponse?> {
+        val syntheticCql = buildSyntheticDefine(sourceText, expression, aliases)
+        log.debug(
+            "evaluateAdHocExpression: compiling synthetic CQL ({} chars, {} aliases)",
+            syntheticCql.length,
+            aliases.size,
+        )
+
+        val compiler = CqlCompiler(null, null, libraryManager)
+        compiler.run(syntheticCql)
+
+        if (CqlCompilerException.hasErrors(compiler.exceptions)) {
+            val ex = compiler.exceptions.firstOrNull { it.severity == CqlCompilerException.ErrorSeverity.Error }
+            val message = ex?.message ?: "Unknown compile error"
+            val locator = ex?.locator
+            val locStr =
+                if (locator != null) {
+                    " at ${locator.startLine}:${locator.startChar}"
+                } else {
+                    ""
+                }
+            log.debug("evaluateAdHocExpression: compile error: {}{}", message, locStr)
+            return null to messageResponse("Compile error: $message$locStr")
+        }
+
+        val library = compiler.library
+        if (library == null) {
+            log.debug("evaluateAdHocExpression: compiler.library is null after successful run()")
+            return null to messageResponse("Compile error: no library produced")
+        }
+
+        val evalDef =
+            library.statements?.def
+                ?.filterIsInstance<org.hl7.elm.r1.FunctionDef>()
+                ?.find { it.name == "__debugEval__" }
+        if (evalDef == null) {
+            log.debug("evaluateAdHocExpression: __debugEval__ function not found in compiled library")
+            return null to messageResponse("Compile error: synthetic function not found")
+        }
+
+        val elmExpression = evalDef.expression
+        if (elmExpression == null) {
+            log.debug("evaluateAdHocExpression: __debugEval__ expression is null")
+            return null to messageResponse("Compile error: empty expression")
+        }
+
+        log.debug(
+            "evaluateAdHocExpression: success functionOperands={} expressionClass={}",
+            evalDef.operand.map { it.name },
+            elmExpression.javaClass.simpleName,
+        )
+        return evalDef to null
+    }
+
+    private fun buildSyntheticDefine(
+        sourceText: String,
+        expression: String,
+        aliases: List<Pair<String, String>>,
+    ): String {
+        // Strip trailing whitespace/newlines, then append the synthetic function before EOF.
+        // The CQL grammar requires statements at the library level.
+        val trimmed = sourceText.trimEnd()
+        val paramList =
+            if (aliases.isEmpty()) {
+                ""
+            } else {
+                aliases.joinToString(", ") { (name, type) ->
+                    "\"$name\" ${normalizeType(type)}"
+                }
+            }
+        return "$trimmed\n\ndefine function \"__debugEval__\"($paramList): $expression\n"
+    }
+
+    /**
+     * Normalizes a translator-produced type string so it can be spliced into CQL source text as a
+     * parameter type. `Trackable.resultType.toString()` yields lowercase `interval<...>`/`list<...>`
+     * for generic types, but the CQL grammar's lexer is case-sensitive and requires the capitalized
+     * keywords `Interval`/`List`. Class/Simple type names (e.g. `FHIR.DiagnosticReport`,
+     * `System.Quantity`) are already valid as-is.
+     */
+    private fun normalizeType(type: String): String =
+        type
+            .replaceFirst("interval<", "Interval<")
+            .replaceFirst("list<", "List<")
 
     private fun notAvailable(): EvaluateResponse =
         EvaluateResponse().also {
