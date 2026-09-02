@@ -516,6 +516,49 @@ class StreamingBreakpointHandlerTest {
     }
 
     @Test
+    fun `pause at same line number in a different library is not suppressed by cross-library dedup`() {
+        // The CQL-granularity dedup used to compare only raw line numbers (`line != lastPausedLine`),
+        // so a coincidental line-number match between two DIFFERENT libraries' code would look like
+        // "already paused here" and get skipped. It must also require the library to match.
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepIn()
+
+        val primaryLib = Library().also { it.identifier = VersionedIdentifier().also { vi -> vi.id = "MyPrimaryLib" } }
+        val primaryState = State(Environment(null)).also { it.init(primaryLib) }
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("43:1-43:10"), primaryState))
+
+        val calleeLib = Library().also { it.identifier = VersionedIdentifier().also { vi -> vi.id = "CQMCommon" } }
+        val calleeState = State(Environment(null)).also { it.init(calleeLib) }
+        calleeState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        assertEquals(
+            BreakpointAction.PAUSE,
+            handler.onBeforeExpression(makeElement("43:1-43:30"), calleeState),
+            "a different library at the same line number must not be treated as the same pause location",
+        )
+    }
+
+    @Test
+    fun `included library step-in is not filtered by the primary library's unrelated step lines`() {
+        // cqlStepLinesByLibrary["CQMCommon"] is unset here (simulating "not loaded yet"); the
+        // fallback to the PRIMARY library's line set is wrong because it's a different file with
+        // unrelated line numbers, and would silently filter out every real line in CQMCommon.
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.cqlStepLinesByLibrary["MyPrimaryLib"] = setOf(1, 2, 3)
+        handler.stepIn()
+
+        val calleeLib = Library().also { it.identifier = VersionedIdentifier().also { vi -> vi.id = "CQMCommon" } }
+        val calleeState = State(Environment(null)).also { it.init(calleeLib) }
+        calleeState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        // Line 43 is not in the primary library's step-line set, but CQMCommon has no set of its
+        // own registered — it must not borrow the primary's set and incorrectly filter this out.
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("43:1-43:30"), calleeState))
+    }
+
+    @Test
     fun `continueMode does not pause for elements from non-primary library without breakpoint`() {
         val handler = StreamingBreakpointHandler()
         handler.primaryLibraryId = "MyPrimaryLib"

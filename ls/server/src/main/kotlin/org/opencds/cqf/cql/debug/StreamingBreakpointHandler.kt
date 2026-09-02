@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.debug
 
+import org.cqframework.cql.cql2elm.LibraryManager
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.FunctionDef
@@ -33,6 +34,17 @@ class StreamingBreakpointHandler(
     @Volatile
     var onLibraryEnteredCallback: ((libraryId: String, identifier: VersionedIdentifier?) -> Unit)? = null
 
+    /**
+     * The [LibraryManager] actually used to execute this debug session (set by
+     * [org.opencds.cqf.cql.ls.server.command.CqlEvaluator] right after it builds the engine).
+     * This is a DIFFERENT, always-fresh instance from the LSP's cached `CqlCompilationManager`
+     * compiler — the only one guaranteed to have successfully resolved every library (including
+     * npm-installed / bundled ones like FHIRHelpers) actually used by THIS run, so it's what the
+     * debug server should query for source text of libraries with no workspace file.
+     */
+    @Volatile
+    var libraryManager: LibraryManager? = null
+
     @Volatile
     var primaryLibraryId: String? = null
 
@@ -46,6 +58,14 @@ class StreamingBreakpointHandler(
     private var depthAtStep: Int = 0
 
     private var lastPausedLine: Int = -1
+
+    /**
+     * Library id the last pause occurred in, paired with [lastPausedLine] for CQL-granularity
+     * dedup. Without this, a pause at the same line number in a DIFFERENT library (a common
+     * coincidence across small CQL functions) is treated as "already paused here" and silently
+     * skipped — see the `line != lastPausedLine` comparisons below, all of which also check this.
+     */
+    private var lastPausedLibId: String? = null
 
     @Volatile
     var lastPausedElm: Element? = null
@@ -160,6 +180,7 @@ class StreamingBreakpointHandler(
         )
         released = false
         lastPausedLine = -1
+        lastPausedLibId = null
         lastPausedElmIdentity = null
         clearEvaluatedValues()
     }
@@ -243,7 +264,7 @@ class StreamingBreakpointHandler(
             val locator = elm.locator ?: return BreakpointAction.CONTINUE
             val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
             val libBreakpoints = breakpointsByLibrary[currentLibId]
-            if (libBreakpoints?.contains(line) == true && line != lastPausedLine) {
+            if (libBreakpoints?.contains(line) == true && (line != lastPausedLine || currentLibId != lastPausedLibId)) {
                 log.debug("onBeforeExpression: PAUSE (included library breakpoint) lib={} line={}", currentLibId, line)
                 capturePauseState(elm, state, line)
                 return BreakpointAction.PAUSE
@@ -263,11 +284,16 @@ class StreamingBreakpointHandler(
             val locator = elm.locator ?: return BreakpointAction.CONTINUE
             val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
             val depth = state.stack.size
-            val cqlFilter = cqlStepLinesByLibrary[currentLibId] ?: cqlStepLinesByLibrary[primaryLibraryId]
-            val stepInCondition = line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-            val stepOverCondition = line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+            // Falling back to the PRIMARY library's breakpointable-line set here would be wrong —
+            // it's a different file with unrelated line numbers, so it would filter out every
+            // real line in `currentLibId` and silently skip pausing anywhere in it. If this
+            // library's own line set isn't loaded yet, treat it as "no filter" instead.
+            val cqlFilter = cqlStepLinesByLibrary[currentLibId]
+            val pausedHere = line == lastPausedLine && currentLibId == lastPausedLibId
+            val stepInCondition = !pausedHere && (cqlFilter == null || line in cqlFilter)
+            val stepOverCondition = !pausedHere && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
             val stepOutCondition = depth < depthAtStep
-            val continueCondition = line in breakpointsByLibrary[currentLibId].orEmpty() && line != lastPausedLine
+            val continueCondition = line in breakpointsByLibrary[currentLibId].orEmpty() && !pausedHere
             val shouldPause =
                 when (stepMode) {
                     StepMode.STEP_IN -> stepInCondition
@@ -348,10 +374,11 @@ class StreamingBreakpointHandler(
         val primaryLibLines = if (primaryLibraryId != null) breakpointsByLibrary[primaryLibraryId] else null
         val cqlFilter = cqlStepLines
         val elmNotVisited = elmKey(elm, currentLibId) !in visitedElmKeysInStepSession
-        val cqlStepInCondition = line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-        val cqlStepOverCondition = line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+        val pausedHere = line == lastPausedLine && currentLibId == lastPausedLibId
+        val cqlStepInCondition = !pausedHere && (cqlFilter == null || line in cqlFilter)
+        val cqlStepOverCondition = !pausedHere && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
         val cqlStepOutCondition = depth < depthAtStep
-        val cqlContinueCondition = line in (primaryLibLines ?: breakpointLines) && line != lastPausedLine
+        val cqlContinueCondition = line in (primaryLibLines ?: breakpointLines) && !pausedHere
         val astStepInCondition = elmNotVisited
         val astStepOverCondition = elmNotVisited && depth <= depthAtStep
         val astStepOutCondition = depth < depthAtStep
@@ -437,7 +464,7 @@ class StreamingBreakpointHandler(
     override fun onExpressionDefEvaluated(
         elm: ExpressionDef,
         state: State,
-        value: Any?,
+        value: org.opencds.cqf.cql.engine.runtime.Value?,
     ) {
         defineCallStack.removeLastOrNull()
         if (elm is FunctionDef) return
@@ -450,7 +477,7 @@ class StreamingBreakpointHandler(
     override fun onAfterExpression(
         elm: Element,
         state: State,
-        value: Any?,
+        value: org.opencds.cqf.cql.engine.runtime.Value?,
     ) {
         val locator = elm.locator
         if (locator != null) {
@@ -521,6 +548,7 @@ class StreamingBreakpointHandler(
             stepGranularity,
         )
         lastPausedLine = line
+        lastPausedLibId = libId
         lastPausedElmIdentity = elm
         lastPausedElm = elm
         visitedElmKeysInStepSession.add(elmKey(elm, libId))
@@ -566,6 +594,7 @@ class StreamingBreakpointHandler(
         knownLibraryIds.clear()
         visitedElmKeysInStepSession.clear()
         lastPausedLine = -1
+        lastPausedLibId = null
         lastPausedElm = null
         lastPausedElmIdentity = null
         lastPausedState = null
