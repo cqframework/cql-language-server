@@ -18,6 +18,7 @@ import org.hl7.elm.r1.Combine
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.First
+import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.FunctionRef
 import org.hl7.elm.r1.If
 import org.hl7.elm.r1.Last
@@ -136,7 +137,18 @@ class VariableResolver(
         }
     }
 
-    fun fhirResourceTypeOf(value: Any?): String? = (normalizeValue(value) as? IBaseResource)?.fhirType()
+    fun fhirResourceTypeOf(value: Any?): String? {
+        val normalized = normalizeValue(value)
+        if (normalized is IBaseResource) return normalized.fhirType()
+        if (normalized is List<*>) {
+            val elements = normalized.map { normalizeValue(it) }
+            if (elements.isNotEmpty() && elements.all { it is IBaseResource }) {
+                @Suppress("UNCHECKED_CAST")
+                return "List<${(elements.first() as IBaseResource).fhirType()}>"
+            }
+        }
+        return null
+    }
 
     fun formatResourceList(resources: List<IBaseResource>): String {
         if (resources.isEmpty()) return "[]"
@@ -624,6 +636,18 @@ class VariableResolver(
         for (def in defs) {
             if (def.name != null && def.resultType != null) {
                 map[def.name!!] = def.resultType.toString()
+            }
+            if (def is FunctionDef) {
+                for (operand in def.operand) {
+                    if (operand.name != null) {
+                        val type =
+                            operand.resultType?.toString()
+                                ?: operand.operandTypeSpecifier?.toString()
+                        if (type != null) {
+                            map[operand.name!!] = type
+                        }
+                    }
+                }
             }
             collectAliasTypes(def.expression, map)
         }

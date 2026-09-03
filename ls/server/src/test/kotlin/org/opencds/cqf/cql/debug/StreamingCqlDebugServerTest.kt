@@ -3925,5 +3925,125 @@ class StreamingCqlDebugServerTest {
             val result = evaluateRepl(server, "NoSuchTopLevelDefine + 1")
             assertTrue(result.startsWith("Compile error:"))
         }
+
+        @Test
+        fun `ad-hoc list-valued function parameter compiles successfully`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // Simulate what buildVariableTypeMap now captures for a FunctionDef operand
+            // with a list type (e.g. conditions List<FHIR.Condition>).
+            handler.variableTypeMap = mapOf("conditions" to "List<System.Integer>")
+
+            val result =
+                evaluateRepl(server, "\"conditions\"") { h ->
+                    registerStackVar(
+                        h,
+                        "conditions",
+                        listOf(1, 2, 3),
+                    )
+                }
+            // Before the fix, this would return "not supported for this alias type".
+            // Now the list-typed parameter resolves and evaluates to the list value.
+            assertFalse(result.startsWith("not supported for this alias type"), result)
+            assertTrue(result.contains("1"), "Expected list to contain value 1, got: $result")
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame uses included library source when paused inside it`() {
+            val primaryUri = URI.create("file:///Primary.cql")
+            val includedUri = URI.create("file:///Included.cql")
+            val primarySource = "library Primary\n\ndefine \"X\": 10"
+            val includedSource = "library Included\ncode \"confirmed\": 'confirmed' from \"TestCS\"\n\ndefine \"Y\": 20"
+
+            val cs =
+                object : ContentService {
+                    private val files = mapOf(primaryUri to primarySource, includedUri to includedSource)
+
+                    override fun locate(
+                        root: URI,
+                        identifier: VersionedIdentifier,
+                    ): Set<URI> {
+                        val id = identifier.id ?: return emptySet()
+                        return files.keys.filter { it.toString().contains(id) }.toSet()
+                    }
+
+                    override fun read(uri: URI): InputStream? = files[uri]?.byteInputStream()
+                }
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            // Pre-compile both libraries so getSourceText() has entries in the cache.
+            cm.compile(primaryUri, primarySource.byteInputStream())
+            cm.compile(includedUri, includedSource.byteInputStream())
+
+            val client = mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            val server = TestStreamingServer(cm, cs, mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+            server.connect(client)
+            server.setLaunchUri(primaryUri.toString())
+
+            val handler = server.testHandler
+            handler.primaryLibraryId = "Primary"
+
+            // Map the included library ID to its URI.
+            server.addLibrarySource("Included", includedUri)
+
+            // Simulate being paused inside the included library by setting the call stack.
+            handler.lastPausedCallStack =
+                listOf(
+                    StreamingBreakpointHandler.CallStackEntry(
+                        def = ExpressionDef().also { it.name = "isVerified" },
+                        callSite = null,
+                        libraryId = "Included",
+                    ),
+                )
+
+            // Invoke resolveSourceTextForFrame() via reflection.
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+            val result = method.invoke(server) as? String
+
+            assertEquals(includedSource, result, "Should resolve included library's source text when paused inside it")
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame falls back to primary library when frame not resolved`() {
+            val primaryUri = URI.create("file:///Primary.cql")
+            val primarySource = "library Primary\n\ndefine \"X\": 10"
+
+            val cs =
+                object : ContentService {
+                    override fun read(uri: URI): InputStream? =
+                        if (uri == primaryUri) primarySource.byteInputStream() else null
+                }
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            cm.compile(primaryUri, primarySource.byteInputStream())
+
+            val client = mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            val server = TestStreamingServer(cm, cs, mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+            server.connect(client)
+            server.setLaunchUri(primaryUri.toString())
+
+            val handler = server.testHandler
+            handler.primaryLibraryId = "Primary"
+            server.addLibrarySource("Primary", primaryUri)
+            // Call stack is empty — resolveFrameLibraryId falls back to primaryLibraryId.
+            handler.lastPausedCallStack = emptyList()
+
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+            val result = method.invoke(server) as? String
+
+            assertEquals(primarySource, result, "Should fall back to primary library when call stack is empty")
+        }
     }
 }

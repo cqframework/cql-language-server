@@ -1185,10 +1185,15 @@ open class CqlDebugServer(
                 // expressions that aren't simple name/property lookups (e.g. comparisons,
                 // arithmetic, function calls). Only when every cheap lookup has failed.
                 if (args.context in AD_HOC_EVAL_CONTEXTS) {
-                    val sourceUri = streamingLaunchUri
                     val libManager = handler.libraryManager
-                    if (sourceUri != null && libManager != null) {
-                        val sourceText = compilationManager.getSourceText(URI.create(sourceUri))
+                    if (libManager != null) {
+                        // Use the library the debugger is currently paused inside (which may be
+                        // an included library like FHIRCommon.cql) so its top-level declarations
+                        // (code definitions, value sets, etc.) are in scope for the synthetic CQL.
+                        // Fall back to the primary library when the frame isn't resolved yet.
+                        val sourceText =
+                            resolveSourceTextForFrame()
+                                ?: streamingLaunchUri?.let { compilationManager.getSourceText(URI.create(it)) }
                         if (sourceText != null) {
                             // Query-local aliases (from VTEStudy, let ) are not top-level defines and
                             // so are otherwise invisible to the synthetic compile. Detect which
@@ -1683,6 +1688,37 @@ open class CqlDebugServer(
 
     private fun resolveFrameLibraryId(): String =
         breakpointManager.resolveFrameLibraryId(streamingHandler)
+
+    /**
+     * Resolves the CQL source text for the library the debugger is currently paused inside.
+     * When a user pauses inside a function from an included library (e.g. FHIRCommon.cql) and
+     * types a REPL expression, the synthetic CQL must be compiled against that library's source
+     * so its top-level declarations (code definitions, value sets, etc.) are in scope.
+     *
+     * Three-tier resolution mirrors [resolveSourceContent]:
+     * 1. Compilation cache (instant, covers the primary library)
+     * 2. [contentService] (workspace files + active editor buffer)
+     * 3. [LibrarySourceResolver] (npm/bundled libraries via engine provider chain)
+     */
+    private fun resolveSourceTextForFrame(): String? {
+        val libId = resolveFrameLibraryId()
+        if (libId.isEmpty()) return null
+        val uri = librarySourceMap[libId] ?: return null
+        // Fast path: compilation cache (covers primary library)
+        compilationManager.getSourceText(uri)?.let { return it }
+        // Workspace file or active editor buffer
+        try {
+            contentService.read(uri)?.use { return it.bufferedReader().readText() }
+        } catch (_: Exception) {
+        }
+        // Virtual URI (cql-source://N) — resolve via VersionedIdentifier
+        val ref = uri.toString().removePrefix("cql-source://").toIntOrNull()
+        val identifier = ref?.let { sourceReferenceRegistry[it] }
+        if (identifier != null) {
+            return LibrarySourceResolver.resolve(streamingHandler?.libraryManager, identifier)
+        }
+        return null
+    }
 
     override fun source(args: SourceArguments): CompletableFuture<SourceResponse> {
         log.debug("source: ENTER sourceReference={}", args.sourceReference)

@@ -796,6 +796,77 @@ class VariableResolverTest {
             val map = resolver.buildVariableTypeMap(compiler)
             assertTrue(map.containsKey("AndVal"), "AndVal should be in type map")
         }
+
+        @Test
+        fun `FunctionDef list parameter is captured in type map`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionParams.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.containsKey("conditions"), "FunctionDef operand 'conditions' should be in type map, got: $map")
+            assertTrue(
+                map["conditions"]!!.contains("Condition"),
+                "Type for 'conditions' should reference Condition, got: ${map["conditions"]}",
+            )
+        }
+
+        @Test
+        fun `FunctionDef scalar parameter is captured in type map`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionParams.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.containsKey("val"), "FunctionDef operand 'val' should be in type map, got: $map")
+            assertTrue(
+                map["val"]!!.contains("Integer"),
+                "Type for 'val' should reference Integer, got: ${map["val"]}",
+            )
+        }
+
+        @Test
+        fun `FunctionDef with mixed params captures all operands`() {
+            val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/FunctionParams.cql")!!
+            val compiler = compilationManager.compile(uri) ?: return
+            val map = resolver.buildVariableTypeMap(compiler)
+            assertTrue(map.containsKey("a"), "FunctionDef operand 'a' should be in type map")
+            assertTrue(map.containsKey("b"), "FunctionDef operand 'b' should be in type map")
+            assertTrue(map["a"]!!.contains("Integer"), "Type for 'a' should reference Integer")
+            assertTrue(map["b"]!!.contains("Condition"), "Type for 'b' should reference Condition")
+        }
+    }
+
+    // -- fhirResourceTypeOf -------------------------------------------------
+
+    @Nested
+    inner class FhirResourceTypeOf {
+        @Test
+        fun `scalar resource returns bare type`() {
+            val patient = Patient().apply { id = "test-123" }
+            assertEquals("Patient", resolver.fhirResourceTypeOf(patient))
+        }
+
+        @Test
+        fun `non-empty list of resources returns List type`() {
+            val encounters =
+                listOf(
+                    Encounter().apply { id = "enc-1" },
+                    Encounter().apply { id = "enc-2" },
+                )
+            assertEquals("List<Encounter>", resolver.fhirResourceTypeOf(encounters))
+        }
+
+        @Test
+        fun `empty list returns null`() {
+            assertNull(resolver.fhirResourceTypeOf(emptyList<Any>()))
+        }
+
+        @Test
+        fun `list with non-resource elements returns null`() {
+            assertNull(resolver.fhirResourceTypeOf(listOf("not-a-resource", 42)))
+        }
+
+        @Test
+        fun `null value returns null`() {
+            assertNull(resolver.fhirResourceTypeOf(null))
+        }
     }
 
     // -- profileChildrenOf ----------------------------------------------------

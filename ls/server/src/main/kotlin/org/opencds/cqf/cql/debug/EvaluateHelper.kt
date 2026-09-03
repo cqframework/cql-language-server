@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.debug
 import com.google.gson.Gson
 import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.CqlCompilerException
+import org.cqframework.cql.elm.serializing.ElmXmlLibraryWriter
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.EvaluateResponse
 import org.hl7.elm.r1.Element
@@ -593,6 +594,12 @@ class EvaluateHelper(
             log.debug("evaluateAdHocExpression: compiler.library is null after successful run()")
             return null to messageResponse("Compile error: no library produced")
         }
+
+        log.debug(
+            "evaluateAdHocExpression: compiled ELM for ad-hoc expression '{}':\n{}",
+            expression,
+            ElmXmlLibraryWriter().writeAsString(library),
+        )
 
         val evalDef =
             library.statements?.def
