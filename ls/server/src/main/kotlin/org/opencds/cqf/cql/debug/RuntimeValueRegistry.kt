@@ -302,6 +302,11 @@ class RuntimeValueRegistry {
     fun getDefines(): List<RuntimeValue> =
         persistent.values.filter { it.category == RuntimeValueCategory.DEFINE }.sortedBy { it.name }
 
+    fun getDefinesByLibrary(): Map<String, List<RuntimeValue>> =
+        persistent.values
+            .filter { it.category == RuntimeValueCategory.DEFINE }
+            .groupBy { it.libraryName ?: "(Global)" }
+
     fun getParametersByLibrary(): Map<String, List<RuntimeValue>> =
         persistent.values
             .filter { it.category == RuntimeValueCategory.PARAMETER }

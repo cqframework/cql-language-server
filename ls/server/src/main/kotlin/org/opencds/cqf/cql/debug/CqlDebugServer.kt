@@ -57,7 +57,13 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.fhir.model.FhirModelResolver
 import org.opencds.cqf.cql.engine.runtime.Value
+import org.opencds.cqf.cql.engine.runtime.toCqlBoolean
+import org.opencds.cqf.cql.engine.runtime.toCqlDecimal
+import org.opencds.cqf.cql.engine.runtime.toCqlInteger
+import org.opencds.cqf.cql.engine.runtime.toCqlLong
+import org.opencds.cqf.cql.engine.runtime.toCqlString
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
@@ -75,6 +81,7 @@ import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
+import org.opencds.cqf.fhir.utility.model.FhirModelResolverCache
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
@@ -84,6 +91,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.math.BigDecimal as JavaBigDecimal
 
 open class CqlDebugServer(
     private val compilationManager: CqlCompilationManager,
@@ -190,7 +198,10 @@ open class CqlDebugServer(
     protected var launchParameters: List<ParameterRequestData>? = null
 
     // >= 100000 reserved for library group refs (below that is the FHIR/Gson band >= 1000)
+    // Refs are never reset during the life of the server instance — they only grow, so
+    // parameters and defines group refs never collide regardless of query order.
     private var nextLibraryGroupRef = 100000
+    private val libraryGroupRefs = mutableMapOf<Int, Pair<String, RuntimeValueCategory>>()
 
     override fun connect(client: IDebugProtocolClient) {
         this.client.complete(client)
@@ -829,9 +840,9 @@ open class CqlDebugServer(
 
             // variablesReference == 2 is the Parameters scope container
             if (args.variablesReference == 2) {
-                // Reset library group refs for consistent tree rebuilding
-                nextLibraryGroupRef = 100000
-                libraryRefToName.clear()
+                // Remove stale parameter group entries (but not defines, which may be
+                // expanded in the same pause). Refs grow monotonically across scopes.
+                libraryGroupRefs.entries.removeIf { it.value.second == RuntimeValueCategory.PARAMETER }
 
                 val groups = handler.runtimeRegistry.getParametersByLibrary()
                 if (groups.isNotEmpty()) {
@@ -849,29 +860,49 @@ open class CqlDebugServer(
 
             // Library group expansion (positive refs >= 100000)
             if (args.variablesReference >= 100000) {
-                val libraryName = getLibraryNameForRef(args.variablesReference)
-                if (libraryName != null) {
+                val entry = libraryGroupRefs[args.variablesReference]
+                if (entry != null) {
                     val gson = Gson()
-                    val libParams = handler.runtimeRegistry.getParametersByLibrary()[libraryName]
-                    if (libParams != null) {
-                        for (param in libParams.sortedBy { it.name }) {
-                            val paramType =
-                                param.type
-                                    ?: findParameterMetadata(libraryName, param.name)?.type
-                            vars.add(resourceAwareVariable(param.name, param.value, paramType, gson))
+                    val (libraryName, category) = entry
+                    when (category) {
+                        RuntimeValueCategory.PARAMETER -> {
+                            val libParams = handler.runtimeRegistry.getParametersByLibrary()[libraryName]
+                            if (libParams != null) {
+                                for (param in libParams.sortedBy { it.name }) {
+                                    val paramType =
+                                        param.type
+                                            ?: findParameterMetadata(libraryName, param.name)?.type
+                                    vars.add(resourceAwareVariable(param.name, param.value, paramType, gson))
+                                }
+                            } else {
+                                // No runtime values yet - show metadata defaults
+                                parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
+                                    vars.add(
+                                        Variable().also { v ->
+                                            v.name = metadata.name
+                                            v.value = metadata.defaultValue ?: "(no default)"
+                                            v.type = metadata.type
+                                            v.variablesReference = 0
+                                        },
+                                    )
+                                }
+                            }
                         }
-                    } else {
-                        // No runtime values yet - show metadata defaults
-                        parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
-                            vars.add(
-                                Variable().also { v ->
-                                    v.name = metadata.name
-                                    v.value = metadata.defaultValue ?: "(no default)"
-                                    v.type = metadata.type
-                                    v.variablesReference = 0
-                                },
-                            )
+                        RuntimeValueCategory.DEFINE -> {
+                            // No metadata fallback: a define is either evaluated (present in the
+                            // registry) or not shown yet — there's no static default to display.
+                            handler.runtimeRegistry.getDefinesByLibrary()[libraryName]?.sortedBy { it.name }
+                                ?.forEach { d ->
+                                    val dType =
+                                        if (d.libraryName != null) {
+                                            variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
+                                        } else {
+                                            variableTypeMap[d.name]
+                                        }
+                                    vars.add(resourceAwareVariable(d.name, d.value, dType, gson))
+                                }
                         }
+                        else -> {}
                     }
                 }
                 return CompletableFuture.completedFuture(
@@ -897,6 +928,18 @@ open class CqlDebugServer(
                 )
             }
 
+            // variablesReference == 3 is the Resolved Defines scope container
+            if (args.variablesReference == 3) {
+                // Remove stale define group entries (but not parameters). Refs grow
+                // monotonically across scopes regardless of query order.
+                libraryGroupRefs.entries.removeIf { it.value.second == RuntimeValueCategory.DEFINE }
+
+                val groups = handler.runtimeRegistry.getDefinesByLibrary()
+                return CompletableFuture.completedFuture(
+                    VariablesResponse().also { it.variables = buildLibraryGroupVariables(groups, "define").toTypedArray() },
+                )
+            }
+
             if (state != null) {
                 val gson = Gson()
                 val registry = handler.runtimeRegistry
@@ -913,17 +956,6 @@ open class CqlDebugServer(
                         vars.add(resourceAwareVariable(cr.name, cr.value, crType, gson))
                     }
                 }
-                if (args.variablesReference == 3) {
-                    for (d in registry.getDefines().sortedBy { it.name }) {
-                        val dType =
-                            if (d.libraryName != null) {
-                                variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
-                            } else {
-                                variableTypeMap[d.name]
-                            }
-                        vars.add(resourceAwareVariable(d.name, d.value, dType, gson))
-                    }
-                }
             }
             return CompletableFuture.completedFuture(
                 VariablesResponse().also { it.variables = vars.toTypedArray() },
@@ -932,9 +964,9 @@ open class CqlDebugServer(
 
         // Non-streaming mode: variablesReference == 2 shows grouped parameter metadata
         if (args.variablesReference == 2) {
-            // Reset library group refs for consistent tree rebuilding
-            nextLibraryGroupRef = 100000
-            libraryRefToName.clear()
+            // Remove stale parameter group entries (non-streaming metadata mode only
+            // ever has parameters, so this is safe — refs keep growing monotonic).
+            libraryGroupRefs.entries.removeIf { it.value.second == RuntimeValueCategory.PARAMETER }
 
             val groups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
             return CompletableFuture.completedFuture(
@@ -944,8 +976,9 @@ open class CqlDebugServer(
 
         // Library group expansion in non-streaming mode (positive refs >= 100000)
         if (args.variablesReference >= 100000) {
-            val libraryName = getLibraryNameForRef(args.variablesReference)
-            if (libraryName != null) {
+            val entry = libraryGroupRefs[args.variablesReference]
+            if (entry != null && entry.second == RuntimeValueCategory.PARAMETER) {
+                val libraryName = entry.first
                 parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
                     vars.add(
                         Variable().also { v ->
@@ -994,13 +1027,18 @@ open class CqlDebugServer(
         }
     }
 
-    private fun buildLibraryGroupVariables(groups: Map<String, List<RuntimeValue>>): List<Variable> {
-        return groups.toSortedMap().map { (library, params) ->
+    private fun buildLibraryGroupVariables(
+        groups: Map<String, List<RuntimeValue>>,
+        kindLabel: String = "parameter",
+    ): List<Variable> {
+        return groups.toSortedMap().map { (library, items) ->
             val ref = nextLibraryGroupRef++
-            libraryRefToName["ref_$ref"] = library
+            // groupBy never produces empty value lists in practice; the firstOrNull guard
+            // covers the reflective unit tests that probe the method with empty lists.
+            libraryGroupRefs[ref] = library to (items.firstOrNull()?.category ?: RuntimeValueCategory.PARAMETER)
             Variable().also { v ->
                 v.name = library
-                v.value = "${params.size} parameter(s)"
+                v.value = "${items.size} $kindLabel(s)"
                 v.variablesReference = ref
                 v.type = null
             }
@@ -1010,7 +1048,7 @@ open class CqlDebugServer(
     private fun buildMetadataLibraryGroupVariables(groups: Map<String, List<Pair<String, Any?>>>): List<Variable> {
         return groups.toSortedMap().map { (library, _) ->
             val ref = nextLibraryGroupRef++
-            libraryRefToName["ref_$ref"] = library
+            libraryGroupRefs[ref] = library to RuntimeValueCategory.PARAMETER
             val paramCount = groups[library]?.size ?: 0
             Variable().also { v ->
                 v.name = library
@@ -1020,15 +1058,6 @@ open class CqlDebugServer(
             }
         }
     }
-
-    private fun getLibraryNameForRef(ref: Int): String? {
-        // Reconstruct library name from ref by looking up in parameterMetadata keys
-        // We use a simple approach: store ref->libraryName mapping
-        val key = "ref_$ref"
-        return libraryRefToName[key]
-    }
-
-    private val libraryRefToName = mutableMapOf<String, String>()
 
     private fun findParameterMetadata(
         libraryName: String,
@@ -1220,7 +1249,22 @@ open class CqlDebugServer(
                                 return@supplyAsync errorResponse
                             }
                             if (functionDef != null) {
-                                val argumentValues: List<Value?> = aliases.map { (_, value) -> value as? Value }
+                                val argumentValues: List<Value?> =
+                                    try {
+                                        val resolver = adHocModelResolver()
+                                        aliases.map { (name, value) -> toAdHocOperandValue(name, value, resolver) }
+                                    } catch (e: Exception) {
+                                        val message = e.message ?: "Value binding error"
+                                        log.debug(
+                                            "evaluate: ad-hoc operand conversion failed expression={} error={}",
+                                            args.expression,
+                                            message,
+                                        )
+                                        return@supplyAsync EvaluateResponse().also {
+                                            it.result = "Runtime error: $message"
+                                            it.variablesReference = 0
+                                        }
+                                    }
                                 log.debug("evaluate: ad-hoc eval expression={} submitting to engine", args.expression)
                                 val resultFuture = handler.submitAdHocEval(functionDef, argumentValues)
                                 return@supplyAsync try {
@@ -1452,6 +1496,29 @@ open class CqlDebugServer(
         variableTypeMap[name]?.let { return it }
         streamingHandler?.variableTypeMap?.get(name)?.let { return it }
         return varResolver.fhirResourceTypeOf(value)
+    }
+
+    /**
+     * Converts a raw registry alias value into a genuine engine [Value] so it can be passed as a
+     * synthetic-function operand to
+     * [FunctionRefEvaluator.evaluateFunctionDef][org.opencds.cqf.cql.engine.elm.executing.FunctionRefEvaluator.evaluateFunctionDef].
+     *
+     * Registry values are stored unwrapped by `RuntimeValueRegistry.unwrapValue`: FHIR/HAPI objects
+     * and Kotlin primitives pass through as-is and never implement the sealed [Value] interface, so
+     * the previous `value as? Value` cast silently produced `null` for these common cases. This
+     * reverses the unwrap only at the one call site (ad-hoc operand binding) that actually needs a
+     * real Value, reusing existing conversion utilities rather than introducing new wrapping logic.
+     */
+    private fun toAdHocOperandValue(
+        name: String,
+        raw: Any?,
+        resolver: FhirModelResolver<*, *, *, *, *, *, *, *>,
+    ): Value = convertToAdHocOperandValue(name, raw, resolver)
+
+    /** Returns the [FhirModelResolver] for the active FHIR version, defaulting to R4. */
+    private fun adHocModelResolver(): FhirModelResolver<*, *, *, *, *, *, *, *> {
+        val context = getFhirContextForVersion(launchArgs?.fhirVersion)
+        return FhirModelResolverCache.resolverForVersion(context.version.version)
     }
 
     /**
@@ -1854,4 +1921,44 @@ open class CqlDebugServer(
         typeName: String,
         elementDef: BaseRuntimeElementDefinition<*>,
     ): List<BaseRuntimeChildDefinition> = varResolver.profileChildrenOf(typeName, elementDef, launchCompiler)
+}
+
+/**
+ * Converts a raw registry alias value into a genuine engine [Value] so it can be bound as a
+ * synthetic-function operand for ad-hoc Debug Console/watch evaluation.
+ *
+ * Registry values are stored unwrapped by `RuntimeValueRegistry.unwrapValue`: FHIR/HAPI objects and
+ * Kotlin primitives pass through unchanged and never implement the sealed [Value] interface, so the
+ * previous `value as? Value` cast silently produced `null` for these common cases. This reverses the
+ * unwrap only at the ad-hoc operand-binding call site, reusing existing conversion utilities rather
+ * than introducing new wrapping logic.
+ */
+internal fun convertToAdHocOperandValue(
+    name: String,
+    raw: Any?,
+    resolver: FhirModelResolver<*, *, *, *, *, *, *, *>,
+): Value {
+    if (raw is Value) {
+        return raw
+    }
+    if (raw is IBase) {
+        val cqlValue = resolver.toCqlValue(raw, false)
+        if (cqlValue != null) {
+            return cqlValue
+        }
+        throw IllegalArgumentException(
+            "Cannot bind alias '$name' of type ${raw.javaClass.name} to a CQL value: FHIR conversion returned null",
+        )
+    }
+    return when (raw) {
+        is String -> raw.toCqlString()
+        is Boolean -> raw.toCqlBoolean()
+        is Int -> raw.toCqlInteger()
+        is Long -> raw.toCqlLong()
+        is JavaBigDecimal -> raw.toCqlDecimal()
+        else ->
+            throw IllegalArgumentException(
+                "Cannot bind alias '$name' of type ${raw?.javaClass?.name ?: "null"} to a CQL value",
+            )
+    }
 }

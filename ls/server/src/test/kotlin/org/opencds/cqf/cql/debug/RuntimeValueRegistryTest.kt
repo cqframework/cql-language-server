@@ -212,6 +212,24 @@ class RuntimeValueRegistryTest {
         assertEquals(1, groups["LibB"]?.size)
     }
 
+    @Test
+    fun `getDefinesByLibrary groups by library name`() {
+        val reg = RuntimeValueRegistry()
+        val libA = VersionedIdentifier().also { it.id = "LibA" }
+        val libB = VersionedIdentifier().also { it.id = "LibB" }
+        reg.putDefine("d1", 10, "Integer", libA)
+        reg.putDefine("d2", "hi", "String", libB)
+        reg.putDefine("d3", true, "Boolean", libA)
+        // Null library id falls back to the (Global) group
+        reg.putDefine("d4", "v", null, null)
+
+        val groups = reg.getDefinesByLibrary()
+        assertEquals(3, groups.size)
+        assertEquals(2, groups["LibA"]?.size)
+        assertEquals(1, groups["LibB"]?.size)
+        assertEquals(1, groups["(Global)"]?.size)
+    }
+
     // -- caseInsensitiveCandidates / displayNames ---------------------------
 
     @Nested

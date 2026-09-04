@@ -1758,7 +1758,13 @@ class StreamingCqlDebugServerTest {
         handler.runtimeRegistry.putDefine("Ambulatory Encounters", listOf(encounter1, encounter2), "List<FHIR.Encounter>", null)
 
         val response = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
-        val defineVar = response.variables.firstOrNull { it.name == "Ambulatory Encounters" }
+        // Define was registered with null library, so it's grouped under "(Global)"
+        val groupVar = response.variables.firstOrNull { it.name == "(Global)" }
+        assertNotNull(groupVar, "Defines should be grouped by library; expected a (Global) group")
+        assertTrue(groupVar!!.variablesReference >= 100000, "Group ref must be >= 100000")
+
+        val expandResponse = server.variables(VariablesArguments().also { it.variablesReference = groupVar.variablesReference }).get()
+        val defineVar = expandResponse.variables.firstOrNull { it.name == "Ambulatory Encounters" }
         assertNotNull(defineVar)
         assertEquals("List<Encounter>", defineVar!!.type, "Type should be the bare FHIR type, not the CQL ELM type string")
         assertEquals("[Encounter/enc-1, Encounter/enc-2]", defineVar.value)
@@ -1787,9 +1793,165 @@ class StreamingCqlDebugServerTest {
         handler.runtimeRegistry.putDefine("Patient", patient, "FHIR.Patient", null)
 
         val response = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
-        val defineVar = response.variables.firstOrNull { it.name == "Patient" }
+        // Define was registered with null library, so it's grouped under "(Global)"
+        val groupVar = response.variables.firstOrNull { it.name == "(Global)" }
+        assertNotNull(groupVar, "Defines should be grouped by library; expected a (Global) group")
+        assertTrue(groupVar!!.variablesReference >= 100000, "Group ref must be >= 100000")
+
+        val expandResponse = server.variables(VariablesArguments().also { it.variablesReference = groupVar.variablesReference }).get()
+        val defineVar = expandResponse.variables.firstOrNull { it.name == "Patient" }
         assertNotNull(defineVar)
         assertEquals("Patient", defineVar!!.type, "Type should be the bare FHIR type, not \"FHIR.Patient\"")
+    }
+
+    @Test
+    fun `Resolved Defines groups same-named defines by library preserving each value`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+
+        val cms130 = VersionedIdentifier().also { it.id = "CMS130" }
+        val advFrailty = VersionedIdentifier().also { it.id = "AdvancedIllnessandFrailty" }
+        handler.runtimeRegistry.putDefine("Patient", "cms130-patient", "FHIR.Patient", cms130)
+        handler.runtimeRegistry.putDefine("Patient", "advfrailty-patient", "FHIR.Patient", advFrailty)
+
+        // Resolved Defines scope returns one expandable group node per library
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(2, groupsResponse.variables.size, "Should return one group node per library")
+        val cms130Group = groupsResponse.variables.firstOrNull { it.name == "CMS130" }
+        val advFrailtyGroup = groupsResponse.variables.firstOrNull { it.name == "AdvancedIllnessandFrailty" }
+        assertNotNull(cms130Group, "Expected a CMS130 group node")
+        assertNotNull(advFrailtyGroup, "Expected an AdvancedIllnessandFrailty group node")
+        assertEquals("1 define(s)", cms130Group!!.value)
+        assertEquals("1 define(s)", advFrailtyGroup!!.value)
+        assertTrue(cms130Group.variablesReference >= 100000, "Group ref must be >= 100000")
+        assertTrue(advFrailtyGroup.variablesReference >= 100000, "Group ref must be >= 100000")
+        assertTrue(
+            cms130Group.variablesReference != advFrailtyGroup.variablesReference,
+            "Library groups must have distinct refs",
+        )
+
+        // Expanding the CMS130 group yields only CMS130's Patient, not AdvancedIllnessandFrailty's
+        val cms130Defines =
+            server.variables(VariablesArguments().also { it.variablesReference = cms130Group.variablesReference }).get()
+        assertEquals(1, cms130Defines.variables.size, "CMS130 group should have exactly one Patient")
+        assertEquals("Patient", cms130Defines.variables[0].name)
+        assertEquals("\"cms130-patient\"", cms130Defines.variables[0].value)
+
+        // Mirror image — AdvancedIllnessandFrailty keeps its own value
+        val advFrailtyDefines =
+            server.variables(VariablesArguments().also { it.variablesReference = advFrailtyGroup.variablesReference }).get()
+        assertEquals(1, advFrailtyDefines.variables.size, "AdvancedIllnessandFrailty group should have exactly one Patient")
+        assertEquals("Patient", advFrailtyDefines.variables[0].name)
+        assertEquals("\"advfrailty-patient\"", advFrailtyDefines.variables[0].value)
+    }
+
+    @Test
+    fun `Resolved Defines accumulates library groups across pauses`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        val libA = VersionedIdentifier().also { it.id = "LibA" }
+        val libB = VersionedIdentifier().also { it.id = "LibB" }
+
+        // First pause — defines from LibA only
+        handler.runtimeRegistry.putDefine("DefineA", 1, "Integer", libA)
+        var groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(setOf("LibA"), groupsResponse.variables.map { it.name }.toSet())
+
+        // Second pause — stepping into LibB adds defines without dropping LibA's group
+        handler.runtimeRegistry.putDefine("DefineB", 2, "Integer", libB)
+        groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(
+            setOf("LibA", "LibB"),
+            groupsResponse.variables.map { it.name }.toSet(),
+            "Earlier libraries' groups shouldn't be dropped when a later pause introduces a new library",
+        )
+        assertEquals(2, groupsResponse.variables.size)
+    }
+
+    @Test
+    fun `Resolved Defines renders single expandable group for one library`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+
+        val lib = VersionedIdentifier().also { it.id = "SingleLib" }
+        handler.runtimeRegistry.putDefine("Numerator", 42, "Integer", lib)
+
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(1, groupsResponse.variables.size, "Common case should render one expandable group, not a flat list")
+        val group = groupsResponse.variables[0]
+        assertEquals("SingleLib", group.name)
+        assertEquals("1 define(s)", group.value)
+        assertTrue(group.variablesReference >= 100000, "Group ref must be >= 100000")
+
+        val expandResponse =
+            server.variables(VariablesArguments().also { it.variablesReference = group.variablesReference }).get()
+        assertEquals(1, expandResponse.variables.size)
+        assertEquals("Numerator", expandResponse.variables[0].name)
+    }
+
+    @Test
+    fun `Parameters and Defines group refs resolve independently in the same pause`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onBeforeExpression(elm, state)
+
+        // Parameters from LibA (loaded via the same path the server's onPauseCallback uses)
+        state.setParameters(null, mapOf("LibA.Param1" to "valueA".toValue()))
+        val paramTypes = mapOf("LibA" to mapOf("Param1" to "String"))
+        handler.runtimeRegistry.loadParameters(state, paramTypes)
+
+        // A define from LibA too
+        val libA = VersionedIdentifier().also { it.id = "LibA" }
+        handler.runtimeRegistry.putDefine("DefineA", 42, "Integer", libA)
+
+        // Fetch the Parameters group ref
+        val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        val paramGroup = paramsResponse.variables.firstOrNull { it.name == "LibA" }
+        assertNotNull(paramGroup, "Expected a LibA parameters group")
+
+        // Fetch the Defines group ref in the same pause
+        val definesResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        val defineGroup = definesResponse.variables.firstOrNull { it.name == "LibA" }
+        assertNotNull(defineGroup, "Expected a LibA defines group")
+        assertTrue(
+            paramGroup!!.variablesReference != defineGroup!!.variablesReference,
+            "Param and define group refs must not collide in the shared map",
+        )
+
+        // Expanding the Parameters group still yields Param1
+        val paramExpand =
+            server.variables(VariablesArguments().also { it.variablesReference = paramGroup.variablesReference }).get()
+        assertNotNull(paramExpand.variables.firstOrNull { it.name == "Param1" })
+
+        // Expanding the Defines group still yields DefineA
+        val defineExpand =
+            server.variables(VariablesArguments().also { it.variablesReference = defineGroup.variablesReference }).get()
+        assertNotNull(defineExpand.variables.firstOrNull { it.name == "DefineA" })
     }
 
     @Test
@@ -1826,7 +1988,11 @@ class StreamingCqlDebugServerTest {
         handler.runtimeRegistry.putDefine("PatientDefine", definePatient, "FHIR.Patient", null)
 
         val definesResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
-        val defineVar = definesResponse.variables.first { it.name == "PatientDefine" }
+        // Define was registered with null library, so it's grouped under "(Global)"
+        val groupVar = definesResponse.variables.first { it.name == "(Global)" }
+        val defineVars =
+            server.variables(VariablesArguments().also { it.variablesReference = groupVar.variablesReference }).get()
+        val defineVar = defineVars.variables.first { it.name == "PatientDefine" }
         val defineChildren =
             server.variables(VariablesArguments().also { it.variablesReference = defineVar.variablesReference }).get()
                 .variables.map { it.name }
@@ -3946,6 +4112,51 @@ class StreamingCqlDebugServerTest {
             // Now the list-typed parameter resolves and evaluates to the list value.
             assertFalse(result.startsWith("not supported for this alias type"), result)
             assertTrue(result.contains("1"), "Expected list to contain value 1, got: $result")
+        }
+
+        @Test
+        fun `ad-hoc raw Kotlin String alias binds and evaluates (regression)`() {
+            // Regression for the operand-binding bug: stack-variable values that pass through
+            // RuntimeValueRegistry.unwrapValue as raw Kotlin primitives (String here) never
+            // implemented the sealed `Value` interface, so the previous `value as? Value` cast
+            // silently bound `null` and any operation on the alias returned null.
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("S" to "System.String")
+
+            val result =
+                evaluateRepl(server, "S + ' world'") { h ->
+                    registerStackVar(h, "S", "hello")
+                }
+            // Before the fix this returned "null"; now the raw String is reverse-wrapped and bound.
+            // Engine String values render with surrounding single quotes.
+            assertEquals("'hello world'", result)
+        }
+
+        @Test
+        fun `ad-hoc raw Kotlin Boolean alias binds and evaluates (regression)`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("B" to "System.Boolean")
+
+            val result =
+                evaluateRepl(server, "B and true") { h ->
+                    registerStackVar(h, "B", true)
+                }
+            assertEquals("true", result)
+        }
+
+        @Test
+        fun `ad-hoc inconvertible alias returns runtime error response`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("G" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "G.value") { h ->
+                    registerStackVar(h, "G", java.util.UUID.randomUUID())
+                }
+            assertTrue(result.startsWith("Runtime error:"), result)
         }
 
         @Test
