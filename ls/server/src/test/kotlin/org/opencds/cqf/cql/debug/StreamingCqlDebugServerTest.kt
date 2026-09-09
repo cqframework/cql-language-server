@@ -4108,6 +4108,24 @@ class StreamingCqlDebugServerTest {
         }
 
         @Test
+        fun `ad-hoc nested generic alias type compiles (normalizeType regression)`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // buildVariableTypeMap records translator DataType.toString() verbatim, which uses
+            // lowercase generic keywords everywhere (e.g. list<interval<System.DateTime>>).
+            // Previously normalizeType only capitalized the outer generic, leaving the inner
+            // `interval<` lowercase and producing "Syntax error at <" during synthetic compile.
+            handler.variableTypeMap = mapOf("I" to "list<interval<System.DateTime>>")
+
+            val result =
+                evaluateRepl(server, "I") { h ->
+                    registerStackVar(h, "I", emptyList<Any>())
+                }
+            assertFalse(result.startsWith("Compile error:"), "Expected valid compile, got: $result")
+            assertFalse(result.startsWith("not supported"), result)
+        }
+
+        @Test
         fun `ad-hoc raw Kotlin String alias binds and evaluates (regression)`() {
             // Regression for the operand-binding bug: stack-variable values that pass through
             // RuntimeValueRegistry.unwrapValue as raw Kotlin primitives (String here) never

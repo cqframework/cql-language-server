@@ -918,6 +918,90 @@ class EvaluateHelperTest {
         }
 
         @Test
+        fun `list type string is normalized for the parameter declaration`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "L.value",
+                    sourceText,
+                    libraryManager,
+                    listOf("L" to "list<System.Quantity>"),
+                )
+            assertNotNull(fn)
+            assertNull(error)
+            val spec = fn!!.operand[0].operandTypeSpecifier
+            assertTrue(spec is org.hl7.elm.r1.ListTypeSpecifier)
+            val element = (spec as org.hl7.elm.r1.ListTypeSpecifier).elementType
+            assertTrue(element is org.hl7.elm.r1.NamedTypeSpecifier)
+            val (ns, localPart) = typeQName(element)
+            assertEquals("urn:hl7-org:elm-types:r1", ns)
+            assertEquals("Quantity", localPart)
+        }
+
+        @Test
+        fun `nested generic type strings are fully normalized`() {
+            val sourceText = "library TestLib\n\n"
+            // `list<interval<...>>` would previously become `List<interval<...>>` (inner generic
+            // left lowercase), which the grammar rejects -- a nested generic must be fully
+            // re-cased to `List<Interval<...>>`.
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "I",
+                    sourceText,
+                    libraryManager,
+                    listOf("I" to "list<interval<System.DateTime>>"),
+                )
+            assertNotNull(fn, "expected success but got: ${error?.result}")
+            val spec = fn!!.operand[0].operandTypeSpecifier
+            assertTrue(spec is org.hl7.elm.r1.ListTypeSpecifier)
+            val interval = (spec as org.hl7.elm.r1.ListTypeSpecifier).elementType
+            assertTrue(interval is org.hl7.elm.r1.IntervalTypeSpecifier)
+            val point = (interval as org.hl7.elm.r1.IntervalTypeSpecifier).pointType
+            val (ns, localPart) = typeQName(point)
+            assertEquals("urn:hl7-org:elm-types:r1", ns)
+            assertEquals("DateTime", localPart)
+        }
+
+        @Test
+        fun `choice type string is normalized for the parameter declaration`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "C",
+                    sourceText,
+                    libraryManager,
+                    listOf("C" to "choice<System.Integer,System.String>"),
+                )
+            assertNotNull(fn)
+            assertNull(error)
+            val spec = fn!!.operand[0].operandTypeSpecifier
+            assertTrue(spec is org.hl7.elm.r1.ChoiceTypeSpecifier)
+            val choice = (spec as org.hl7.elm.r1.ChoiceTypeSpecifier).choice
+            assertEquals(2, choice.size)
+            assertTrue(choice[0] is org.hl7.elm.r1.NamedTypeSpecifier)
+            assertTrue(choice[1] is org.hl7.elm.r1.NamedTypeSpecifier)
+        }
+
+        @Test
+        fun `tuple type string is normalized for the parameter declaration`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "T",
+                    sourceText,
+                    libraryManager,
+                    listOf("T" to "tuple{id System.String}"),
+                )
+            assertNotNull(fn, "expected success but got: ${error?.result}")
+            val spec = fn!!.operand[0].operandTypeSpecifier
+            assertTrue(spec is org.hl7.elm.r1.TupleTypeSpecifier)
+            val tuple = (spec as org.hl7.elm.r1.TupleTypeSpecifier).element
+            assertEquals(1, tuple.size)
+            assertEquals("id", tuple[0].name)
+            assertTrue(tuple[0].elementType is org.hl7.elm.r1.NamedTypeSpecifier)
+        }
+
+        @Test
         fun `two aliases preserve declaration order matching the argument order`() {
             val sourceText = "library TestLib\n\n"
             val (fn, error) =

@@ -561,9 +561,10 @@ class EvaluateHelper(
     ): Pair<org.hl7.elm.r1.FunctionDef?, EvaluateResponse?> {
         val syntheticCql = buildSyntheticDefine(sourceText, expression, aliases)
         log.debug(
-            "evaluateAdHocExpression: compiling synthetic CQL ({} chars, {} aliases)",
+            "evaluateAdHocExpression: synthetic CQL ({} chars, {} aliases):\n{}",
             syntheticCql.length,
             aliases.size,
+            syntheticCql,
         )
 
         val compiler = CqlCompiler(null, null, libraryManager)
@@ -579,6 +580,9 @@ class EvaluateHelper(
                 } else {
                     ""
                 }
+            // On syntactic errors there is no library to serialize, but semantic errors may leave a
+            // partial one -- dump it best-effort so the offending ELM is visible.
+            compiler.library?.let { log.debug("evaluateAdHocExpression: compile error ELM:\n{}", serializeElmDebug(it)) }
             log.debug("evaluateAdHocExpression: compile error: {}{}", message, locStr)
             return null to messageResponse("Compile error: $message$locStr")
         }
@@ -592,7 +596,7 @@ class EvaluateHelper(
         log.debug(
             "evaluateAdHocExpression: compiled ELM for ad-hoc expression '{}':\n{}",
             expression,
-            ElmXmlLibraryWriter().writeAsString(library),
+            serializeElmDebug(library),
         )
 
         val evalDef =
@@ -639,15 +643,35 @@ class EvaluateHelper(
 
     /**
      * Normalizes a translator-produced type string so it can be spliced into CQL source text as a
-     * parameter type. `Trackable.resultType.toString()` yields lowercase `interval<...>`/`list<...>`
-     * for generic types, but the CQL grammar's lexer is case-sensitive and requires the capitalized
-     * keywords `Interval`/`List`. Class/Simple type names (e.g. `FHIR.DiagnosticReport`,
-     * `System.Quantity`) are already valid as-is.
+     * parameter type. `Trackable.resultType.toString()` yields lowercase generic keywords for
+     * `ListType`/`IntervalType`/`ChoiceType`/`TupleType` (e.g. `list<...>`, `interval<...>`,
+     * `choice<...>`, `tuple{...}`), but the CQL grammar's lexer is case-sensitive and requires the
+     * capitalized keywords `List`/`Interval`/`Choice`/`Tuple` (intervals are `<...>`, tuples
+     * `{...}` -- see cql.g4 typeSpecifier). All occurrences are replaced so nested generics like
+     * `list<interval<System.DateTime>>` are fully normalized; already-capitalized strings pass
+     * through unchanged. Class/Simple type names (e.g. `FHIR.DiagnosticReport`, `System.Quantity`)
+     * are already valid as-is.
      */
     private fun normalizeType(type: String): String =
         type
-            .replaceFirst("interval<", "Interval<")
-            .replaceFirst("list<", "List<")
+            .replace("list<", "List<")
+            .replace("interval<", "Interval<")
+            .replace("choice<", "Choice<")
+            .replace("tuple{", "Tuple{")
+
+    /**
+     * Serializes a compiled library to ELM XML for debug logging, never throwing: the DOM/transformer
+     * used by [ElmXmlLibraryWriter] can fail on large or unusual libraries, and a failure here must
+     * not abort ad-hoc evaluation. Returns a short fallback message on error.
+     */
+    private fun serializeElmDebug(library: org.hl7.elm.r1.Library): String {
+        val elm = runCatching { ElmXmlLibraryWriter().writeAsString(library) }
+        if (elm.isFailure) {
+            log.debug("evaluateAdHocExpression: ELM serialization failed: {}", elm.exceptionOrNull()?.message)
+            return "<ELM serialization failed: ${elm.exceptionOrNull()?.message}>"
+        }
+        return elm.getOrThrow()
+    }
 
     private fun notAvailable(): EvaluateResponse =
         EvaluateResponse().also {
