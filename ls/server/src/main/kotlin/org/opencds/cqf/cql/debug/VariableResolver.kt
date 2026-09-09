@@ -77,22 +77,23 @@ class VariableResolver(
      * Test Case) displays FHIR resources identically:
      * - [CqlList] (the engine's Retrieve/list-literal wrapper, not a `kotlin.collections.List`) is
      *   unwrapped into a real list.
-     * - [ClassInstance] (what a CQL Retrieve of a FHIR resource actually evaluates to — a generic
-     *   structure of `Value`s, not a HAPI object) is converted back into a real FHIR resource via
-     *   [ClassInstanceHelper], when possible, so it renders as full FHIR JSON like Test Case.
+     * - [ClassInstance] (what a CQL Retrieve of a FHIR resource — or a FHIR composite element such
+     *   as a `Period`, `CodeableConcept`, or `Reference` — actually evaluates to: a generic
+     *   structure of `Value`s, not a HAPI object) is converted back into a real FHIR object via
+     *   [ClassInstanceHelper], when possible, so it renders as native FHIR JSON like Test Case.
      * Values that aren't one of these (or that fail conversion) pass through unchanged.
      */
     fun normalizeValue(value: Any?): Any? =
         when (value) {
             is CqlList -> value.value.map { normalizeValue(it) }
-            is ClassInstance -> resolveFhirResource(value) ?: value
+            is ClassInstance -> resolveFhirValue(value) ?: value
             else -> value
         }
 
-    private fun resolveFhirResource(value: ClassInstance): IBaseResource? {
+    private fun resolveFhirValue(value: ClassInstance): IBase? {
         if (value.type.namespaceURI != fhirModelNamespaceUri) return null
         return try {
-            ClassInstanceHelper.convertToFhirR4(value) as? IBaseResource
+            ClassInstanceHelper.convertToFhirR4(value) as? IBase
         } catch (_: Exception) {
             null
         }
@@ -181,16 +182,19 @@ class VariableResolver(
         value: Any?,
         gson: Gson,
     ): String {
-        if (value is Period) {
-            return formatPeriodAsInterval(value)
+        // Normalize first so a FHIR Period represented as an engine ClassInstance (e.g. the result
+        // of a `.effective` property access) becomes a real HAPI Period and renders as an interval.
+        val normalized = normalizeValue(value)
+        if (normalized is Period) {
+            return formatPeriodAsInterval(normalized)
         }
-        return formatVariableValue(value, gson)
+        return formatVariableValue(normalized, gson)
     }
 
     fun formatPeriodAsInterval(period: Period): String {
         val gson = Gson()
-        val start = period.start?.let { formatVariableValue(it, gson) } ?: "null"
-        val end = period.end?.let { formatVariableValue(it, gson) } ?: "null"
+        val start = period.startElement?.let { formatVariableValue(it, gson) } ?: "null"
+        val end = period.endElement?.let { formatVariableValue(it, gson) } ?: "null"
         return "[$start, $end)"
     }
 

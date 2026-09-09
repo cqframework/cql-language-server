@@ -25,6 +25,7 @@ import org.opencds.cqf.cql.engine.runtime.Code
 import org.opencds.cqf.cql.engine.runtime.Interval
 import org.opencds.cqf.cql.engine.runtime.Tuple
 import org.opencds.cqf.cql.engine.runtime.Value
+import org.opencds.cqf.cql.engine.util.offsetDateTimeParse
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
@@ -81,6 +82,27 @@ class VariableResolverTest {
     private fun fhirEncounterClassInstance(id: String): ClassInstance =
         fhirClassInstance("Encounter", mapOf("id" to fhirClassInstance("id", mapOf("value" to id))))
 
+    /**
+     * Builds a FHIR `Period` [ClassInstance] shaped the way the CQL engine represents a FHIR
+     * composite element at runtime: `start`/`end` are themselves FHIR `dateTime` ClassInstances
+     * whose `value` element carries a real engine [org.opencds.cqf.cql.engine.runtime.DateTime].
+     */
+    private fun fhirDateTimeElement(value: String): ClassInstance =
+        fhirClassInstance(
+            "dateTime",
+            mapOf("value" to org.opencds.cqf.cql.engine.runtime.DateTime(offsetDateTimeParse(value))),
+        )
+
+    private fun fhirPeriodClassInstance(
+        start: String?,
+        end: String?,
+    ): ClassInstance {
+        val elements = mutableMapOf<String, Any>()
+        if (start != null) elements["start"] = fhirDateTimeElement(start)
+        if (end != null) elements["end"] = fhirDateTimeElement(end)
+        return fhirClassInstance("Period", elements)
+    }
+
     // -- normalizeValue --------------------------------------------------------
 
     @Nested
@@ -107,6 +129,14 @@ class VariableResolverTest {
             assertEquals(2, list.size)
             assertEquals("enc-1", (list[0] as Encounter).idElement.idPart)
             assertEquals("enc-2", (list[1] as Encounter).idElement.idPart)
+        }
+
+        @Test
+        fun `ClassInstance for a FHIR composite element converts to a real FHIR object`() {
+            val result = resolver.normalizeValue(fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", null))
+            assertTrue(result is Period)
+            assertEquals("2026-11-02T11:00:00.000Z", (result as Period).startElement.valueAsString)
+            assertNull(result.endElement.value)
         }
 
         @Test
@@ -194,6 +224,14 @@ class VariableResolverTest {
         }
 
         @Test
+        fun `ClassInstance FHIR composite element returns FHIR JSON, not a structured-value dump`() {
+            val result = resolver.formatVariableValue(fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", null), gson)
+            assertTrue(result.startsWith("{"), "expected FHIR JSON, got: $result")
+            assertTrue(result.contains("\"start\""))
+            assertFalse(result.contains("ClassInstance"))
+        }
+
+        @Test
         fun `empty list returns bracket string`() {
             assertEquals("[]", resolver.formatVariableValue(emptyList<Any>(), gson))
         }
@@ -213,6 +251,26 @@ class VariableResolverTest {
             val period = Period()
             val result = resolver.formatPropertyValue(period, gson)
             assertEquals("[null, null)", result)
+        }
+
+        @Test
+        fun `FHIR Period ClassInstance renders as interval with start and null end`() {
+            val result =
+                resolver.formatPropertyValue(
+                    fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", null),
+                    gson,
+                )
+            assertEquals("[2026-11-02T11:00:00.000Z, null)", result)
+        }
+
+        @Test
+        fun `FHIR Period ClassInstance renders as interval with start and end`() {
+            val result =
+                resolver.formatPropertyValue(
+                    fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", "2026-11-02T12:00:00.000+00:00"),
+                    gson,
+                )
+            assertEquals("[2026-11-02T11:00:00.000Z, 2026-11-02T12:00:00.000Z)", result)
         }
 
         @Test
