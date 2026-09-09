@@ -862,7 +862,6 @@ open class CqlDebugServer(
             if (args.variablesReference >= 100000) {
                 val entry = libraryGroupRefs[args.variablesReference]
                 if (entry != null) {
-                    val gson = Gson()
                     val (libraryName, category) = entry
                     when (category) {
                         RuntimeValueCategory.PARAMETER -> {
@@ -872,7 +871,7 @@ open class CqlDebugServer(
                                     val paramType =
                                         param.type
                                             ?: findParameterMetadata(libraryName, param.name)?.type
-                                    vars.add(resourceAwareVariable(param.name, param.value, paramType, gson))
+                                    vars.add(resourceAwareVariable(param.name, param.value, paramType))
                                 }
                             } else {
                                 // No runtime values yet - show metadata defaults
@@ -899,7 +898,7 @@ open class CqlDebugServer(
                                         } else {
                                             variableTypeMap[d.name]
                                         }
-                                    vars.add(resourceAwareVariable(d.name, d.value, dType, gson))
+                                    vars.add(resourceAwareVariable(d.name, d.value, dType))
                                 }
                         }
                         else -> {}
@@ -941,7 +940,6 @@ open class CqlDebugServer(
             }
 
             if (state != null) {
-                val gson = Gson()
                 val registry = handler.runtimeRegistry
 
                 if (args.variablesReference == 1) {
@@ -949,11 +947,11 @@ open class CqlDebugServer(
                     val frameLibId = resolveFrameLibraryId()
                     for (sv in registry.getStackVariables().sortedBy { it.name }) {
                         val svType = variableTypeMap["$frameLibId.${sv.name}"] ?: variableTypeMap[sv.name]
-                        vars.add(resourceAwareVariable(sv.name, sv.value, svType, gson))
+                        vars.add(resourceAwareVariable(sv.name, sv.value, svType))
                     }
                     for (cr in registry.getContextResources().sortedBy { it.name }) {
                         val crType = variableTypeMap["$frameLibId.${cr.name}"] ?: variableTypeMap[cr.name]
-                        vars.add(resourceAwareVariable(cr.name, cr.value, crType, gson))
+                        vars.add(resourceAwareVariable(cr.name, cr.value, crType))
                     }
                 }
             }
@@ -1073,7 +1071,6 @@ open class CqlDebugServer(
         val handler = streamingHandler
         if (handler != null) {
             return CompletableFuture.supplyAsync {
-                val gson = Gson()
                 val registry = handler.runtimeRegistry
                 val state = handler.lastPausedState
                 log.debug("evaluate: entry expression={} context={} statePresent={}", args.expression, args.context, state != null)
@@ -1088,7 +1085,7 @@ open class CqlDebugServer(
                             registryResult.category,
                         )
                         return@supplyAsync EvaluateResponse().also {
-                            it.result = formatVariableValue(registryResult.value, gson)
+                            it.result = formatVariableValue(registryResult.value)
                             it.variablesReference = registerIfExpandable(registryResult.value)
                         }
                     }
@@ -1107,7 +1104,7 @@ open class CqlDebugServer(
                             quotedRootResult.value?.javaClass?.simpleName,
                         )
                         return@supplyAsync EvaluateResponse().also {
-                            it.result = formatVariableValue(quotedRootResult.value, gson)
+                            it.result = formatVariableValue(quotedRootResult.value)
                             it.variablesReference = registerIfExpandable(quotedRootResult.value)
                         }
                     }
@@ -1139,7 +1136,7 @@ open class CqlDebugServer(
                                 cachedResult.value?.javaClass?.simpleName,
                             )
                             return@supplyAsync EvaluateResponse().also {
-                                it.result = formatVariableValue(cachedResult.value, gson)
+                                it.result = formatVariableValue(cachedResult.value)
                                 it.variablesReference = registerIfExpandable(cachedResult.value)
                             }
                         }
@@ -1158,7 +1155,7 @@ open class CqlDebugServer(
                                 if (parseTree != null && state != null) {
                                     val hoverPos = Position(line, col)
                                     val category = CursorClassifier.classify(parseTree, hoverPos)
-                                    val classifiedResult = resolveFromCursorCategory(category, state, handler, gson)
+                                    val classifiedResult = resolveFromCursorCategory(category, state, handler)
                                     if (classifiedResult != null) {
                                         return@supplyAsync classifiedResult
                                     }
@@ -1166,14 +1163,14 @@ open class CqlDebugServer(
                                 val value = handler.findValueAtPosition(line, col)
                                 if (value != null) {
                                     return@supplyAsync EvaluateResponse().also {
-                                        it.result = formatVariableValue(value, gson)
+                                        it.result = formatVariableValue(value)
                                         it.variablesReference = registerIfExpandable(value)
                                     }
                                 }
                                 // Check if paused on a Property element - try to resolve its value
                                 val pausedElm = handler.lastPausedElm
                                 if (pausedElm is Property && state != null) {
-                                    val propertyResult = resolvePropertyValue(pausedElm, state, gson)
+                                    val propertyResult = resolvePropertyValue(pausedElm, state)
                                     if (propertyResult != null) {
                                         return@supplyAsync EvaluateResponse().also {
                                             it.result = propertyResult.displayString
@@ -1194,7 +1191,7 @@ open class CqlDebugServer(
                     }
                 }
                 // Dotted property path on a registered runtime value (e.g. IndexPCP.period)
-                val dottedResult = evaluateHelper.resolveDottedExpression(args.expression, registry, gson)
+                val dottedResult = evaluateHelper.resolveDottedExpression(args.expression, registry)
                 if (dottedResult != null) return@supplyAsync dottedResult
                 // VarRefs tree fallback for expanded FHIR/list child variables (e.g. name[0], given[0])
                 val varRefResult = findInVarRefs(args.expression)
@@ -1270,7 +1267,7 @@ open class CqlDebugServer(
                                 return@supplyAsync try {
                                     val value = resultFuture.get(AD_HOC_EVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                                     EvaluateResponse().also {
-                                        it.result = formatVariableValue(value, gson)
+                                        it.result = formatVariableValue(value)
                                         it.variablesReference = registerIfExpandable(value)
                                     }
                                 } catch (e: java.util.concurrent.TimeoutException) {
@@ -1327,17 +1324,11 @@ open class CqlDebugServer(
     private fun parseLocatorLines(locator: String?): LocatorBounds =
         varResolver.parseLocatorLines(locator)
 
-    private fun formatVariableValue(
-        value: Any?,
-        gson: Gson,
-    ): String =
-        varResolver.formatVariableValue(value, gson)
+    private fun formatVariableValue(value: Any?): String =
+        varResolver.formatVariableValue(value)
 
-    private fun formatPropertyValue(
-        value: Any?,
-        gson: Gson,
-    ): String =
-        varResolver.formatPropertyValue(value, gson)
+    private fun formatPropertyValue(value: Any?): String =
+        varResolver.formatPropertyValue(value)
 
     private fun isExpandable(value: Any?): Boolean =
         varResolver.isExpandable(value)
@@ -1365,7 +1356,6 @@ open class CqlDebugServer(
         name: String,
         value: Any?,
         cqlType: String?,
-        gson: Gson,
     ): Variable {
         // Normalize once so both the "is this a resource?" check below and the CQL-engine-only
         // representations (ClassInstance, the engine's own List wrapper) are resolved the same
@@ -1375,7 +1365,7 @@ open class CqlDebugServer(
         if (resourceType != null) {
             return Variable().also {
                 it.name = name
-                it.value = formatVariableValue(normalized, gson)
+                it.value = formatVariableValue(normalized)
                 it.type = resourceType
                 it.variablesReference = registerIfExpandable(normalized)
             }
@@ -1384,14 +1374,14 @@ open class CqlDebugServer(
             val elementType = (normalized.first() as? IBaseResource)?.fhirType()
             return Variable().also {
                 it.name = name
-                it.value = formatVariableValue(normalized, gson)
+                it.value = formatVariableValue(normalized)
                 it.type = "List<$elementType>"
                 it.variablesReference = registerIfExpandable(normalized)
             }
         }
         return Variable().also {
             it.name = name
-            it.value = formatVariableValue(value, gson)
+            it.value = formatVariableValue(value)
             it.type = cqlType
             it.variablesReference = registerIfExpandable(value, cqlType)
         }
@@ -1400,9 +1390,8 @@ open class CqlDebugServer(
     private fun resolvePropertyValue(
         property: Property,
         state: org.opencds.cqf.cql.engine.execution.State,
-        gson: Gson,
     ): PropertyResult? =
-        evaluateHelper.resolvePropertyValue(property, streamingHandler!!, gson)?.let {
+        evaluateHelper.resolvePropertyValue(property, streamingHandler!!)?.let {
             PropertyResult(it.first, it.second)
         }
 
@@ -1410,8 +1399,7 @@ open class CqlDebugServer(
         category: CursorCategory,
         state: State,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
-    ): EvaluateResponse? = evaluateHelper.resolveFromCursorCategory(category, state, handler, gson)
+    ): EvaluateResponse? = evaluateHelper.resolveFromCursorCategory(category, state, handler)
 
     private data class PropertyResult(val displayString: String, val expandableValue: Any?)
 
@@ -1420,9 +1408,8 @@ open class CqlDebugServer(
         propertyName: String,
         state: State,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
     ): PropertyResult? =
-        evaluateHelper.resolvePropertyFromAlias(aliasName, propertyName, handler, gson)?.let {
+        evaluateHelper.resolvePropertyFromAlias(aliasName, propertyName, handler)?.let {
             PropertyResult(it.first, it.second)
         }
 

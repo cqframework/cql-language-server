@@ -276,7 +276,7 @@ class EvaluateHelperTest {
     inner class ResolveFromCursorCategory {
         private lateinit var handler: StreamingBreakpointHandler
         private lateinit var state: State
-        private val gson = com.google.gson.Gson()
+
         private val testRange = Range(org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.Position(0, 5))
 
         @BeforeEach
@@ -289,7 +289,7 @@ class EvaluateHelperTest {
         fun `AliasReference found returns evaluate response`() {
             handler.runtimeRegistry.putDefine("MyAlias", 42, null, null)
             val category = CursorCategory.AliasReference("MyAlias", testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNotNull(result)
             assertEquals("42", result!!.result)
         }
@@ -297,7 +297,7 @@ class EvaluateHelperTest {
         @Test
         fun `AliasReference not found returns null`() {
             val category = CursorCategory.AliasReference("Unknown", testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
 
@@ -305,7 +305,7 @@ class EvaluateHelperTest {
         fun `OperandRef found returns evaluate response`() {
             handler.runtimeRegistry.putStackVariable("Operand1", 42, null)
             val category = CursorCategory.OperandRef("Operand1", testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNotNull(result)
             assertEquals("42", result!!.result)
         }
@@ -313,7 +313,7 @@ class EvaluateHelperTest {
         @Test
         fun `OperandRef not found returns null`() {
             val category = CursorCategory.OperandRef("UnknownOperand", testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
 
@@ -321,7 +321,7 @@ class EvaluateHelperTest {
         fun `ExpressionRef without library returns evaluate response`() {
             handler.runtimeRegistry.putDefine("MyDefine", 42, null, null)
             val category = CursorCategory.ExpressionRef("MyDefine", null, testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNotNull(result)
             assertEquals("42", result!!.result)
         }
@@ -329,21 +329,21 @@ class EvaluateHelperTest {
         @Test
         fun `ExpressionRef with library not found returns null`() {
             val category = CursorCategory.ExpressionRef("MyDefine", "MyLib", testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
 
         @Test
         fun `ExpressionRef not found returns null`() {
             val category = CursorCategory.ExpressionRef("UnknownDefine", null, testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
 
         @Test
         fun `ParameterRef not found returns null`() {
             val category = CursorCategory.ParameterRef("UnknownParam", null, testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
 
@@ -353,7 +353,7 @@ class EvaluateHelperTest {
             patient.id = "patient-1"
             handler.runtimeRegistry.putDefine("P", patient, null, null)
             val category = CursorCategory.PropertyName("resourceType", "P", testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNotNull(result)
             assertEquals("\"Patient\"", result!!.result)
         }
@@ -361,14 +361,14 @@ class EvaluateHelperTest {
         @Test
         fun `PropertyName without alias returns null`() {
             val category = CursorCategory.PropertyName("someProperty", null, testRange)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
 
         @Test
         fun `unhandled category returns null`() {
             val category = CursorCategory.FunctionCall("SomeFunc", null, null, null)
-            val result = helper.resolveFromCursorCategory(category, state, handler, gson)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
             assertNull(result)
         }
     }
@@ -379,7 +379,6 @@ class EvaluateHelperTest {
     inner class EvaluateStreaming {
         private lateinit var handler: StreamingBreakpointHandler
         private lateinit var state: State
-        private val gson = com.google.gson.Gson()
 
         @BeforeEach
         fun setUpStreaming() {
@@ -395,7 +394,6 @@ class EvaluateHelperTest {
                     "FoundVar",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -412,7 +410,6 @@ class EvaluateHelperTest {
                     "NonExistent",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -429,7 +426,6 @@ class EvaluateHelperTest {
                     "indexPCP",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -446,7 +442,6 @@ class EvaluateHelperTest {
                     "\"IndexPCP\"",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -463,7 +458,6 @@ class EvaluateHelperTest {
                     "\"indexPCP\"",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -480,7 +474,6 @@ class EvaluateHelperTest {
                     "`indexPCP`",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -504,7 +497,6 @@ class EvaluateHelperTest {
                     "IndexPCP.pERiod",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -524,7 +516,6 @@ class EvaluateHelperTest {
                     "IndexPCP.nonexistentProp",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -541,7 +532,6 @@ class EvaluateHelperTest {
                     "@10:5",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -557,7 +547,6 @@ class EvaluateHelperTest {
                     "SomeVarRef",
                     state,
                     handler,
-                    gson,
                     null,
                     emptyMap(),
                     null,
@@ -572,7 +561,6 @@ class EvaluateHelperTest {
     @Nested
     inner class ResolvePropertyValue {
         private lateinit var handler: StreamingBreakpointHandler
-        private val gson = com.google.gson.Gson()
 
         @BeforeEach
         fun setUp() {
@@ -582,7 +570,7 @@ class EvaluateHelperTest {
         @Test
         fun `source is not ExpressionRef returns null`() {
             val property = org.hl7.elm.r1.Property().apply { path = "active" }
-            val result = helper.resolvePropertyValue(property, handler, gson)
+            val result = helper.resolvePropertyValue(property, handler)
             assertNull(result)
         }
 
@@ -593,7 +581,7 @@ class EvaluateHelperTest {
                     path = "active"
                     source = org.hl7.elm.r1.ExpressionRef().apply { name = "Unknown" }
                 }
-            val result = helper.resolvePropertyValue(prop, handler, gson)
+            val result = helper.resolvePropertyValue(prop, handler)
             assertNull(result)
         }
 
@@ -607,7 +595,7 @@ class EvaluateHelperTest {
                     path = "resourceType"
                     source = org.hl7.elm.r1.ExpressionRef().apply { name = "MyPat" }
                 }
-            val result = helper.resolvePropertyValue(prop, handler, gson)
+            val result = helper.resolvePropertyValue(prop, handler)
             assertNotNull(result)
             assertEquals("\"Patient\"", result!!.first)
         }
@@ -626,7 +614,7 @@ class EvaluateHelperTest {
                     path = "id"
                     source = org.hl7.elm.r1.ExpressionRef().apply { name = "MyPatList" }
                 }
-            val result = helper.resolvePropertyValue(prop, handler, gson)
+            val result = helper.resolvePropertyValue(prop, handler)
             assertNotNull(result)
             assertTrue(result!!.first.startsWith("["))
             assertTrue(result.first.contains("p1"))
@@ -640,7 +628,7 @@ class EvaluateHelperTest {
                     path = "active"
                     source = org.hl7.elm.r1.ExpressionRef().apply { name = null }
                 }
-            val result = helper.resolvePropertyValue(prop, handler, gson)
+            val result = helper.resolvePropertyValue(prop, handler)
             assertNull(result)
         }
     }
@@ -650,7 +638,6 @@ class EvaluateHelperTest {
     @Nested
     inner class ResolvePropertyFromAlias {
         private lateinit var handler: StreamingBreakpointHandler
-        private val gson = com.google.gson.Gson()
 
         @BeforeEach
         fun setUp() {
@@ -659,7 +646,7 @@ class EvaluateHelperTest {
 
         @Test
         fun `alias not in registry returns null`() {
-            val result = helper.resolvePropertyFromAlias("UnknownAlias", "active", handler, gson)
+            val result = helper.resolvePropertyFromAlias("UnknownAlias", "active", handler)
             assertNull(result)
         }
 
@@ -668,7 +655,7 @@ class EvaluateHelperTest {
             val patient = org.hl7.fhir.r4.model.Patient()
             patient.id = "patient-1"
             handler.runtimeRegistry.putDefine("P", patient, null, null)
-            val result = helper.resolvePropertyFromAlias("P", "resourceType", handler, gson)
+            val result = helper.resolvePropertyFromAlias("P", "resourceType", handler)
             assertNotNull(result)
             assertEquals("\"Patient\"", result!!.first)
         }
@@ -682,7 +669,7 @@ class EvaluateHelperTest {
             @Suppress("UNCHECKED_CAST")
             val list = listOf<Any>(patient1, patient2) as List<Any>
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
-            val result = helper.resolvePropertyFromAlias("Patients", "id", handler, gson)
+            val result = helper.resolvePropertyFromAlias("Patients", "id", handler)
             assertNotNull(result)
             assertTrue(result!!.first.startsWith("["))
             assertTrue(result.first.contains("p1"))
@@ -698,7 +685,7 @@ class EvaluateHelperTest {
             @Suppress("UNCHECKED_CAST")
             val list = listOf<Any>(patient1, patient2) as List<Any>
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
-            val result = helper.resolvePropertyFromAlias("Patients", "nonexistentProperty", handler, gson)
+            val result = helper.resolvePropertyFromAlias("Patients", "nonexistentProperty", handler)
             assertNull(result)
         }
     }
@@ -708,7 +695,6 @@ class EvaluateHelperTest {
     @Nested
     inner class ResolveDottedExpression {
         private lateinit var handler: StreamingBreakpointHandler
-        private val gson = com.google.gson.Gson()
 
         @BeforeEach
         fun setUp() {
@@ -724,7 +710,7 @@ class EvaluateHelperTest {
                     it.end = java.util.Date(1800000000000L)
                 }
             handler.runtimeRegistry.putDefine("IndexPCP", encounter, null, null)
-            val result = helper.resolveDottedExpression("IndexPCP.period", handler.runtimeRegistry, gson)
+            val result = helper.resolveDottedExpression("IndexPCP.period", handler.runtimeRegistry)
             assertNotNull(result)
             assertTrue(result!!.result.startsWith("["))
             assertTrue(result.result.endsWith(")"))
@@ -739,7 +725,7 @@ class EvaluateHelperTest {
                     it.start = java.util.Date(1700000000000L)
                 }
             handler.runtimeRegistry.putDefine("IndexPCP", encounter, null, null)
-            val result = helper.resolveDottedExpression("IndexPCP.period.start", handler.runtimeRegistry, gson)
+            val result = helper.resolveDottedExpression("IndexPCP.period.start", handler.runtimeRegistry)
             assertNotNull(result)
             assertTrue(result!!.result.contains("2023"))
         }
@@ -753,7 +739,7 @@ class EvaluateHelperTest {
             @Suppress("UNCHECKED_CAST")
             val list = listOf<Any>(p1, p2) as List<Any>
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
-            val result = helper.resolveDottedExpression("Patients.id", handler.runtimeRegistry, gson)
+            val result = helper.resolveDottedExpression("Patients.id", handler.runtimeRegistry)
             assertNotNull(result)
             assertTrue(result!!.result.contains("p1"))
             assertTrue(result.result.contains("p2"))
@@ -768,7 +754,7 @@ class EvaluateHelperTest {
             @Suppress("UNCHECKED_CAST")
             val list = listOf<Any>(p1, p2) as List<Any>
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
-            val result = helper.resolveDottedExpression("Patients[1].id", handler.runtimeRegistry, gson)
+            val result = helper.resolveDottedExpression("Patients[1].id", handler.runtimeRegistry)
             assertNotNull(result)
             assertTrue(result!!.result.contains("p2"))
         }
@@ -783,7 +769,7 @@ class EvaluateHelperTest {
                     false,
                 )
             handler.runtimeRegistry.putDefine("Idx", interval, null, null)
-            val result = helper.resolveDottedExpression("Idx.low", handler.runtimeRegistry, gson)
+            val result = helper.resolveDottedExpression("Idx.low", handler.runtimeRegistry)
             assertNotNull(result)
             assertEquals("1", result!!.result)
         }
@@ -791,24 +777,24 @@ class EvaluateHelperTest {
         @Test
         fun `non-dotted expression returns null`() {
             handler.runtimeRegistry.putDefine("IndexPCP", org.hl7.fhir.r4.model.Encounter(), null, null)
-            assertNull(helper.resolveDottedExpression("IndexPCP", handler.runtimeRegistry, gson))
+            assertNull(helper.resolveDottedExpression("IndexPCP", handler.runtimeRegistry))
         }
 
         @Test
         fun `at-sign expression returns null`() {
-            assertNull(helper.resolveDottedExpression("@12:3", handler.runtimeRegistry, gson))
+            assertNull(helper.resolveDottedExpression("@12:3", handler.runtimeRegistry))
         }
 
         @Test
         fun `unknown root returns null`() {
-            val result = helper.resolveDottedExpression("Unknown.period", handler.runtimeRegistry, gson)
+            val result = helper.resolveDottedExpression("Unknown.period", handler.runtimeRegistry)
             assertNull(result)
         }
 
         @Test
         fun `unknown property returns null`() {
             handler.runtimeRegistry.putDefine("IndexPCP", org.hl7.fhir.r4.model.Encounter(), null, null)
-            assertNull(helper.resolveDottedExpression("IndexPCP.nonexistentProperty", handler.runtimeRegistry, gson))
+            assertNull(helper.resolveDottedExpression("IndexPCP.nonexistentProperty", handler.runtimeRegistry))
         }
     }
 

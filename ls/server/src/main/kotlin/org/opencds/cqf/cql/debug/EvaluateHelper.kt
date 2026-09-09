@@ -1,6 +1,5 @@
 package org.opencds.cqf.cql.debug
 
-import com.google.gson.Gson
 import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.CqlCompilerException
 import org.cqframework.cql.elm.serializing.ElmXmlLibraryWriter
@@ -146,14 +145,13 @@ class EvaluateHelper(
         category: CursorCategory,
         state: State,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
     ): EvaluateResponse? {
         return when (category) {
             is CursorCategory.AliasReference -> {
                 val rv = handler.runtimeRegistry.find(category.name)
                 if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = variableResolver.formatVariableValue(rv.value, gson)
+                        it.result = variableResolver.formatVariableValue(rv.value)
                         it.variablesReference = variableResolver.registerIfExpandable(rv.value)
                     }
                 } else {
@@ -164,7 +162,7 @@ class EvaluateHelper(
                 val rv = handler.runtimeRegistry.find(category.name)
                 if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = variableResolver.formatVariableValue(rv.value, gson)
+                        it.result = variableResolver.formatVariableValue(rv.value)
                         it.variablesReference = variableResolver.registerIfExpandable(rv.value)
                     }
                 } else {
@@ -180,7 +178,7 @@ class EvaluateHelper(
                     }
                 if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = variableResolver.formatVariableValue(rv.value, gson)
+                        it.result = variableResolver.formatVariableValue(rv.value)
                         it.variablesReference = variableResolver.registerIfExpandable(rv.value)
                     }
                 } else {
@@ -191,7 +189,7 @@ class EvaluateHelper(
                 val rv = handler.runtimeRegistry.find(category.name)
                 if (rv != null) {
                     EvaluateResponse().also {
-                        it.result = variableResolver.formatVariableValue(rv.value, gson)
+                        it.result = variableResolver.formatVariableValue(rv.value)
                         it.variablesReference = variableResolver.registerIfExpandable(rv.value)
                     }
                 } else {
@@ -205,7 +203,6 @@ class EvaluateHelper(
                             category.aliasName,
                             category.name,
                             handler,
-                            gson,
                         )
                     if (result != null) {
                         EvaluateResponse().also {
@@ -227,7 +224,6 @@ class EvaluateHelper(
         expression: String,
         state: State,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
         streamingLaunchUri: String?,
         variableTypeMap: Map<String, String>,
         launchParameters: List<ParameterRequestData>?,
@@ -238,7 +234,7 @@ class EvaluateHelper(
         val registryResult = registry.find(expression)
         if (registryResult != null) {
             return EvaluateResponse().also {
-                it.result = variableResolver.formatVariableValue(registryResult.value, gson)
+                it.result = variableResolver.formatVariableValue(registryResult.value)
                 it.variablesReference = variableResolver.registerIfExpandable(registryResult.value)
             }
         }
@@ -251,7 +247,7 @@ class EvaluateHelper(
                 ?.let { parsed -> registry.find(parsed.rootName) }
         if (quotedRootResult != null) {
             return EvaluateResponse().also {
-                it.result = variableResolver.formatVariableValue(quotedRootResult.value, gson)
+                it.result = variableResolver.formatVariableValue(quotedRootResult.value)
                 it.variablesReference = variableResolver.registerIfExpandable(quotedRootResult.value)
             }
         }
@@ -275,7 +271,7 @@ class EvaluateHelper(
             val cachedResult = state.cache.getCachedExpression(libId, expression)
             if (cachedResult != null) {
                 return EvaluateResponse().also {
-                    it.result = variableResolver.formatVariableValue(cachedResult.value, gson)
+                    it.result = variableResolver.formatVariableValue(cachedResult.value)
                     it.variablesReference = variableResolver.registerIfExpandable(cachedResult.value)
                 }
             }
@@ -296,7 +292,7 @@ class EvaluateHelper(
                         val hoverPos = Position(line, col)
                         val category = CursorClassifier.classify(parseTree, hoverPos)
                         val classifiedResult =
-                            resolveFromCursorCategory(category, state, handler, gson)
+                            resolveFromCursorCategory(category, state, handler)
                         if (classifiedResult != null) {
                             return classifiedResult
                         }
@@ -304,14 +300,14 @@ class EvaluateHelper(
                     val value = handler.findValueAtPosition(line, col)
                     if (value != null) {
                         return EvaluateResponse().also {
-                            it.result = variableResolver.formatVariableValue(value, gson)
+                            it.result = variableResolver.formatVariableValue(value)
                             it.variablesReference = variableResolver.registerIfExpandable(value)
                         }
                     }
                     val pausedElm = handler.lastPausedElm
                     if (pausedElm is Property) {
                         val propertyResult =
-                            resolvePropertyValue(pausedElm, handler, gson)
+                            resolvePropertyValue(pausedElm, handler)
                         if (propertyResult != null) {
                             return EvaluateResponse().also {
                                 it.result = propertyResult.first
@@ -331,7 +327,7 @@ class EvaluateHelper(
             }
         }
 
-        val dottedResult = resolveDottedExpression(expression, registry, gson)
+        val dottedResult = resolveDottedExpression(expression, registry)
         if (dottedResult != null) return dottedResult
 
         val varRefResult = variableResolver.findInVarRefs(expression)
@@ -455,7 +451,6 @@ class EvaluateHelper(
     fun resolvePropertyValue(
         property: Property,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
     ): Pair<String, Any?>? {
         val sourceRef = property.source as? org.hl7.elm.r1.ExpressionRef ?: return null
         val sourceName = sourceRef.name ?: return null
@@ -483,7 +478,7 @@ class EvaluateHelper(
                 } else {
                     val display =
                         pairs.joinToString(", ") { (id, pv) ->
-                            "$id: ${variableResolver.formatPropertyValue(pv, gson)}"
+                            "$id: ${variableResolver.formatPropertyValue(pv)}"
                         }
                     Pair("[$display]", sourceValue as List<*>)
                 }
@@ -492,7 +487,7 @@ class EvaluateHelper(
                 val pv =
                     variableResolver.extractPropertyValue(sourceValue, propertyName)
                         ?: return null
-                Pair(variableResolver.formatPropertyValue(pv, gson), pv)
+                Pair(variableResolver.formatPropertyValue(pv), pv)
             }
             else -> null
         }
@@ -502,7 +497,6 @@ class EvaluateHelper(
         aliasName: String,
         propertyName: String,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
     ): Pair<String, Any?>? {
         val sourceValue =
             handler.runtimeRegistry.find(aliasName)?.value
@@ -525,7 +519,7 @@ class EvaluateHelper(
                 } else {
                     val display =
                         pairs.joinToString(", ") { (id, pv) ->
-                            "$id: ${variableResolver.formatPropertyValue(pv, gson)}"
+                            "$id: ${variableResolver.formatPropertyValue(pv)}"
                         }
                     Pair("[$display]", sourceValue as List<*>)
                 }
@@ -534,7 +528,7 @@ class EvaluateHelper(
                 val pv =
                     variableResolver.extractPropertyValue(sourceValue, propertyName)
                         ?: return null
-                Pair(variableResolver.formatPropertyValue(pv, gson), pv)
+                Pair(variableResolver.formatPropertyValue(pv), pv)
             }
             else -> null
         }
@@ -671,7 +665,6 @@ class EvaluateHelper(
     fun resolveDottedExpression(
         expression: String,
         registry: RuntimeValueRegistry,
-        gson: Gson,
     ): EvaluateResponse? {
         if (expression.startsWith("@")) return null
         val parsed = variableResolver.parseIdentifier(expression) ?: return null
@@ -722,7 +715,7 @@ class EvaluateHelper(
             value.javaClass.simpleName,
         )
         return EvaluateResponse().also {
-            it.result = variableResolver.formatPropertyValue(value, gson)
+            it.result = variableResolver.formatPropertyValue(value)
             it.variablesReference = variableResolver.registerIfExpandable(value)
         }
     }

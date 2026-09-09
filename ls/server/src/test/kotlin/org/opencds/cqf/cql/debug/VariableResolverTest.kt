@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.BaseRuntimeChildDefinition
 import ca.uhn.fhir.context.BaseRuntimeElementDefinition
-import com.google.gson.Gson
 import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.LibraryManager
 import org.hl7.fhir.r4.model.Encounter
@@ -57,7 +56,6 @@ class VariableResolverTest {
     }
 
     private val resolver = VariableResolver()
-    private val gson = Gson()
 
     /**
      * Builds a [ClassInstance] shaped the way the CQL engine actually represents a retrieved FHIR
@@ -152,34 +150,34 @@ class VariableResolverTest {
     inner class FormatVariableValue {
         @Test
         fun `null returns null string`() {
-            assertEquals("null", resolver.formatVariableValue(null, gson))
+            assertEquals("null", resolver.formatVariableValue(null))
         }
 
         @Test
         fun `String returns quoted value`() {
-            assertEquals("\"hello\"", resolver.formatVariableValue("hello", gson))
+            assertEquals("\"hello\"", resolver.formatVariableValue("hello"))
         }
 
         @Test
         fun `Boolean returns true`() {
-            assertEquals("true", resolver.formatVariableValue(true, gson))
+            assertEquals("true", resolver.formatVariableValue(true))
         }
 
         @Test
         fun `Number returns string representation`() {
-            assertEquals("42", resolver.formatVariableValue(42, gson))
+            assertEquals("42", resolver.formatVariableValue(42))
         }
 
         @Test
         fun `IPrimitiveType returns getValueAsString`() {
-            assertEquals("foo", resolver.formatVariableValue(StringType("foo"), gson))
+            assertEquals("foo", resolver.formatVariableValue(StringType("foo")))
         }
 
         @Test
         fun `IBase FHIR resource returns JSON`() {
             val patient = Patient()
             patient.id = "test-1"
-            val result = resolver.formatVariableValue(patient, gson)
+            val result = resolver.formatVariableValue(patient)
             assertTrue(result.startsWith("{"))
             assertTrue(result.endsWith("}"))
         }
@@ -187,45 +185,45 @@ class VariableResolverTest {
         @Test
         fun `Interval formats as closed range`() {
             val interval = Interval(CqlInteger(1), true, CqlInteger(10), true)
-            assertEquals("[1, 10]", resolver.formatVariableValue(interval, gson))
+            assertEquals("[1, 10]", resolver.formatVariableValue(interval))
         }
 
         @Test
         fun `Interval formats open boundary`() {
             val interval = Interval(CqlInteger(1), false, CqlInteger(10), false)
-            assertEquals("(1, 10)", resolver.formatVariableValue(interval, gson))
+            assertEquals("(1, 10)", resolver.formatVariableValue(interval))
         }
 
         @Test
         fun `StructuredValue formats as type with fields`() {
             val tuple = Tuple().withElements(mutableMapOf("id" to CqlInteger(1)))
-            assertEquals("Tuple { id: 1 }", resolver.formatVariableValue(tuple, gson))
+            assertEquals("Tuple { id: 1 }", resolver.formatVariableValue(tuple))
         }
 
         @Test
         fun `List of FHIR resources returns resource-list summary`() {
             val encounter1 = Encounter().also { it.id = "enc-1" }
             val encounter2 = Encounter().also { it.id = "enc-2" }
-            val result = resolver.formatVariableValue(listOf(encounter1, encounter2), gson)
+            val result = resolver.formatVariableValue(listOf(encounter1, encounter2))
             assertEquals("[Encounter/enc-1, Encounter/enc-2]", result)
         }
 
         @Test
         fun `CqlList of ClassInstance FHIR resources returns resource-list summary, matching real CQL Retrieve output`() {
             val cqlList = CqlList(listOf(fhirEncounterClassInstance("enc-1"), fhirEncounterClassInstance("enc-2")))
-            assertEquals("[Encounter/enc-1, Encounter/enc-2]", resolver.formatVariableValue(cqlList, gson))
+            assertEquals("[Encounter/enc-1, Encounter/enc-2]", resolver.formatVariableValue(cqlList))
         }
 
         @Test
         fun `single ClassInstance FHIR resource returns full FHIR JSON, not a structured-value dump`() {
-            val result = resolver.formatVariableValue(fhirEncounterClassInstance("enc-1"), gson)
+            val result = resolver.formatVariableValue(fhirEncounterClassInstance("enc-1"))
             assertTrue(result.startsWith("{"), "expected FHIR JSON, got: $result")
             assertTrue(result.contains("\"enc-1\""))
         }
 
         @Test
         fun `ClassInstance FHIR composite element returns FHIR JSON, not a structured-value dump`() {
-            val result = resolver.formatVariableValue(fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", null), gson)
+            val result = resolver.formatVariableValue(fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", null))
             assertTrue(result.startsWith("{"), "expected FHIR JSON, got: $result")
             assertTrue(result.contains("\"start\""))
             assertFalse(result.contains("ClassInstance"))
@@ -233,12 +231,12 @@ class VariableResolverTest {
 
         @Test
         fun `empty list returns bracket string`() {
-            assertEquals("[]", resolver.formatVariableValue(emptyList<Any>(), gson))
+            assertEquals("[]", resolver.formatVariableValue(emptyList<Any>()))
         }
 
         @Test
         fun `non-resource list falls back to gson`() {
-            assertEquals("[\"a\",\"b\"]", resolver.formatVariableValue(listOf("a", "b"), gson))
+            assertEquals("[\"a\",\"b\"]", resolver.formatVariableValue(listOf("a", "b")))
         }
     }
 
@@ -249,7 +247,7 @@ class VariableResolverTest {
         @Test
         fun `Period delegates to formatPeriodAsInterval`() {
             val period = Period()
-            val result = resolver.formatPropertyValue(period, gson)
+            val result = resolver.formatPropertyValue(period)
             assertEquals("[null, null)", result)
         }
 
@@ -258,7 +256,6 @@ class VariableResolverTest {
             val result =
                 resolver.formatPropertyValue(
                     fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", null),
-                    gson,
                 )
             assertEquals("[2026-11-02T11:00:00.000Z, null)", result)
         }
@@ -268,14 +265,13 @@ class VariableResolverTest {
             val result =
                 resolver.formatPropertyValue(
                     fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", "2026-11-02T12:00:00.000+00:00"),
-                    gson,
                 )
             assertEquals("[2026-11-02T11:00:00.000Z, 2026-11-02T12:00:00.000Z)", result)
         }
 
         @Test
         fun `non-Period delegates to formatVariableValue`() {
-            assertEquals("42", resolver.formatPropertyValue(42, gson))
+            assertEquals("42", resolver.formatPropertyValue(42))
         }
     }
 
@@ -474,7 +470,7 @@ class VariableResolverTest {
         @Test
         fun `uses ResourceType-id as default name`() {
             val patient = Patient().also { it.id = "pat-1" }
-            val variable = resolver.buildResourceVariable(patient, gson)
+            val variable = resolver.buildResourceVariable(patient)
             assertEquals("Patient/pat-1", variable.name)
             assertEquals("Patient", variable.type)
             assertTrue(variable.variablesReference > 0)
@@ -483,14 +479,14 @@ class VariableResolverTest {
         @Test
         fun `displayNameOverride wins over default naming`() {
             val patient = Patient().also { it.id = "pat-1" }
-            val variable = resolver.buildResourceVariable(patient, gson, "custom-name")
+            val variable = resolver.buildResourceVariable(patient, "custom-name")
             assertEquals("custom-name", variable.name)
         }
 
         @Test
         fun `value is full FHIR JSON`() {
             val patient = Patient().also { it.id = "pat-1" }
-            val variable = resolver.buildResourceVariable(patient, gson)
+            val variable = resolver.buildResourceVariable(patient)
             assertTrue(variable.value.startsWith("{"))
             assertTrue(variable.value.endsWith("}"))
         }

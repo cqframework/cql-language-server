@@ -53,6 +53,7 @@ data class LocatorBounds(val startLine: Int, val startChar: Int, val endLine: In
 
 class VariableResolver(
     private val fhirContext: FhirContext = FhirContext.forR4(),
+    private val gson: Gson = Gson(),
     varRefs: ConcurrentHashMap<Int, Any> = ConcurrentHashMap(),
     varRefTypes: ConcurrentHashMap<Int, String> = ConcurrentHashMap(),
     nextVarRef: AtomicInteger = AtomicInteger(1000),
@@ -99,10 +100,7 @@ class VariableResolver(
         }
     }
 
-    fun formatVariableValue(
-        rawValue: Any?,
-        gson: Gson,
-    ): String {
+    fun formatVariableValue(rawValue: Any?): String {
         val value = normalizeValue(rawValue)
         return when (value) {
             null -> "null"
@@ -115,8 +113,8 @@ class VariableResolver(
                 } catch (_: Exception) {
                     value.toString()
                 }
-            is Interval -> formatInterval(value, gson)
-            is StructuredValue -> formatStructuredValue(value, gson)
+            is Interval -> formatInterval(value)
+            is StructuredValue -> formatStructuredValue(value)
             is Value -> value.toString()
             is List<*> ->
                 if (value.isNotEmpty() && value.all { it is IBaseResource }) {
@@ -156,45 +154,35 @@ class VariableResolver(
         return "[" + resources.joinToString(", ") { "${it.fhirType()}/${getResourceId(it)}" } + "]"
     }
 
-    private fun formatInterval(
-        value: Interval,
-        gson: Gson,
-    ): String {
-        val low = value.low?.let { formatVariableValue(it, gson) } ?: "null"
-        val high = value.high?.let { formatVariableValue(it, gson) } ?: "null"
+    private fun formatInterval(value: Interval): String {
+        val low = value.low?.let { formatVariableValue(it) } ?: "null"
+        val high = value.high?.let { formatVariableValue(it) } ?: "null"
         val openBracket = if (value.lowClosed) "[" else "("
         val closeBracket = if (value.highClosed) "]" else ")"
         return "$openBracket$low, $high$closeBracket"
     }
 
-    private fun formatStructuredValue(
-        value: StructuredValue,
-        gson: Gson,
-    ): String {
+    private fun formatStructuredValue(value: StructuredValue): String {
         val fields =
             value.elements.entries.sortedBy { it.key }.joinToString(", ") { (name, v) ->
-                "$name: ${formatVariableValue(v, gson)}"
+                "$name: ${formatVariableValue(v)}"
             }
         return "${value.javaClass.simpleName} { $fields }"
     }
 
-    fun formatPropertyValue(
-        value: Any?,
-        gson: Gson,
-    ): String {
+    fun formatPropertyValue(value: Any?): String {
         // Normalize first so a FHIR Period represented as an engine ClassInstance (e.g. the result
         // of a `.effective` property access) becomes a real HAPI Period and renders as an interval.
         val normalized = normalizeValue(value)
         if (normalized is Period) {
             return formatPeriodAsInterval(normalized)
         }
-        return formatVariableValue(normalized, gson)
+        return formatVariableValue(normalized)
     }
 
     fun formatPeriodAsInterval(period: Period): String {
-        val gson = Gson()
-        val start = period.startElement?.let { formatVariableValue(it, gson) } ?: "null"
-        val end = period.endElement?.let { formatVariableValue(it, gson) } ?: "null"
+        val start = period.startElement?.let { formatVariableValue(it) } ?: "null"
+        val end = period.endElement?.let { formatVariableValue(it) } ?: "null"
         return "[$start, $end)"
     }
 
@@ -226,7 +214,6 @@ class VariableResolver(
         typeName: String? = null,
         launchCompiler: CqlCompiler? = null,
     ): List<Variable> {
-        val gson = Gson()
         val value = normalizeValue(rawValue) ?: rawValue
         return when (value) {
             is IBase -> {
@@ -256,7 +243,7 @@ class VariableResolver(
                             listOf(
                                 Variable().also {
                                     it.name = childName
-                                    it.value = formatVariableValue(childValues[0], gson)
+                                    it.value = formatVariableValue(childValues[0])
                                     it.variablesReference = registerIfExpandable(childValues[0])
                                 },
                             )
@@ -264,7 +251,7 @@ class VariableResolver(
                             childValues.mapIndexed { index, childValue ->
                                 Variable().also {
                                     it.name = "$childName[$index]"
-                                    it.value = formatVariableValue(childValue, gson)
+                                    it.value = formatVariableValue(childValue)
                                     it.variablesReference = registerIfExpandable(childValue)
                                 }
                             }
@@ -283,7 +270,7 @@ class VariableResolver(
                             } else {
                                 "[$index]"
                             }
-                        it.value = formatVariableValue(item, gson)
+                        it.value = formatVariableValue(item)
                         it.type = fhirResourceTypeOf(item)
                         it.variablesReference = registerIfExpandable(item)
                     }
@@ -293,7 +280,7 @@ class VariableResolver(
                 listOf(
                     Variable().also {
                         it.name = "low"
-                        it.value = value.low?.let { low -> formatVariableValue(low, gson) } ?: "null"
+                        it.value = value.low?.let { low -> formatVariableValue(low) } ?: "null"
                         it.variablesReference = registerIfExpandable(value.low)
                     },
                     Variable().also {
@@ -302,7 +289,7 @@ class VariableResolver(
                     },
                     Variable().also {
                         it.name = "high"
-                        it.value = value.high?.let { high -> formatVariableValue(high, gson) } ?: "null"
+                        it.value = value.high?.let { high -> formatVariableValue(high) } ?: "null"
                         it.variablesReference = registerIfExpandable(value.high)
                     },
                     Variable().also {
@@ -315,7 +302,7 @@ class VariableResolver(
                 value.elements.entries.sortedBy { it.key }.map { (name, elementValue) ->
                     Variable().also {
                         it.name = name
-                        it.value = formatVariableValue(elementValue, gson)
+                        it.value = formatVariableValue(elementValue)
                         it.variablesReference = registerIfExpandable(elementValue)
                     }
                 }
@@ -726,13 +713,12 @@ class VariableResolver(
      */
     fun buildResourceVariable(
         resource: IBaseResource,
-        gson: Gson,
         displayNameOverride: String? = null,
     ): Variable {
         val resourceType = resource.fhirType()
         return Variable().also {
             it.name = displayNameOverride ?: "$resourceType/${getResourceId(resource)}"
-            it.value = formatVariableValue(resource, gson)
+            it.value = formatVariableValue(resource)
             it.type = resourceType
             it.variablesReference = registerIfExpandable(resource)
         }
@@ -749,7 +735,6 @@ class VariableResolver(
                 val resolvedPath = testCasePath ?: Paths.get(URI.create(testCaseUri))
                 if (Files.exists(resolvedPath) && Files.isDirectory(resolvedPath)) {
                     val context = getFhirContextForVersion(fhirVersion)
-                    val gson = Gson()
                     Files.newDirectoryStream(resolvedPath) { path ->
                         val name = path.fileName.toString().lowercase()
                         name.endsWith(".json") || name.endsWith(".xml")
@@ -768,7 +753,7 @@ class VariableResolver(
                                     } else {
                                         null
                                     }
-                                testCaseList.add(buildResourceVariable(resource, gson, displayNameOverride))
+                                testCaseList.add(buildResourceVariable(resource, displayNameOverride))
                             } catch (_: Exception) {
                             }
                         }

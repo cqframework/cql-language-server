@@ -1,7 +1,6 @@
 package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.FhirContext
-import com.google.gson.Gson
 import org.antlr.v4.kotlinruntime.CharStreams
 import org.antlr.v4.kotlinruntime.CommonTokenStream
 import org.cqframework.cql.gen.cqlLexer
@@ -2772,22 +2771,19 @@ class StreamingCqlDebugServerTest {
     @Test
     fun `formatVariableValue on Enumeration returns lowercased FHIR code`() {
         val server = makeServer()
-        val gson = Gson()
-
-        // Use getStatusElement() which returns the Enumeration<EncounterStatus> wrapper
-        // (an IPrimitiveType), not the raw Java enum.
         val encounter = Encounter()
         encounter.status = Encounter.EncounterStatus.FINISHED
+        // Use getStatusElement() which returns the Enumeration<EncounterStatus> wrapper
+        // (an IPrimitiveType), not the raw Java enum.
         val statusValue = encounter.getStatusElement()
 
         val method =
             CqlDebugServer::class.java.getDeclaredMethod(
                 "formatVariableValue",
                 Any::class.java,
-                Gson::class.java,
             )
         method.isAccessible = true
-        val result = method.invoke(server, statusValue, gson) as String
+        val result = method.invoke(server, statusValue) as String
 
         assertEquals("finished", result)
     }
@@ -2795,8 +2791,6 @@ class StreamingCqlDebugServerTest {
     @Test
     fun `extractPropertyValue returns IPrimitiveType wrapper not raw enum`() {
         val server = makeServer()
-        val gson = Gson()
-
         val encounter = Encounter()
         encounter.status = Encounter.EncounterStatus.FINISHED
 
@@ -2820,10 +2814,9 @@ class StreamingCqlDebugServerTest {
             CqlDebugServer::class.java.getDeclaredMethod(
                 "formatVariableValue",
                 Any::class.java,
-                Gson::class.java,
             )
         formatMethod.isAccessible = true
-        val formatted = formatMethod.invoke(server, result, gson) as String
+        val formatted = formatMethod.invoke(server, result) as String
 
         assertEquals("finished", formatted)
     }
