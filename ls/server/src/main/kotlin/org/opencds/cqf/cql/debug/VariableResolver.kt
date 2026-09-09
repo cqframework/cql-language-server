@@ -35,12 +35,10 @@ import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.hl7.fhir.r4.model.Period
-import org.opencds.cqf.cql.engine.fhir.fhirModelNamespaceUri
 import org.opencds.cqf.cql.engine.runtime.ClassInstance
 import org.opencds.cqf.cql.engine.runtime.Interval
 import org.opencds.cqf.cql.engine.runtime.StructuredValue
 import org.opencds.cqf.cql.engine.runtime.Value
-import org.opencds.cqf.fhir.cql.ClassInstanceHelper
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -52,6 +50,10 @@ import org.opencds.cqf.cql.engine.runtime.List as CqlList
 data class LocatorBounds(val startLine: Int, val startChar: Int, val endLine: Int, val endChar: Int)
 
 class VariableResolver(
+    // TODO(versions): R4-only today. Once [FhirClassInstanceConverter] and the FHIR JSON renderer
+    // (formatVariableValue/childrenOf/expansion) are version-parameterized, replace this with a
+    // volatile `activeContext` + `activateFhirVersion()` reusing [getFhirContextForVersion]; the
+    // server already derives STU3/R5 contexts for Test Case building and ad-hoc evaluation.
     private val fhirContext: FhirContext = FhirContext.forR4(),
     private val gson: Gson = Gson(),
     varRefs: ConcurrentHashMap<Int, Any> = ConcurrentHashMap(),
@@ -66,6 +68,8 @@ class VariableResolver(
     val varRefTypes: ConcurrentHashMap<Int, String> = varRefTypes
     val nextVarRef: AtomicInteger = nextVarRef
 
+    private val fhirConverter = FhirClassInstanceConverter(fhirContext)
+
     fun resetVarRefs() {
         varRefs.clear()
         varRefTypes.clear()
@@ -78,10 +82,11 @@ class VariableResolver(
      * Test Case) displays FHIR resources identically:
      * - [CqlList] (the engine's Retrieve/list-literal wrapper, not a `kotlin.collections.List`) is
      *   unwrapped into a real list.
-     * - [ClassInstance] (what a CQL Retrieve of a FHIR resource — or a FHIR composite element such
-     *   as a `Period`, `CodeableConcept`, or `Reference` — actually evaluates to: a generic
-     *   structure of `Value`s, not a HAPI object) is converted back into a real FHIR object via
-     *   [ClassInstanceHelper], when possible, so it renders as native FHIR JSON like Test Case.
+     * - [ClassInstance] (a generic engine value — a QName `type` plus an element map — with the
+     *   FHIR-ness carried by its `type` namespace; what a CQL Retrieve of a FHIR resource, or a
+     *   FHIR composite element such as a `Period`, `CodeableConcept`, or `Reference`, actually
+     *   evaluates to) is converted back into a real FHIR object via
+     *   [FhirClassInstanceConverter], when possible, so it renders as native FHIR JSON like Test Case.
      * Values that aren't one of these (or that fail conversion) pass through unchanged.
      */
     fun normalizeValue(value: Any?): Any? =
@@ -91,14 +96,7 @@ class VariableResolver(
             else -> value
         }
 
-    private fun resolveFhirValue(value: ClassInstance): IBase? {
-        if (value.type.namespaceURI != fhirModelNamespaceUri) return null
-        return try {
-            ClassInstanceHelper.convertToFhirR4(value) as? IBase
-        } catch (_: Exception) {
-            null
-        }
-    }
+    private fun resolveFhirValue(value: ClassInstance): IBase? = fhirConverter.convert(value)
 
     fun formatVariableValue(rawValue: Any?): String {
         val value = normalizeValue(rawValue)

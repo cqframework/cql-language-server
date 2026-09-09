@@ -6,6 +6,7 @@ import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.LibraryManager
 import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.HumanName
+import org.hl7.fhir.r4.model.MedicationAdministration
 import org.hl7.fhir.r4.model.Patient
 import org.hl7.fhir.r4.model.Period
 import org.hl7.fhir.r4.model.StringType
@@ -101,6 +102,83 @@ class VariableResolverTest {
         return fhirClassInstance("Period", elements)
     }
 
+    /**
+     * Builds a full `MedicationAdministration` [ClassInstance] shaped exactly the way the CQL engine
+     * represents a retrieved resource: a resource-local enum (`MedicationAdministrationStatus`),
+     * a choice element (`medication`/`effective` — HAPI choice element names carry no `[x]` suffix),
+     * a composite effective period, a `statusReason` CodeableConcept, and a resource-local backbone
+     * (`MedicationAdministrationPerformerComponent`). All of the FHIR enum, choice, and backbone
+     * shapes previously broke `CqlFhirParametersConverter.toFhirValue` type resolution.
+     */
+    private fun fhirMedicationAdministrationClassInstance(): ClassInstance =
+        fhirClassInstance(
+            "MedicationAdministration",
+            mapOf(
+                "id" to fhirClassInstance("id", mapOf("value" to "med-admin-1")),
+                "status" to fhirClassInstance("MedicationAdministrationStatus", mapOf("value" to "completed")),
+                "medication" to
+                    fhirClassInstance(
+                        "CodeableConcept",
+                        mapOf(
+                            "coding" to
+                                CqlList(
+                                    listOf(
+                                        fhirClassInstance(
+                                            "Coding",
+                                            mapOf(
+                                                "system" to
+                                                    fhirClassInstance(
+                                                        "uri",
+                                                        mapOf("value" to "http://www.nlm.nih.gov/research/umls/rxnorm"),
+                                                    ),
+                                                "code" to fhirClassInstance("code", mapOf("value" to "1597110")),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                "statusReason" to
+                    fhirClassInstance(
+                        "CodeableConcept",
+                        mapOf(
+                            "coding" to
+                                CqlList(
+                                    listOf(
+                                        fhirClassInstance(
+                                            "Coding",
+                                            mapOf(
+                                                "system" to fhirClassInstance("uri", mapOf("value" to "http://snomed.info/sct")),
+                                                "code" to fhirClassInstance("code", mapOf("value" to "182992009")),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                "effective" to
+                    fhirPeriodClassInstance("2026-11-02T11:00:00.000+00:00", "2026-11-03T11:00:00.000+00:00"),
+                "performer" to
+                    CqlList(
+                        listOf(
+                            fhirClassInstance(
+                                "MedicationAdministrationPerformerComponent",
+                                mapOf(
+                                    "actor" to
+                                        fhirClassInstance(
+                                            "Reference",
+                                            mapOf(
+                                                "reference" to
+                                                    fhirClassInstance("string", mapOf("value" to "Practitioner/pra-1")),
+                                            ),
+                                        ),
+                                ),
+                            ),
+                        ),
+                    ),
+            ),
+        )
+
     // -- normalizeValue --------------------------------------------------------
 
     @Nested
@@ -135,6 +213,20 @@ class VariableResolverTest {
             assertTrue(result is Period)
             assertEquals("2026-11-02T11:00:00.000Z", (result as Period).startElement.valueAsString)
             assertNull(result.endElement.value)
+        }
+
+        @Test
+        fun `full FHIR resource ClassInstance with enum, choice, composite, and backbone converts to a real FHIR resource`() {
+            val result = resolver.normalizeValue(fhirMedicationAdministrationClassInstance())
+            assertTrue(result is MedicationAdministration)
+            val admin = result as MedicationAdministration
+            assertEquals("med-admin-1", admin.idElement.idPart)
+            assertEquals(MedicationAdministration.MedicationAdministrationStatus.COMPLETED, admin.status)
+            assertEquals("1597110", admin.medicationCodeableConcept.coding.first().code)
+            assertEquals("Practitioner/pra-1", admin.performerFirstRep.actor.reference)
+            assertEquals("182992009", admin.statusReason.first().coding.first().code)
+            assertEquals("2026-11-02T11:00:00.000Z", admin.effectivePeriod.startElement.valueAsString)
+            assertEquals("2026-11-03T11:00:00.000Z", admin.effectivePeriod.endElement.valueAsString)
         }
 
         @Test
@@ -227,6 +319,16 @@ class VariableResolverTest {
             assertTrue(result.startsWith("{"), "expected FHIR JSON, got: $result")
             assertTrue(result.contains("\"start\""))
             assertFalse(result.contains("ClassInstance"))
+        }
+
+        @Test
+        fun `full FHIR resource ClassInstance with enum and backbone returns FHIR JSON, not a structured-value dump`() {
+            val result = resolver.formatVariableValue(fhirMedicationAdministrationClassInstance())
+            assertTrue(result.startsWith("{"), "expected FHIR JSON, got: $result")
+            assertTrue(result.contains("\"id\":\"med-admin-1\""), result)
+            assertTrue(result.contains("\"status\":\"completed\""), result)
+            assertTrue(result.contains("\"performer\""), result)
+            assertFalse(result.contains("ClassInstance"), result)
         }
 
         @Test

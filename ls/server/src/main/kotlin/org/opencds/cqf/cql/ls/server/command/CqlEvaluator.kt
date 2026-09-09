@@ -18,13 +18,13 @@ import org.hl7.fhir.instance.model.api.IBaseDatatype
 import org.hl7.fhir.instance.model.api.IBaseResource
 import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.hl7.fhir.r5.context.ILoggingService
+import org.opencds.cqf.cql.debug.FhirClassInstanceConverter
 import org.opencds.cqf.cql.debug.StreamingBreakpointHandler
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.CqlEngine
 import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
-import org.opencds.cqf.cql.engine.fhir.fhirModelNamespaceUri
 import org.opencds.cqf.cql.engine.runtime.ClassInstance
 import org.opencds.cqf.cql.engine.runtime.Interval
 import org.opencds.cqf.cql.engine.runtime.Quantity
@@ -43,7 +43,6 @@ import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.IgStandardRepository
 import org.opencds.cqf.cql.ls.server.utility.VersionReader
-import org.opencds.cqf.fhir.cql.ClassInstanceHelper
 import org.opencds.cqf.fhir.cql.CqlOptions
 import org.opencds.cqf.fhir.cql.Engines
 import org.opencds.cqf.fhir.cql.EvaluationSettings
@@ -67,6 +66,8 @@ object CqlEvaluator {
     private val log = LoggerFactory.getLogger(CqlEvaluator::class.java)
 
     private const val PARAM_EVAL_LIBRARY_ID = "__ParamEval__"
+
+    private val fhirConverter = FhirClassInstanceConverter()
 
     /** In-memory [LibrarySourceProvider] that serves a single CQL source string by library id. */
     private class CqlSourceStringProvider(
@@ -377,16 +378,11 @@ object CqlEvaluator {
 
     /** Renders a compact one-line summary for a FHIR value (resource, datatype, or primitive). */
     private fun formatFhirClassInstance(value: ClassInstance): String {
-        if (value.type.namespaceURI != fhirModelNamespaceUri) {
+        val fhir = fhirConverter.convert(value)
+        if (fhir == null) {
+            log.debug("Could not convert {} to FHIR", value.type.localPart)
             return formatStructuredValue(value)
         }
-        val fhir =
-            try {
-                ClassInstanceHelper.convertToFhirR4(value)
-            } catch (e: Exception) {
-                log.debug("Could not convert {} to FHIR: {}", value.type.localPart, e.message)
-                return formatStructuredValue(value)
-            }
         return when {
             fhir is IBaseResource ->
                 fhir.fhirType() +
