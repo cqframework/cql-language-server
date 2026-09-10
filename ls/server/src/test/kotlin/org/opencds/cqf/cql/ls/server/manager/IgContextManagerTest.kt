@@ -631,6 +631,59 @@ class IgContextManagerTest {
     }
 
     // -----------------------------------------------------------------------
+    // setupLibraryManager — npm tier resolves USCore model info from
+    // hl7.fhir.us.cql package when the project's IG declares it as a
+    // dependency. (Regression test for the dqm-content-cms-2025 uscore-
+    // modelinfo-6.1.0-derived NOT FOUND warning — confirms Option A path.)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun setupLibraryManager_npmResolvesUsCoreModelInfo(
+        @TempDir tempDir: Path,
+    ) {
+        val usCoreDir =
+            File(
+                File(System.getProperty("user.home"), ".fhir/packages"),
+                "hl7.fhir.us.cql#2.0.0-ballot",
+            )
+        Assumptions.assumeTrue(usCoreDir.exists()) {
+            "Skipping: hl7.fhir.us.cql#2.0.0-ballot not in FHIR package cache"
+        }
+
+        createIgWithDependsOn(
+            tempDir,
+            packageId = "test.ig",
+            canonical = "http://test-ig.org/ig",
+            fhirVersion = "4.0.1",
+            dependencies = listOf("hl7.fhir.us.cql" to "2.0.0-ballot"),
+        )
+        val cqlFile = createCqlFileInSubdir(tempDir)
+
+        val cs =
+            FilesystemContentService(tempDir)
+        val manager = IgContextManager(cs)
+        val libraryManager = LibraryManager(ModelManager())
+
+        manager.setupLibraryManager(cqlFile.toUri(), libraryManager)
+
+        val modelInfo =
+            libraryManager.modelManager.modelInfoLoader.getModelInfo(
+                org.hl7.cql.model.ModelIdentifier("USCore", null, "6.1.0-derived"),
+            )
+        assertNotNull(
+            modelInfo,
+            "Expected npm tier to resolve USCore 6.1.0-derived model info from " +
+                "hl7.fhir.us.cql#2.0.0-ballot; got null. Check that the package is in " +
+                "~/.fhir/packages/ and that the IG declares it as a dependency.",
+        )
+        assertEquals(
+            "USCore",
+            modelInfo!!.name,
+            "Model info name should match the requested model id",
+        )
+    }
+
+    // -----------------------------------------------------------------------
     // buildMinimalPackageTgz — structural integrity of the generated TGZ
     // -----------------------------------------------------------------------
 
@@ -764,6 +817,26 @@ class IgContextManagerTest {
             canonical: String,
             fhirVersion: String,
         ) {
+            createIgWithDependsOn(dir, packageId, canonical, fhirVersion, emptyList())
+        }
+
+        private fun createIgWithDependsOn(
+            dir: Path,
+            packageId: String,
+            canonical: String,
+            fhirVersion: String,
+            dependencies: List<Pair<String, String>>,
+        ) {
+            val depsJson =
+                if (dependencies.isEmpty()) {
+                    ""
+                } else {
+                    val items =
+                        dependencies.joinToString(",\n") { (pkgId, version) ->
+                            "      {\"packageId\": \"$pkgId\", \"version\": \"$version\"}"
+                        }
+                    ",\n    \"dependsOn\": [\n$items\n    ]"
+                }
             dir.resolve("ig.ini").toFile().writeText("[IG]\nig = ig.json\n")
             dir.resolve("ig.json").toFile().writeText(
                 """
@@ -774,7 +847,7 @@ class IgContextManagerTest {
                     "version": "1.0.0",
                     "name": "$packageId",
                     "packageId": "$packageId",
-                    "fhirVersion": ["$fhirVersion"]
+                    "fhirVersion": ["$fhirVersion"]$depsJson
                 }
                 """.trimIndent(),
             )
@@ -786,6 +859,31 @@ class IgContextManagerTest {
             val cqlFile = cqlDir.resolve("dummy.cql")
             cqlFile.toFile().writeText("library Dummy version '1.0.0'")
             return cqlFile
+        }
+
+        // Filesystem-backed ContentService so findIgContext() can actually find ig.ini.
+        // TestContentService reads from classpath resources, which won't include
+        // a temp directory the test creates at runtime.
+        private class FilesystemContentService(
+            private val root: Path,
+        ) : ContentService {
+            override fun locate(
+                root: URI,
+                identifier: VersionedIdentifier,
+            ): Set<URI> = emptySet()
+
+            override fun read(uri: URI): InputStream? {
+                val path =
+                    try {
+                        Paths.get(uri)
+                    } catch (_: Exception) {
+                        return null
+                    }
+                if (!path.toAbsolutePath().startsWith(root.toAbsolutePath())) return null
+                val file = path.toFile()
+                if (!file.exists() || !file.isFile) return null
+                return file.inputStream()
+            }
         }
     }
 }

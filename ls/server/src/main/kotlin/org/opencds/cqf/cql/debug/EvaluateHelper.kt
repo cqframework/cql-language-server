@@ -2,7 +2,6 @@ package org.opencds.cqf.cql.debug
 
 import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.CqlCompilerException
-import org.cqframework.cql.elm.serializing.ElmXmlLibraryWriter
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.EvaluateResponse
 import org.hl7.elm.r1.Element
@@ -559,13 +558,18 @@ class EvaluateHelper(
         libraryManager: org.cqframework.cql.cql2elm.LibraryManager,
         aliases: List<Pair<String, String>> = emptyList(),
     ): Pair<org.hl7.elm.r1.FunctionDef?, EvaluateResponse?> {
-        val syntheticCql = buildSyntheticDefine(sourceText, expression, aliases)
-        log.debug(
-            "evaluateAdHocExpression: synthetic CQL ({} chars, {} aliases):\n{}",
-            syntheticCql.length,
-            aliases.size,
-            syntheticCql,
-        )
+        val syntheticDef = syntheticFunctionDef(expression, aliases)
+        // Log only the appended define (not the whole paused library source) at TRACE so the
+        // default output channel stays lean; raising the CQL output channel to Trace restores it.
+        if (log.isTraceEnabled()) {
+            log.trace(
+                "evaluateAdHocExpression: synthetic function ({} aliases, {} chars):\n{}",
+                aliases.size,
+                syntheticDef.length,
+                syntheticDef,
+            )
+        }
+        val syntheticCql = buildSyntheticDefine(sourceText, syntheticDef)
 
         val compiler = CqlCompiler(null, null, libraryManager)
         compiler.run(syntheticCql)
@@ -580,9 +584,7 @@ class EvaluateHelper(
                 } else {
                     ""
                 }
-            // On syntactic errors there is no library to serialize, but semantic errors may leave a
-            // partial one -- dump it best-effort so the offending ELM is visible.
-            compiler.library?.let { log.debug("evaluateAdHocExpression: compile error ELM:\n{}", serializeElmDebug(it)) }
+            // On compile failure surface the one actionable line: message + source locator.
             log.debug("evaluateAdHocExpression: compile error: {}{}", message, locStr)
             return null to messageResponse("Compile error: $message$locStr")
         }
@@ -592,12 +594,6 @@ class EvaluateHelper(
             log.debug("evaluateAdHocExpression: compiler.library is null after successful run()")
             return null to messageResponse("Compile error: no library produced")
         }
-
-        log.debug(
-            "evaluateAdHocExpression: compiled ELM for ad-hoc expression '{}':\n{}",
-            expression,
-            serializeElmDebug(library),
-        )
 
         val evalDef =
             library.statements?.def
@@ -622,14 +618,11 @@ class EvaluateHelper(
         return evalDef to null
     }
 
-    private fun buildSyntheticDefine(
-        sourceText: String,
+    /** Builds the appended `define function "__debugEval__"(aliases): expression` block. */
+    private fun syntheticFunctionDef(
         expression: String,
         aliases: List<Pair<String, String>>,
     ): String {
-        // Strip trailing whitespace/newlines, then append the synthetic function before EOF.
-        // The CQL grammar requires statements at the library level.
-        val trimmed = sourceText.trimEnd()
         val paramList =
             if (aliases.isEmpty()) {
                 ""
@@ -638,8 +631,14 @@ class EvaluateHelper(
                     "\"$name\" ${normalizeType(type)}"
                 }
             }
-        return "$trimmed\n\ndefine function \"__debugEval__\"($paramList): $expression\n"
+        return "define function \"__debugEval__\"($paramList): $expression"
     }
+
+    /** Appends [syntheticDef] to the paused library source; CQL requires statements at EOL. */
+    private fun buildSyntheticDefine(
+        sourceText: String,
+        syntheticDef: String,
+    ): String = "${sourceText.trimEnd()}\n\n$syntheticDef\n"
 
     /**
      * Normalizes a translator-produced type string so it can be spliced into CQL source text as a
@@ -651,26 +650,69 @@ class EvaluateHelper(
      * `list<interval<System.DateTime>>` are fully normalized; already-capitalized strings pass
      * through unchanged. Class/Simple type names (e.g. `FHIR.DiagnosticReport`, `System.Quantity`)
      * are already valid as-is.
+     *
+     * `TupleTypeElement.toString()` also emits `name:type`, but cql.g4 defines
+     * `tupleElementDefinition: referentialIdentifier typeSpecifier` (no colon), so [normalizeTupleColons]
+     * rewrites each tuple element's colon separator to a space before splicing.
      */
     private fun normalizeType(type: String): String =
-        type
-            .replace("list<", "List<")
-            .replace("interval<", "Interval<")
-            .replace("choice<", "Choice<")
-            .replace("tuple{", "Tuple{")
+        normalizeTupleColons(
+            type
+                .replace("list<", "List<")
+                .replace("interval<", "Interval<")
+                .replace("choice<", "Choice<")
+                .replace("tuple{", "Tuple{"),
+        )
 
     /**
-     * Serializes a compiled library to ELM XML for debug logging, never throwing: the DOM/transformer
-     * used by [ElmXmlLibraryWriter] can fail on large or unusual libraries, and a failure here must
-     * not abort ad-hoc evaluation. Returns a short fallback message on error.
+     * Rewrites each tuple element's `name:Type` (as emitted by `TupleTypeElement.toString()`) to
+     * the grammar-valid `name Type`. DataType.toString uses dot-named class/simple types (e.g.
+     * `FHIR.Patient`, `System.Interval...`) so the only colons in a type string are tuple element
+     * separators. A stack records the angle-bracket depth at which each `Tuple{` was opened so a
+     * `:` or `,` inside a nested generic element type (e.g. `Tuple{a Choice<X,Y>}`) is not mistaken
+     * for an element separator.
      */
-    private fun serializeElmDebug(library: org.hl7.elm.r1.Library): String {
-        val elm = runCatching { ElmXmlLibraryWriter().writeAsString(library) }
-        if (elm.isFailure) {
-            log.debug("evaluateAdHocExpression: ELM serialization failed: {}", elm.exceptionOrNull()?.message)
-            return "<ELM serialization failed: ${elm.exceptionOrNull()?.message}>"
+    private fun normalizeTupleColons(type: String): String {
+        if ('{' !in type) return type
+        val sb = StringBuilder(type.length)
+        var angleDepth = 0
+        val tupleOpenDepth = ArrayDeque<Int>()
+        for (c in type) {
+            when (c) {
+                '<' -> {
+                    angleDepth++
+                    sb.append(c)
+                }
+                '>' -> {
+                    angleDepth--
+                    sb.append(c)
+                }
+                '{' -> {
+                    tupleOpenDepth.addLast(angleDepth)
+                    sb.append(c)
+                }
+                '}' -> {
+                    tupleOpenDepth.removeLast()
+                    sb.append(c)
+                }
+                ':' -> {
+                    if (tupleOpenDepth.isNotEmpty() && angleDepth == tupleOpenDepth.last()) {
+                        sb.append(' ')
+                    } else {
+                        sb.append(c)
+                    }
+                }
+                ',' -> {
+                    if (tupleOpenDepth.isNotEmpty() && angleDepth == tupleOpenDepth.last()) {
+                        sb.append(", ")
+                    } else {
+                        sb.append(c)
+                    }
+                }
+                else -> sb.append(c)
+            }
         }
-        return elm.getOrThrow()
+        return sb.toString()
     }
 
     private fun notAvailable(): EvaluateResponse =

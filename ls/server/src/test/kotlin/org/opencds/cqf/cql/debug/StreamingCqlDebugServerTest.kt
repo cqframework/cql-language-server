@@ -4126,6 +4126,30 @@ class StreamingCqlDebugServerTest {
         }
 
         @Test
+        fun `ad-hoc choice-of-tuples alias type with colon elements compiles (regression)`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // TupleTypeElement.toString emits `name:type` (with a colon), but cql.g4
+            // tupleElementDefinition is `referentialIdentifier typeSpecifier` (no colon).
+            // Splice a Choice<Tuple{...},Tuple{...}> alias (the shape of the CMS190
+            // "NoVTEMedication" query alias) that previously failed synthetic compile
+            // with "Syntax error at :".
+            handler.variableTypeMap =
+                mapOf(
+                    "NoVTEMedication" to
+                        "choice<tuple{id:System.String,medicationStatusReason:list<System.String>,authoredOn:choice<System.DateTime,System.Date>}," +
+                        "tuple{id:System.String,medicationStatusReason:list<System.String>,authoredOn:System.Date}>",
+                )
+
+            val result =
+                evaluateRepl(server, "NoVTEMedication") { h ->
+                    registerStackVar(h, "NoVTEMedication", "placeholder")
+                }
+            assertFalse(result.startsWith("Compile error:"), "Expected valid compile, got: $result")
+            assertFalse(result.startsWith("not supported"), result)
+        }
+
+        @Test
         fun `ad-hoc raw Kotlin String alias binds and evaluates (regression)`() {
             // Regression for the operand-binding bug: stack-variable values that pass through
             // RuntimeValueRegistry.unwrapValue as raw Kotlin primitives (String here) never

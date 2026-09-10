@@ -985,12 +985,14 @@ class EvaluateHelperTest {
         @Test
         fun `tuple type string is normalized for the parameter declaration`() {
             val sourceText = "library TestLib\n\n"
+            // TupleTypeElement.toString emits `name:Type` WITH a colon; cql.g4 tupleElementDefinition
+            // is `referentialIdentifier typeSpecifier` (no colon), so normalizeType must strip it.
             val (fn, error) =
                 helper.evaluateAdHocExpression(
                     "T",
                     sourceText,
                     libraryManager,
-                    listOf("T" to "tuple{id System.String}"),
+                    listOf("T" to "tuple{id:System.String}"),
                 )
             assertNotNull(fn, "expected success but got: ${error?.result}")
             val spec = fn!!.operand[0].operandTypeSpecifier
@@ -999,6 +1001,61 @@ class EvaluateHelperTest {
             assertEquals(1, tuple.size)
             assertEquals("id", tuple[0].name)
             assertTrue(tuple[0].elementType is org.hl7.elm.r1.NamedTypeSpecifier)
+        }
+
+        @Test
+        fun `choice of tuple types is normalized for the parameter declaration`() {
+            val sourceText = "library TestLib\n\n"
+            // Mirrors a real measure query alias (e.g. CMS190 "NoVTEMedication"): a Choice of tuple
+            // types with nested list and nested choice element types, colon-delimited as emitted by
+            // TupleTypeElement.toString. Before normalizeType stripped tuple element colons this
+            // failed to compile with "Syntax error at :".
+            val type =
+                "choice<tuple{id:System.String,values:list<System.Integer>,authoredOn:choice<System.DateTime,System.Date>}," +
+                    "tuple{id:System.String,values:list<System.Integer>,authoredOn:System.Date}>"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "C",
+                    sourceText,
+                    libraryManager,
+                    listOf("C" to type),
+                )
+            assertNotNull(fn, "expected success but got: ${error?.result}")
+            val spec = fn!!.operand[0].operandTypeSpecifier
+            assertTrue(spec is org.hl7.elm.r1.ChoiceTypeSpecifier)
+            val choices = (spec as org.hl7.elm.r1.ChoiceTypeSpecifier).choice
+            assertEquals(2, choices.size)
+            choices.forEach { c ->
+                assertTrue(c is org.hl7.elm.r1.TupleTypeSpecifier)
+                val elements = (c as org.hl7.elm.r1.TupleTypeSpecifier).element
+                assertEquals(listOf("id", "values", "authoredOn"), elements.map { it.name })
+                assertTrue(elements[1].elementType is org.hl7.elm.r1.ListTypeSpecifier)
+                assertNotNull(elements[2].elementType)
+            }
+        }
+
+        @Test
+        fun `nested tuple types are normalized for the parameter declaration`() {
+            val sourceText = "library TestLib\n\n"
+            val (fn, error) =
+                helper.evaluateAdHocExpression(
+                    "T",
+                    sourceText,
+                    libraryManager,
+                    listOf("T" to "tuple{outer:tuple{id:System.String}}"),
+                )
+            assertNotNull(fn, "expected success but got: ${error?.result}")
+            val spec = fn!!.operand[0].operandTypeSpecifier
+            assertTrue(spec is org.hl7.elm.r1.TupleTypeSpecifier)
+            val outer = (spec as org.hl7.elm.r1.TupleTypeSpecifier).element
+            assertEquals(1, outer.size)
+            assertEquals("outer", outer[0].name)
+            val inner = outer[0].elementType
+            assertTrue(inner is org.hl7.elm.r1.TupleTypeSpecifier)
+            val innerElements = (inner as org.hl7.elm.r1.TupleTypeSpecifier).element
+            assertEquals(1, innerElements.size)
+            assertEquals("id", innerElements[0].name)
+            assertTrue(innerElements[0].elementType is org.hl7.elm.r1.NamedTypeSpecifier)
         }
 
         @Test
