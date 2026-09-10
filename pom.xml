@@ -20,8 +20,8 @@
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <cqf-fhir-cr.version>4.8.0</cqf-fhir-cr.version>
-        <cql.version>4.9.0</cql.version>
+        <cqf-fhir-cr.version>4.11.0</cqf-fhir-cr.version>
+        <cql.version>5.2.0</cql.version>
         <logback.version>1.2.13</logback.version>
         <slf4j.version>1.7.36</slf4j.version>
         <picocli.version>4.6.1</picocli.version>
@@ -173,10 +173,10 @@
             </dependency>
 
             <!--
-                Pin commons-compress to 1.27.1: fhir-utilities:6.7.9 (from HAPI FHIR) is
+                Pin commons-compress to 1.27.1: fhir-utilities:6.9.4.1 (from HAPI FHIR) is
                 compiled against 1.27.1 (its parent BOM) and calls TarArchiveInputStream
                 .getNextEntry() expecting a TarArchiveEntry covariant return that only
-                exists in 1.27.1+. Without this pin, cqf-fhir-npm:4.8.0 drags in 1.24.0,
+                exists in 1.27.1+. Without this pin, cqf-fhir-npm:4.9.0 drags in 1.24.0,
                 which is missing that method signature and causes NoSuchMethodError.
             -->
             <dependency>

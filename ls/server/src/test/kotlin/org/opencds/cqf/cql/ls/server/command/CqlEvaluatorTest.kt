@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.ClassInstance
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
@@ -130,6 +131,138 @@ class CqlEvaluatorTest {
     }
 
     // -------------------------------------------------------------------------
+    // formatValue — engine v5 value types
+    // -------------------------------------------------------------------------
+
+    private fun fhirClassInstance(
+        type: String,
+        elements: Map<String, Any?>,
+    ): ClassInstance {
+        val values =
+            elements.mapValues { (_, v) ->
+                when (v) {
+                    is org.opencds.cqf.cql.engine.runtime.Value -> v
+                    is String -> org.opencds.cqf.cql.engine.runtime.String(v)
+                    else -> org.opencds.cqf.cql.engine.runtime.String(v.toString())
+                }
+            }
+        return ClassInstance(
+            javax.xml.namespace.QName("http://hl7.org/fhir", type),
+            values.toMutableMap(),
+        )
+    }
+
+    @Test
+    fun `formatValue renders FHIR resource ClassInstance as compact Type with id`() {
+        val serviceRequest =
+            fhirClassInstance(
+                "ServiceRequest",
+                mapOf("id" to fhirClassInstance("id", mapOf("value" to "4325fd44-3a33-4d8c"))),
+            )
+        assertEquals("ServiceRequest(id=4325fd44-3a33-4d8c)", formatValue(serviceRequest))
+    }
+
+    @Test
+    fun `formatValue renders FHIR datatype ClassInstance as compact Type#code`() {
+        val coding =
+            fhirClassInstance(
+                "Coding",
+                mapOf(
+                    "code" to fhirClassInstance("code", mapOf("value" to "2054-5")),
+                    "system" to fhirClassInstance("uri", mapOf("value" to "2.16.840.1.113883.6.238")),
+                ),
+            )
+        assertEquals("Coding#2054-5", formatValue(coding))
+    }
+
+    @Test
+    fun `formatValue renders FHIR primitive ClassInstance as compact Type#value`() {
+        val str = fhirClassInstance("string", mapOf("value" to "Not Hispanic or Latino"))
+        assertEquals("string#Not Hispanic or Latino", formatValue(str))
+    }
+
+    @Test
+    fun `formatValue renders list of FHIR resources compactly`() {
+        val resource =
+            fhirClassInstance(
+                "Condition",
+                mapOf("id" to fhirClassInstance("id", mapOf("value" to "cond-1"))),
+            )
+        assertEquals("[Condition(id=cond-1)]", formatValue(org.opencds.cqf.cql.engine.runtime.List(listOf(resource))))
+    }
+
+    @Test
+    fun `formatValue renders Tuple with full recursion and unwraps strings`() {
+        val tuple = org.opencds.cqf.cql.engine.runtime.Tuple()
+        tuple.elements["name"] = org.opencds.cqf.cql.engine.runtime.String("Annie")
+        tuple.elements["age"] = org.opencds.cqf.cql.engine.runtime.Integer(42)
+        assertEquals("Tuple {\n  name: Annie,\n  age: 42\n}", formatValue(tuple))
+    }
+
+    @Test
+    fun `formatValue unwraps runtime String without quotes`() {
+        assertEquals("hello", formatValue(org.opencds.cqf.cql.engine.runtime.String("hello")))
+    }
+
+    @Test
+    fun `formatValue strips at-prefix from DateTime`() {
+        val dt = org.opencds.cqf.cql.engine.runtime.DateTime("2026-09-01T08:00:00.000", java.time.ZoneOffset.UTC)
+        val rendered = formatValue(dt)
+        assertFalse(rendered.startsWith("@"), "DateTime must not render with @ prefix, got: $rendered")
+        assertTrue(rendered.contains("2026-09-01T08"), "Expected 2026-09-01T08 in render, got: $rendered")
+    }
+
+    @Test
+    fun `formatValue renders Interval boundaries without at-prefix`() {
+        val low = org.opencds.cqf.cql.engine.runtime.DateTime("2026-09-01T08:00:00.000", java.time.ZoneOffset.UTC)
+        val high = org.opencds.cqf.cql.engine.runtime.DateTime("2026-09-30T08:00:00.000", java.time.ZoneOffset.UTC)
+        val interval = org.opencds.cqf.cql.engine.runtime.Interval(low, true, high, false)
+        val rendered = formatValue(interval)
+        assertFalse(rendered.contains("@"), "Interval boundaries must not render with @ prefix, got: $rendered")
+        assertTrue(rendered.startsWith("[") && rendered.endsWith(")"), "Unexpected interval brackets, got: $rendered")
+        assertTrue(rendered.contains("2026-09-01T08"), "Expected low boundary in render, got: $rendered")
+    }
+
+    @Test
+    fun `formatValue renders runtime Quantity via its toString`() {
+        val q = org.opencds.cqf.cql.engine.runtime.Quantity()
+        q.value = java.math.BigDecimal("5.4")
+        q.unit = "mg"
+        assertEquals("5.4 'mg'", formatValue(q))
+    }
+
+    @Test
+    fun `evaluate renders tuple define value compactly end-to-end`() {
+        val request =
+            ExecuteCqlRequest(
+                fhirVersion = "R4",
+                rootDir = null,
+                optionsPath = null,
+                libraries =
+                    listOf(
+                        LibraryRequest(
+                            libraryName = "TupleResult",
+                            libraryUri = "file:///any/path",
+                            libraryVersion = null,
+                            terminologyUri = null,
+                            model = null,
+                            context = null,
+                            parameters = emptyList(),
+                        ),
+                    ),
+            )
+        val response = CqlEvaluator.evaluate(request, contentService, igContextManager, libraryResolutionManager)
+        val expressions = response.results[0].expressions.associateBy { it.name }
+        val tuple = expressions["LongTuple"]?.value
+        assertNotNull(tuple, "Expected LongTuple expression result")
+        assertEquals(
+            "Tuple {\n  A: 1,\n  B: hello,\n  C: true,\n  D: 1.0\n}",
+            tuple,
+            "Tuple must render compact (no @, no quotes). Got: $tuple",
+        )
+    }
+
+    // -------------------------------------------------------------------------
     // coerceDateLiterals tests
     // -------------------------------------------------------------------------
 
@@ -197,7 +330,7 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals("HMO", result!!["Plan"].toString())
+        assertEquals("HMO", (result!!["Plan"] as? org.opencds.cqf.cql.engine.runtime.String)?.value)
     }
 
     @Test
@@ -232,9 +365,9 @@ class CqlEvaluatorTest {
             )
         val result = parseParameterValues(r4Context, defaultSettings, params)
         assertNotNull(result)
-        assertEquals("1", result!!["A"].toString())
-        assertEquals("hello", result["B"].toString())
-        assertEquals("false", result["C"].toString())
+        assertEquals("1", (result!!["A"] as? org.opencds.cqf.cql.engine.runtime.Integer)?.value?.toString())
+        assertEquals("hello", (result["B"] as? org.opencds.cqf.cql.engine.runtime.String)?.value)
+        assertEquals("false", (result["C"] as? org.opencds.cqf.cql.engine.runtime.Boolean)?.value?.toString())
     }
 
     @Test

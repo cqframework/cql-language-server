@@ -41,6 +41,14 @@ open class IgContextManager(private val contentService: ContentService) {
     // partial-npm fallback can read sourceIg.dependsOn without re-parsing ig.ini.
     private val cachedIgContext = ConcurrentHashMap<URI, Optional<IGContext>>()
 
+    // Monotonic per-root counter, bumped whenever this root's npm/IG context is cleared (e.g. an
+    // ig.ini change). Lets other caches keyed by URI (e.g. CqlCompilationManager's compile cache)
+    // detect "npm/IG state changed since I last compiled" without CqlCompilationManager needing
+    // its own subscription to ig.ini file-change events.
+    private val generations = ConcurrentHashMap<URI, Int>()
+
+    fun generation(uri: URI): Int = generations.getOrDefault(Uris.getHead(uri), 0)
+
     fun getContext(uri: URI): NpmProcessor? {
         val root = Uris.getHead(uri)
         return cachedContext.computeIfAbsent(root) { readContext(it) }.orElse(null)
@@ -50,6 +58,7 @@ open class IgContextManager(private val contentService: ContentService) {
         val root = Uris.getHead(uri)
         cachedContext.remove(root)
         cachedIgContext.remove(root)
+        generations.merge(root, 1, Int::plus)
     }
 
     protected fun readContext(rootUri: URI): Optional<NpmProcessor> {

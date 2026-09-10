@@ -1,5 +1,6 @@
 package org.opencds.cqf.cql.ls.server.provider
 
+import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.model.CompiledLibrary
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.LocationLink
@@ -22,6 +23,7 @@ import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.manager.LibrarySourceResolver
 import org.opencds.cqf.cql.ls.server.utility.TrackBacks
 import org.opencds.cqf.cql.ls.server.visitor.DefinitionTrackBackVisitor
 import org.slf4j.LoggerFactory
@@ -41,7 +43,7 @@ class DefinitionProvider(
         val library = compiler.library ?: return emptyList()
         val compiledLibrary = compiler.compiledLibrary ?: return emptyList()
         val elm = DefinitionTrackBackVisitor().visitLibrary(library, params.position) ?: return emptyList()
-        return resolveDefinition(elm, uri, library, compiledLibrary)
+        return resolveDefinition(elm, uri, library, compiledLibrary, compiler)
     }
 
     private fun resolveDefinition(
@@ -49,6 +51,7 @@ class DefinitionProvider(
         uri: URI,
         library: Library,
         compiledLibrary: CompiledLibrary,
+        compiler: CqlCompiler,
     ): List<LocationLink> {
         val root = Uris.getHead(uri)
         return when (refElm) {
@@ -59,7 +62,7 @@ class DefinitionProvider(
                     val defs = compiledLibrary.resolveFunctionRef(name)
                     defs.mapNotNull { locationLinkFromElements(refElm, it, uri) }
                 } else {
-                    val targetUri = resolveLibraryAlias(libAlias, library, root) ?: return emptyList()
+                    val targetUri = resolveLibraryAlias(libAlias, library, root, compiler) ?: return emptyList()
                     val targetCompiled = compilationManager.compile(targetUri) ?: return emptyList()
                     val targetCompiledLib = targetCompiled.compiledLibrary ?: return emptyList()
                     targetCompiledLib.resolveFunctionRef(name).mapNotNull { locationLinkFromElements(refElm, it, targetUri) }
@@ -72,7 +75,7 @@ class DefinitionProvider(
                     val def = compiledLibrary.resolveExpressionRef(name) ?: return emptyList()
                     listOfNotNull(locationLinkFromElements(refElm, def, uri))
                 } else {
-                    val targetUri = resolveLibraryAlias(libAlias, library, root) ?: return emptyList()
+                    val targetUri = resolveLibraryAlias(libAlias, library, root, compiler) ?: return emptyList()
                     val targetCompiled = compilationManager.compile(targetUri) ?: return emptyList()
                     val targetCompiledLib = targetCompiled.compiledLibrary ?: return emptyList()
                     val def = targetCompiledLib.resolveExpressionRef(name) ?: return emptyList()
@@ -86,7 +89,7 @@ class DefinitionProvider(
                     val def = compiledLibrary.resolveValueSetRef(name) ?: return emptyList()
                     listOfNotNull(locationLinkFromElements(refElm, def, uri))
                 } else {
-                    val targetUri = resolveLibraryAlias(libAlias, library, root) ?: return emptyList()
+                    val targetUri = resolveLibraryAlias(libAlias, library, root, compiler) ?: return emptyList()
                     val targetCompiled = compilationManager.compile(targetUri) ?: return emptyList()
                     val targetCompiledLib = targetCompiled.compiledLibrary ?: return emptyList()
                     val def = targetCompiledLib.resolveValueSetRef(name) ?: return emptyList()
@@ -100,7 +103,7 @@ class DefinitionProvider(
                     val def = compiledLibrary.resolveCodeRef(name) ?: return emptyList()
                     listOfNotNull(locationLinkFromElements(refElm, def, uri))
                 } else {
-                    val targetUri = resolveLibraryAlias(libAlias, library, root) ?: return emptyList()
+                    val targetUri = resolveLibraryAlias(libAlias, library, root, compiler) ?: return emptyList()
                     val targetCompiled = compilationManager.compile(targetUri) ?: return emptyList()
                     val targetCompiledLib = targetCompiled.compiledLibrary ?: return emptyList()
                     val def = targetCompiledLib.resolveCodeRef(name) ?: return emptyList()
@@ -114,7 +117,7 @@ class DefinitionProvider(
                     val def = compiledLibrary.resolveConceptRef(name) ?: return emptyList()
                     listOfNotNull(locationLinkFromElements(refElm, def, uri))
                 } else {
-                    val targetUri = resolveLibraryAlias(libAlias, library, root) ?: return emptyList()
+                    val targetUri = resolveLibraryAlias(libAlias, library, root, compiler) ?: return emptyList()
                     val targetCompiled = compilationManager.compile(targetUri) ?: return emptyList()
                     val targetCompiledLib = targetCompiled.compiledLibrary ?: return emptyList()
                     val def = targetCompiledLib.resolveConceptRef(name) ?: return emptyList()
@@ -128,7 +131,7 @@ class DefinitionProvider(
                     val def = compiledLibrary.resolveCodeSystemRef(name) ?: return emptyList()
                     listOfNotNull(locationLinkFromElements(refElm, def, uri))
                 } else {
-                    val targetUri = resolveLibraryAlias(libAlias, library, root) ?: return emptyList()
+                    val targetUri = resolveLibraryAlias(libAlias, library, root, compiler) ?: return emptyList()
                     val targetCompiled = compilationManager.compile(targetUri) ?: return emptyList()
                     val targetCompiledLib = targetCompiled.compiledLibrary ?: return emptyList()
                     val def = targetCompiledLib.resolveCodeSystemRef(name) ?: return emptyList()
@@ -144,7 +147,9 @@ class DefinitionProvider(
                     }
                 val top = Range(Position(0, 0), Position(0, 0))
                 val originRange = refElm.locator?.let { TrackBacks.toRange(it) }
-                contentService.locate(root, identifier).map { targetUri ->
+                val locatedUris = contentService.locate(root, identifier)
+                val targets = locatedUris.ifEmpty { listOfNotNull(resolveVirtualLibraryUri(identifier, compiler)) }
+                targets.map { targetUri ->
                     LocationLink().apply {
                         originSelectionRange = originRange
                         this.targetUri = targetUri.toString()
@@ -187,6 +192,7 @@ class DefinitionProvider(
         alias: String,
         library: Library,
         root: URI,
+        compiler: CqlCompiler,
     ): URI? {
         val includeDef =
             library.includes?.def?.firstOrNull { it.localIdentifier == alias } ?: run {
@@ -199,6 +205,28 @@ class DefinitionProvider(
                 version = includeDef.version
             }
         return contentService.locate(root, identifier).firstOrNull()
+            ?: resolveVirtualLibraryUri(identifier, compiler)
+    }
+
+    /**
+     * Fallback for libraries with no workspace file (bundled, e.g. FHIRHelpers, or
+     * npm-installed, e.g. FHIRCommon): resolve source text via the compiler's own
+     * [org.cqframework.cql.cql2elm.LibraryManager] provider chain (the same chain that
+     * successfully compiled this library in the first place — see [LibrarySourceResolver]),
+     * compile it into a synthetic `cql-virtual:` URI, and return that URI. Because
+     * [CqlCompilationManager.compile] caches by URI regardless of whether the URI is a real,
+     * readable file, every downstream consumer (`resolveFunctionRef`, `locationLinkFromElements`,
+     * etc.) keeps working unchanged — they only ever deal in `URI` + `CompiledLibrary`.
+     */
+    private fun resolveVirtualLibraryUri(
+        identifier: VersionedIdentifier,
+        compiler: CqlCompiler,
+    ): URI? {
+        val sourceText = LibrarySourceResolver.resolve(compiler.libraryManager, identifier) ?: return null
+        val bareId = identifier.id?.substringAfterLast('/') ?: return null
+        val virtualUri = URI.create("cql-virtual:///$bareId-${identifier.version ?: "unversioned"}.cql")
+        compilationManager.compile(virtualUri, sourceText.byteInputStream())
+        return virtualUri
     }
 
     private fun locationLinkFromElements(
