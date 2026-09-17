@@ -415,7 +415,7 @@ object CqlEvaluator {
         if (optionsPath != null) {
             val op = Path(Paths.get(Uris.parseOrNull(optionsPath)!!).toString())
             val translatorOptions = CqlTranslatorOptions.fromFile(op)
-            cqlOptions.setCqlCompilerOptions(translatorOptions.cqlCompilerOptions)
+            translatorOptions.cqlCompilerOptions?.let { cqlOptions.cqlCompilerOptions = it }
         }
         return cqlOptions
     }
@@ -439,11 +439,11 @@ object CqlEvaluator {
                 setProfileMode(PROFILE_MODE.DECLARED)
             }
 
-        return EvaluationSettings.getDefault().apply {
-            setCqlOptions(cqlOptions)
-            setTerminologySettings(terminologySettings)
-            setRetrieveSettings(retrieveSettings)
-            setNpmProcessor(npmProcessor)
+        return EvaluationSettings.default.apply {
+            this.cqlOptions = cqlOptions
+            this.terminologySettings = terminologySettings
+            this.retrieveSettings = retrieveSettings
+            this.npmProcessor = npmProcessor
         }
     }
 
@@ -493,7 +493,7 @@ object CqlEvaluator {
 
                 val repository = createRepository(fhirContext, terminologyRepo, modelPath)
                 if (detailedTracing) {
-                    evaluationSettings.cqlOptions.cqlEngineOptions.setDetailedTracingEnabled(true)
+                    evaluationSettings.cqlOptions.cqlEngineOptions.isDetailedTracingEnabled = true
                 }
                 val engine = Engines.forRepository(repository, evaluationSettings)
 

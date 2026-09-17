@@ -82,7 +82,7 @@ class CqlEvaluatorTest {
     }
 
     private val r4Context: FhirContext = FhirContext.forR4Cached()
-    private val defaultSettings: EvaluationSettings = EvaluationSettings.getDefault()
+    private val defaultSettings: EvaluationSettings = EvaluationSettings.default
 
     // -------------------------------------------------------------------------
     // formatValue tests
