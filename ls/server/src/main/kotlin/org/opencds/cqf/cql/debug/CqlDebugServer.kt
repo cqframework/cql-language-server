@@ -55,7 +55,15 @@ import org.hl7.elm.r1.ParameterDef
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
+import org.hl7.fhir.instance.model.api.IBaseResource
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.fhir.model.FhirModelResolver
+import org.opencds.cqf.cql.engine.runtime.Value
+import org.opencds.cqf.cql.engine.runtime.toCqlBoolean
+import org.opencds.cqf.cql.engine.runtime.toCqlDecimal
+import org.opencds.cqf.cql.engine.runtime.toCqlInteger
+import org.opencds.cqf.cql.engine.runtime.toCqlLong
+import org.opencds.cqf.cql.engine.runtime.toCqlString
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.command.ContextRequest
@@ -68,10 +76,12 @@ import org.opencds.cqf.cql.ls.server.command.ParameterRequest
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.ls.server.manager.LibrarySourceResolver
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
+import org.opencds.cqf.fhir.utility.model.FhirModelResolverCache
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
@@ -81,6 +91,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.math.BigDecimal as JavaBigDecimal
 
 open class CqlDebugServer(
     private val compilationManager: CqlCompilationManager,
@@ -90,12 +101,18 @@ open class CqlDebugServer(
 ) : IDebugProtocolServer, IDebugProtocolClientAware {
     companion object {
         private val log = LoggerFactory.getLogger(CqlDebugServer::class.java)
+
+        /** Debug Console contexts that should attempt ad-hoc CQL compilation. */
+        private val AD_HOC_EVAL_CONTEXTS = setOf("repl", "watch")
+
+        /** Maximum seconds to wait for an ad-hoc evaluation to complete on the engine thread. */
+        private const val AD_HOC_EVAL_TIMEOUT_SECONDS = 10L
     }
 
     // Backing fields shared with varResolver so inline code and helpers use the same maps.
     private val fhirContext: FhirContext = FhirContext.forR4()
-    private val varRefs = mutableMapOf<Int, Any>()
-    private val varRefTypes = mutableMapOf<Int, String>()
+    private val varRefs = ConcurrentHashMap<Int, Any>()
+    private val varRefTypes = ConcurrentHashMap<Int, String>()
     private var nextVarRef = 1000
 
     protected val varResolver =
@@ -103,7 +120,7 @@ open class CqlDebugServer(
             fhirContext = fhirContext,
             varRefs = varRefs,
             varRefTypes = varRefTypes,
-            nextVarRef = nextVarRef,
+            nextVarRef = AtomicInteger(nextVarRef),
         )
     protected val breakpointManager: BreakpointManager = BreakpointManager(contentService)
     protected val evaluateHelper: EvaluateHelper = EvaluateHelper(varResolver, compilationManager)
@@ -181,7 +198,10 @@ open class CqlDebugServer(
     protected var launchParameters: List<ParameterRequestData>? = null
 
     // >= 100000 reserved for library group refs (below that is the FHIR/Gson band >= 1000)
+    // Refs are never reset during the life of the server instance — they only grow, so
+    // parameters and defines group refs never collide regardless of query order.
     private var nextLibraryGroupRef = 100000
+    private val libraryGroupRefs = mutableMapOf<Int, Pair<String, RuntimeValueCategory>>()
 
     override fun connect(client: IDebugProtocolClient) {
         this.client.complete(client)
@@ -820,9 +840,9 @@ open class CqlDebugServer(
 
             // variablesReference == 2 is the Parameters scope container
             if (args.variablesReference == 2) {
-                // Reset library group refs for consistent tree rebuilding
-                nextLibraryGroupRef = 100000
-                libraryRefToName.clear()
+                // Remove stale parameter group entries (but not defines, which may be
+                // expanded in the same pause). Refs grow monotonically across scopes.
+                libraryGroupRefs.entries.removeIf { it.value.second == RuntimeValueCategory.PARAMETER }
 
                 val groups = handler.runtimeRegistry.getParametersByLibrary()
                 if (groups.isNotEmpty()) {
@@ -840,36 +860,48 @@ open class CqlDebugServer(
 
             // Library group expansion (positive refs >= 100000)
             if (args.variablesReference >= 100000) {
-                val libraryName = getLibraryNameForRef(args.variablesReference)
-                if (libraryName != null) {
-                    val gson = Gson()
-                    val libParams = handler.runtimeRegistry.getParametersByLibrary()[libraryName]
-                    if (libParams != null) {
-                        for (param in libParams.sortedBy { it.name }) {
-                            val paramType =
-                                param.type
-                                    ?: findParameterMetadata(libraryName, param.name)?.type
-                            vars.add(
-                                Variable().also { v ->
-                                    v.name = param.name
-                                    v.value = formatVariableValue(param.value, gson)
-                                    v.type = paramType
-                                    v.variablesReference = registerIfExpandable(param.value)
-                                },
-                            )
+                val entry = libraryGroupRefs[args.variablesReference]
+                if (entry != null) {
+                    val (libraryName, category) = entry
+                    when (category) {
+                        RuntimeValueCategory.PARAMETER -> {
+                            val libParams = handler.runtimeRegistry.getParametersByLibrary()[libraryName]
+                            if (libParams != null) {
+                                for (param in libParams.sortedBy { it.name }) {
+                                    val paramType =
+                                        param.type
+                                            ?: findParameterMetadata(libraryName, param.name)?.type
+                                    vars.add(resourceAwareVariable(param.name, param.value, paramType))
+                                }
+                            } else {
+                                // No runtime values yet - show metadata defaults
+                                parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
+                                    vars.add(
+                                        Variable().also { v ->
+                                            v.name = metadata.name
+                                            v.value = metadata.defaultValue ?: "(no default)"
+                                            v.type = metadata.type
+                                            v.variablesReference = 0
+                                        },
+                                    )
+                                }
+                            }
                         }
-                    } else {
-                        // No runtime values yet - show metadata defaults
-                        parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
-                            vars.add(
-                                Variable().also { v ->
-                                    v.name = metadata.name
-                                    v.value = metadata.defaultValue ?: "(no default)"
-                                    v.type = metadata.type
-                                    v.variablesReference = 0
-                                },
-                            )
+                        RuntimeValueCategory.DEFINE -> {
+                            // No metadata fallback: a define is either evaluated (present in the
+                            // registry) or not shown yet — there's no static default to display.
+                            handler.runtimeRegistry.getDefinesByLibrary()[libraryName]?.sortedBy { it.name }
+                                ?.forEach { d ->
+                                    val dType =
+                                        if (d.libraryName != null) {
+                                            variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
+                                        } else {
+                                            variableTypeMap[d.name]
+                                        }
+                                    vars.add(resourceAwareVariable(d.name, d.value, dType))
+                                }
                         }
+                        else -> {}
                     }
                 }
                 return CompletableFuture.completedFuture(
@@ -895,8 +927,19 @@ open class CqlDebugServer(
                 )
             }
 
+            // variablesReference == 3 is the Resolved Defines scope container
+            if (args.variablesReference == 3) {
+                // Remove stale define group entries (but not parameters). Refs grow
+                // monotonically across scopes regardless of query order.
+                libraryGroupRefs.entries.removeIf { it.value.second == RuntimeValueCategory.DEFINE }
+
+                val groups = handler.runtimeRegistry.getDefinesByLibrary()
+                return CompletableFuture.completedFuture(
+                    VariablesResponse().also { it.variables = buildLibraryGroupVariables(groups, "define").toTypedArray() },
+                )
+            }
+
             if (state != null) {
-                val gson = Gson()
                 val registry = handler.runtimeRegistry
 
                 if (args.variablesReference == 1) {
@@ -904,43 +947,11 @@ open class CqlDebugServer(
                     val frameLibId = resolveFrameLibraryId()
                     for (sv in registry.getStackVariables().sortedBy { it.name }) {
                         val svType = variableTypeMap["$frameLibId.${sv.name}"] ?: variableTypeMap[sv.name]
-                        vars.add(
-                            Variable().also {
-                                it.name = sv.name
-                                it.value = formatVariableValue(sv.value, gson)
-                                it.type = svType
-                                it.variablesReference = registerIfExpandable(sv.value, svType)
-                            },
-                        )
+                        vars.add(resourceAwareVariable(sv.name, sv.value, svType))
                     }
                     for (cr in registry.getContextResources().sortedBy { it.name }) {
                         val crType = variableTypeMap["$frameLibId.${cr.name}"] ?: variableTypeMap[cr.name]
-                        vars.add(
-                            Variable().also {
-                                it.name = cr.name
-                                it.value = formatVariableValue(cr.value, gson)
-                                it.type = crType
-                                it.variablesReference = registerIfExpandable(cr.value, crType)
-                            },
-                        )
-                    }
-                }
-                if (args.variablesReference == 3) {
-                    for (d in registry.getDefines().sortedBy { it.name }) {
-                        val dType =
-                            if (d.libraryName != null) {
-                                variableTypeMap["${d.libraryName}.${d.name}"] ?: variableTypeMap[d.name]
-                            } else {
-                                variableTypeMap[d.name]
-                            }
-                        vars.add(
-                            Variable().also {
-                                it.name = d.name
-                                it.value = formatVariableValue(d.value, gson)
-                                it.type = dType
-                                it.variablesReference = registerIfExpandable(d.value, dType)
-                            },
-                        )
+                        vars.add(resourceAwareVariable(cr.name, cr.value, crType))
                     }
                 }
             }
@@ -951,9 +962,9 @@ open class CqlDebugServer(
 
         // Non-streaming mode: variablesReference == 2 shows grouped parameter metadata
         if (args.variablesReference == 2) {
-            // Reset library group refs for consistent tree rebuilding
-            nextLibraryGroupRef = 100000
-            libraryRefToName.clear()
+            // Remove stale parameter group entries (non-streaming metadata mode only
+            // ever has parameters, so this is safe — refs keep growing monotonic).
+            libraryGroupRefs.entries.removeIf { it.value.second == RuntimeValueCategory.PARAMETER }
 
             val groups = parameterMetadata.mapValues { (_, metadata) -> metadata.map { it.name to null } }
             return CompletableFuture.completedFuture(
@@ -963,8 +974,9 @@ open class CqlDebugServer(
 
         // Library group expansion in non-streaming mode (positive refs >= 100000)
         if (args.variablesReference >= 100000) {
-            val libraryName = getLibraryNameForRef(args.variablesReference)
-            if (libraryName != null) {
+            val entry = libraryGroupRefs[args.variablesReference]
+            if (entry != null && entry.second == RuntimeValueCategory.PARAMETER) {
+                val libraryName = entry.first
                 parameterMetadata[libraryName]?.sortedBy { it.name }?.forEach { metadata ->
                     vars.add(
                         Variable().also { v ->
@@ -1013,13 +1025,18 @@ open class CqlDebugServer(
         }
     }
 
-    private fun buildLibraryGroupVariables(groups: Map<String, List<RuntimeValue>>): List<Variable> {
-        return groups.toSortedMap().map { (library, params) ->
+    private fun buildLibraryGroupVariables(
+        groups: Map<String, List<RuntimeValue>>,
+        kindLabel: String = "parameter",
+    ): List<Variable> {
+        return groups.toSortedMap().map { (library, items) ->
             val ref = nextLibraryGroupRef++
-            libraryRefToName["ref_$ref"] = library
+            // groupBy never produces empty value lists in practice; the firstOrNull guard
+            // covers the reflective unit tests that probe the method with empty lists.
+            libraryGroupRefs[ref] = library to (items.firstOrNull()?.category ?: RuntimeValueCategory.PARAMETER)
             Variable().also { v ->
                 v.name = library
-                v.value = "${params.size} parameter(s)"
+                v.value = "${items.size} $kindLabel(s)"
                 v.variablesReference = ref
                 v.type = null
             }
@@ -1029,7 +1046,7 @@ open class CqlDebugServer(
     private fun buildMetadataLibraryGroupVariables(groups: Map<String, List<Pair<String, Any?>>>): List<Variable> {
         return groups.toSortedMap().map { (library, _) ->
             val ref = nextLibraryGroupRef++
-            libraryRefToName["ref_$ref"] = library
+            libraryGroupRefs[ref] = library to RuntimeValueCategory.PARAMETER
             val paramCount = groups[library]?.size ?: 0
             Variable().also { v ->
                 v.name = library
@@ -1039,15 +1056,6 @@ open class CqlDebugServer(
             }
         }
     }
-
-    private fun getLibraryNameForRef(ref: Int): String? {
-        // Reconstruct library name from ref by looking up in parameterMetadata keys
-        // We use a simple approach: store ref->libraryName mapping
-        val key = "ref_$ref"
-        return libraryRefToName[key]
-    }
-
-    private val libraryRefToName = mutableMapOf<String, String>()
 
     private fun findParameterMetadata(
         libraryName: String,
@@ -1063,17 +1071,41 @@ open class CqlDebugServer(
         val handler = streamingHandler
         if (handler != null) {
             return CompletableFuture.supplyAsync {
+                val registry = handler.runtimeRegistry
                 val state = handler.lastPausedState
+                log.debug("evaluate: entry expression={} context={} statePresent={}", args.expression, args.context, state != null)
                 if (state != null) {
-                    val gson = Gson()
-                    val registry = handler.runtimeRegistry
-
                     // Unified registry lookup (stack vars → defines → context resources → parameters)
                     val registryResult = registry.find(args.expression)
                     if (registryResult != null) {
+                        log.debug(
+                            "evaluate: registry hit expression={} valueClass={} category={}",
+                            args.expression,
+                            registryResult.value?.javaClass?.simpleName,
+                            registryResult.category,
+                        )
                         return@supplyAsync EvaluateResponse().also {
-                            it.result = formatVariableValue(registryResult.value, gson)
+                            it.result = formatVariableValue(registryResult.value)
                             it.variablesReference = registerIfExpandable(registryResult.value)
+                        }
+                    }
+                    log.debug("evaluate: registry miss expression={}", args.expression)
+
+                    // Quoted/delimited identifiers (e.g. "IndexPCP") are a valid CQL form — the
+                    // quotes are delimiters, not part of the name, so look up the inner name exactly.
+                    val quotedRootResult =
+                        varResolver.parseIdentifier(args.expression)
+                            ?.takeIf { it.rootDelimiter != null && it.propertySegments.isEmpty() }
+                            ?.let { parsed -> registry.find(parsed.rootName) }
+                    if (quotedRootResult != null) {
+                        log.debug(
+                            "evaluate: quoted registry hit expression={} innerName={}",
+                            args.expression,
+                            quotedRootResult.value?.javaClass?.simpleName,
+                        )
+                        return@supplyAsync EvaluateResponse().also {
+                            it.result = formatVariableValue(quotedRootResult.value)
+                            it.variablesReference = registerIfExpandable(quotedRootResult.value)
                         }
                     }
 
@@ -1098,11 +1130,17 @@ open class CqlDebugServer(
                         state.cache.setExpressionCaching(true)
                         val cachedResult = state.cache.getCachedExpression(libId, args.expression)
                         if (cachedResult != null) {
+                            log.debug(
+                                "evaluate: cache hit expression={} valueClass={}",
+                                args.expression,
+                                cachedResult.value?.javaClass?.simpleName,
+                            )
                             return@supplyAsync EvaluateResponse().also {
-                                it.result = formatVariableValue(cachedResult.value, gson)
+                                it.result = formatVariableValue(cachedResult.value)
                                 it.variablesReference = registerIfExpandable(cachedResult.value)
                             }
                         }
+                        log.debug("evaluate: cache miss expression={} libId={}", args.expression, libId)
                     }
 
                     // Handle @line:col position-based hover
@@ -1117,7 +1155,7 @@ open class CqlDebugServer(
                                 if (parseTree != null && state != null) {
                                     val hoverPos = Position(line, col)
                                     val category = CursorClassifier.classify(parseTree, hoverPos)
-                                    val classifiedResult = resolveFromCursorCategory(category, state, handler, gson)
+                                    val classifiedResult = resolveFromCursorCategory(category, state, handler)
                                     if (classifiedResult != null) {
                                         return@supplyAsync classifiedResult
                                     }
@@ -1125,14 +1163,14 @@ open class CqlDebugServer(
                                 val value = handler.findValueAtPosition(line, col)
                                 if (value != null) {
                                     return@supplyAsync EvaluateResponse().also {
-                                        it.result = formatVariableValue(value, gson)
+                                        it.result = formatVariableValue(value)
                                         it.variablesReference = registerIfExpandable(value)
                                     }
                                 }
                                 // Check if paused on a Property element - try to resolve its value
                                 val pausedElm = handler.lastPausedElm
                                 if (pausedElm is Property && state != null) {
-                                    val propertyResult = resolvePropertyValue(pausedElm, state, gson)
+                                    val propertyResult = resolvePropertyValue(pausedElm, state)
                                     if (propertyResult != null) {
                                         return@supplyAsync EvaluateResponse().also {
                                             it.result = propertyResult.displayString
@@ -1152,9 +1190,102 @@ open class CqlDebugServer(
                         }
                     }
                 }
+                // Dotted property path on a registered runtime value (e.g. IndexPCP.period)
+                val dottedResult = evaluateHelper.resolveDottedExpression(args.expression, registry)
+                if (dottedResult != null) return@supplyAsync dottedResult
                 // VarRefs tree fallback for expanded FHIR/list child variables (e.g. name[0], given[0])
                 val varRefResult = findInVarRefs(args.expression)
                 if (varRefResult != null) return@supplyAsync varRefResult
+                // Identifier-shaped miss: suggest the properly-cased name or report "doesn't exist"
+                val missingResult = evaluateHelper.resolveMissingIdentifier(args.expression, registry)
+                if (missingResult != null) {
+                    log.debug(
+                        "evaluate: missing-identifier response expression={} result='{}'",
+                        args.expression,
+                        missingResult.result,
+                    )
+                    return@supplyAsync missingResult
+                }
+                // Ad-hoc CQL expression compilation and evaluation (repl/watch only).
+                // Attempts a real compile + engine evaluation on the parked thread for
+                // expressions that aren't simple name/property lookups (e.g. comparisons,
+                // arithmetic, function calls). Only when every cheap lookup has failed.
+                if (args.context in AD_HOC_EVAL_CONTEXTS) {
+                    val libManager = handler.libraryManager
+                    if (libManager != null) {
+                        // Use the library the debugger is currently paused inside (which may be
+                        // an included library like FHIRCommon.cql) so its top-level declarations
+                        // (code definitions, value sets, etc.) are in scope for the synthetic CQL.
+                        // Fall back to the primary library when the frame isn't resolved yet.
+                        val sourceText =
+                            resolveSourceTextForFrame()
+                                ?: streamingLaunchUri?.let { compilationManager.getSourceText(URI.create(it)) }
+                        if (sourceText != null) {
+                            // Query-local aliases (from VTEStudy, let ) are not top-level defines and
+                            // so are otherwise invisible to the synthetic compile. Detect which
+                            // referenced identifiers are stack variables and pass them (with their
+                            // concrete translator-resolved type) as function parameters, bound to
+                            // their live runtime values at eval time.
+                            val aliases = buildAdHocAliases(args.expression, registry)
+                            if (aliases == null) {
+                                log.debug(
+                                    "evaluate: ad-hoc alias lacks a resolvable type expression={}",
+                                    args.expression,
+                                )
+                                return@supplyAsync noResolvableTypeResponse
+                            }
+                            val (functionDef, errorResponse) =
+                                evaluateHelper.evaluateAdHocExpression(
+                                    args.expression,
+                                    sourceText,
+                                    libManager,
+                                    aliases.map { (name, value) -> name to requireNotNull(resolveAdHocType(name, value)) },
+                                )
+                            if (errorResponse != null) {
+                                log.debug("evaluate: ad-hoc compile error expression={}", args.expression)
+                                return@supplyAsync errorResponse
+                            }
+                            if (functionDef != null) {
+                                val argumentValues: List<Value?> =
+                                    try {
+                                        val resolver = adHocModelResolver()
+                                        aliases.map { (name, value) -> toAdHocOperandValue(name, value, resolver) }
+                                    } catch (e: Exception) {
+                                        val message = e.message ?: "Value binding error"
+                                        log.debug(
+                                            "evaluate: ad-hoc operand conversion failed expression={} error={}",
+                                            args.expression,
+                                            message,
+                                        )
+                                        return@supplyAsync EvaluateResponse().also {
+                                            it.result = "Runtime error: $message"
+                                            it.variablesReference = 0
+                                        }
+                                    }
+                                log.debug("evaluate: ad-hoc eval expression={} submitting to engine", args.expression)
+                                val resultFuture = handler.submitAdHocEval(functionDef, argumentValues)
+                                return@supplyAsync try {
+                                    val value = resultFuture.get(AD_HOC_EVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                                    EvaluateResponse().also {
+                                        it.result = formatVariableValue(value)
+                                        it.variablesReference = registerIfExpandable(value)
+                                    }
+                                } catch (e: java.util.concurrent.TimeoutException) {
+                                    log.debug("evaluate: ad-hoc eval timed out expression={}", args.expression)
+                                    notAvailable()
+                                } catch (e: Exception) {
+                                    val message = e.cause?.message ?: e.message ?: "Evaluation error"
+                                    log.debug("evaluate: ad-hoc eval failed expression={} error={}", args.expression, message)
+                                    EvaluateResponse().also {
+                                        it.result = "Runtime error: $message"
+                                        it.variablesReference = 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                log.debug("evaluate: falling back to not available expression={}", args.expression)
                 notAvailable()
             }
         }
@@ -1193,17 +1324,11 @@ open class CqlDebugServer(
     private fun parseLocatorLines(locator: String?): LocatorBounds =
         varResolver.parseLocatorLines(locator)
 
-    private fun formatVariableValue(
-        value: Any?,
-        gson: Gson,
-    ): String =
-        varResolver.formatVariableValue(value, gson)
+    private fun formatVariableValue(value: Any?): String =
+        varResolver.formatVariableValue(value)
 
-    private fun formatPropertyValue(
-        value: Any?,
-        gson: Gson,
-    ): String =
-        varResolver.formatPropertyValue(value, gson)
+    private fun formatPropertyValue(value: Any?): String =
+        varResolver.formatPropertyValue(value)
 
     private fun isExpandable(value: Any?): Boolean =
         varResolver.isExpandable(value)
@@ -1221,12 +1346,52 @@ open class CqlDebugServer(
     private fun findInVarRefs(name: String): EvaluateResponse? =
         varResolver.findInVarRefs(name)
 
+    /**
+     * Builds a [Variable] for a named value (a Local/Define/Parameter), rendering FHIR resource
+     * values (or lists of them) identically to the Test Case scope — bare FHIR type, unfiltered
+     * field order, no CQL-profile reordering. Non-FHIR CQL values (Interval, Tuple, plain types)
+     * keep their existing CQL-type-string display.
+     */
+    private fun resourceAwareVariable(
+        name: String,
+        value: Any?,
+        cqlType: String?,
+    ): Variable {
+        // Normalize once so both the "is this a resource?" check below and the CQL-engine-only
+        // representations (ClassInstance, the engine's own List wrapper) are resolved the same
+        // way `formatVariableValue`/`registerIfExpandable` will resolve them internally.
+        val normalized = varResolver.normalizeValue(value)
+        val resourceType = (normalized as? IBaseResource)?.fhirType()
+        if (resourceType != null) {
+            return Variable().also {
+                it.name = name
+                it.value = formatVariableValue(normalized)
+                it.type = resourceType
+                it.variablesReference = registerIfExpandable(normalized)
+            }
+        }
+        if (normalized is List<*> && normalized.isNotEmpty() && normalized.all { it is IBaseResource }) {
+            val elementType = (normalized.first() as? IBaseResource)?.fhirType()
+            return Variable().also {
+                it.name = name
+                it.value = formatVariableValue(normalized)
+                it.type = "List<$elementType>"
+                it.variablesReference = registerIfExpandable(normalized)
+            }
+        }
+        return Variable().also {
+            it.name = name
+            it.value = formatVariableValue(value)
+            it.type = cqlType
+            it.variablesReference = registerIfExpandable(value, cqlType)
+        }
+    }
+
     private fun resolvePropertyValue(
         property: Property,
         state: org.opencds.cqf.cql.engine.execution.State,
-        gson: Gson,
     ): PropertyResult? =
-        evaluateHelper.resolvePropertyValue(property, streamingHandler!!, gson)?.let {
+        evaluateHelper.resolvePropertyValue(property, streamingHandler!!)?.let {
             PropertyResult(it.first, it.second)
         }
 
@@ -1234,8 +1399,7 @@ open class CqlDebugServer(
         category: CursorCategory,
         state: State,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
-    ): EvaluateResponse? = evaluateHelper.resolveFromCursorCategory(category, state, handler, gson)
+    ): EvaluateResponse? = evaluateHelper.resolveFromCursorCategory(category, state, handler)
 
     private data class PropertyResult(val displayString: String, val expandableValue: Any?)
 
@@ -1244,9 +1408,8 @@ open class CqlDebugServer(
         propertyName: String,
         state: State,
         handler: StreamingBreakpointHandler,
-        gson: Gson,
     ): PropertyResult? =
-        evaluateHelper.resolvePropertyFromAlias(aliasName, propertyName, handler, gson)?.let {
+        evaluateHelper.resolvePropertyFromAlias(aliasName, propertyName, handler)?.let {
             PropertyResult(it.first, it.second)
         }
 
@@ -1269,6 +1432,138 @@ open class CqlDebugServer(
         varResolver.formatPeriodAsInterval(period)
 
     private fun notAvailable(): EvaluateResponse = varResolver.notAvailable()
+
+    /** Response used when a referenced query alias has no concrete, compiler-resolvable type. */
+    private val noResolvableTypeResponse: EvaluateResponse
+        get() =
+            EvaluateResponse().also {
+                it.result =
+                    "not supported for this alias type: one or more referenced query variables " +
+                    "have no resolvable CQL type"
+                it.variablesReference = 0
+            }
+
+    /**
+     * Detects which identifiers referenced in [expression] are live query-local stack variables
+     * (e.g. `VTEStudy` from a `from ... VTEStudy`). Returns an ordered `(name, value)` list — the
+     * signature order for the synthetic function AND the argument order for evaluation are both
+     * derived from this single pass to guarantee positional agreement. Returns `null` if a
+     * referenced alias has no resolvable type.
+     *
+     * Lexical rules: single-quoted `'...'` string-literal contents are skipped so stray value
+     * literals are never read as references; double-quoted `"..."` tokens are delimited identifiers
+     * (quotes stripped for matching).
+     */
+    private fun buildAdHocAliases(
+        expression: String,
+        registry: RuntimeValueRegistry,
+    ): List<Pair<String, Any?>>? {
+        val stackNames = registry.getStackVariables().associateBy { it.name }.keys
+        if (stackNames.isEmpty()) return emptyList()
+        val referenced = linkedSetOf<String>()
+        for (id in extractIdentifiers(expression)) {
+            if (id in stackNames) referenced.add(id)
+        }
+        if (referenced.isEmpty()) return emptyList()
+        val result = ArrayList<Pair<String, Any?>>(referenced.size)
+        for (name in referenced) {
+            val stackValue = registry.getStackVariables().firstOrNull { it.name == name }?.value
+            if (stackValue == null) return null
+            if (resolveAdHocType(name, stackValue) == null) return null
+            result.add(name to stackValue)
+        }
+        return result
+    }
+
+    /** Resolves the concrete CQL type for an ad-hoc query alias, or `null` if unknown. */
+    private fun resolveAdHocType(
+        name: String,
+        value: Any?,
+    ): String? {
+        variableTypeMap[name]?.let { return it }
+        streamingHandler?.variableTypeMap?.get(name)?.let { return it }
+        return varResolver.fhirResourceTypeOf(value)
+    }
+
+    /**
+     * Converts a raw registry alias value into a genuine engine [Value] so it can be passed as a
+     * synthetic-function operand to
+     * [FunctionRefEvaluator.evaluateFunctionDef][org.opencds.cqf.cql.engine.elm.executing.FunctionRefEvaluator.evaluateFunctionDef].
+     *
+     * Registry values are stored unwrapped by `RuntimeValueRegistry.unwrapValue`: FHIR/HAPI objects
+     * and Kotlin primitives pass through as-is and never implement the sealed [Value] interface, so
+     * the previous `value as? Value` cast silently produced `null` for these common cases. This
+     * reverses the unwrap only at the one call site (ad-hoc operand binding) that actually needs a
+     * real Value, reusing existing conversion utilities rather than introducing new wrapping logic.
+     */
+    private fun toAdHocOperandValue(
+        name: String,
+        raw: Any?,
+        resolver: FhirModelResolver<*, *, *, *, *, *, *, *>,
+    ): Value = convertToAdHocOperandValue(name, raw, resolver)
+
+    /** Returns the [FhirModelResolver] for the active FHIR version, defaulting to R4. */
+    private fun adHocModelResolver(): FhirModelResolver<*, *, *, *, *, *, *, *> {
+        val context = getFhirContextForVersion(launchArgs?.fhirVersion)
+        return FhirModelResolverCache.resolverForVersion(context.version.version)
+    }
+
+    /**
+     * Extracts CQL identifier tokens from [expression], skipping `'...'` string-literal contents
+     * and capturing `"..."` delimited identifiers (without the quotes). Used only to detect which
+     * referenced names are live query aliases; not a full CQL parser.
+     */
+    private fun extractIdentifiers(expression: String): List<String> {
+        val result = ArrayList<String>()
+        var i = 0
+        val n = expression.length
+        while (i < n) {
+            val c = expression[i]
+            when {
+                c == '\'' -> {
+                    i++
+                    while (i < n) {
+                        if (expression[i] == '\'') {
+                            if (i + 1 < n && expression[i + 1] == '\'') {
+                                i += 2
+                            } else {
+                                i++
+                                break
+                            }
+                        } else {
+                            i++
+                        }
+                    }
+                }
+                c == '"' -> {
+                    i++
+                    val sb = StringBuilder()
+                    while (i < n) {
+                        if (expression[i] == '"') {
+                            if (i + 1 < n && expression[i + 1] == '"') {
+                                sb.append('"')
+                                i += 2
+                            } else {
+                                i++
+                                break
+                            }
+                        } else {
+                            sb.append(expression[i])
+                            i++
+                        }
+                    }
+                    if (sb.isNotEmpty()) result.add(sb.toString())
+                }
+                c.isLetter() || c == '_' -> {
+                    val start = i
+                    while (i < n && (expression[i].isLetterOrDigit() || expression[i] == '_')) i++
+                    result.add(expression.substring(start, i))
+                }
+                else -> i++
+            }
+        }
+        return result
+    }
 
     /**
      * Parses a locator from a [DetailedExpressionResult] (1-indexed TrackBack format) into
@@ -1448,27 +1743,91 @@ open class CqlDebugServer(
     private fun resolveFrameLibraryId(): String =
         breakpointManager.resolveFrameLibraryId(streamingHandler)
 
+    /**
+     * Resolves the CQL source text for the library the debugger is currently paused inside.
+     * When a user pauses inside a function from an included library (e.g. FHIRCommon.cql) and
+     * types a REPL expression, the synthetic CQL must be compiled against that library's source
+     * so its top-level declarations (code definitions, value sets, etc.) are in scope.
+     *
+     * Three-tier resolution mirrors [resolveSourceContent]:
+     * 1. Compilation cache (instant, covers the primary library)
+     * 2. [contentService] (workspace files + active editor buffer)
+     * 3. [LibrarySourceResolver] (npm/bundled libraries via engine provider chain)
+     */
+    private fun resolveSourceTextForFrame(): String? {
+        val libId = resolveFrameLibraryId()
+        if (libId.isEmpty()) return null
+        val uri = librarySourceMap[libId] ?: return null
+        // Fast path: compilation cache (covers primary library)
+        compilationManager.getSourceText(uri)?.let { return it }
+        // Workspace file or active editor buffer
+        try {
+            contentService.read(uri)?.use { return it.bufferedReader().readText() }
+        } catch (_: Exception) {
+        }
+        // Virtual URI (cql-source://N) — resolve via VersionedIdentifier
+        val ref = uri.toString().removePrefix("cql-source://").toIntOrNull()
+        val identifier = ref?.let { sourceReferenceRegistry[it] }
+        if (identifier != null) {
+            return LibrarySourceResolver.resolve(streamingHandler?.libraryManager, identifier)
+        }
+        return null
+    }
+
     override fun source(args: SourceArguments): CompletableFuture<SourceResponse> {
+        log.debug("source: ENTER sourceReference={}", args.sourceReference)
         val ref =
-            args.sourceReference ?: return CompletableFuture.completedFuture(
-                SourceResponse().also { it.content = "" },
-            )
+            args.sourceReference ?: run {
+                log.debug("source: no sourceReference in request, returning empty content")
+                return CompletableFuture.completedFuture(
+                    SourceResponse().also { it.content = "" },
+                )
+            }
         val identifier = sourceReferenceRegistry[ref]
-        val content =
-            identifier?.let { id ->
-                try {
-                    val uris =
-                        contentService.locate(
-                            URI.create(streamingLaunchUri ?: return@let null),
-                            id,
-                        )
-                    val uri = uris.firstOrNull() ?: return@let null
-                    contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() }
-                } catch (_: Exception) {
-                    null
-                }
-            } ?: ""
+        log.debug("source: ref={} resolved identifier={} (registrySize={})", ref, identifier, sourceReferenceRegistry.size)
+        val content = identifier?.let { id -> resolveSourceContent(id) } ?: ""
+        log.debug("source: ref={} returning content length={}", ref, content.length)
         return CompletableFuture.completedFuture(SourceResponse().also { it.content = content })
+    }
+
+    /**
+     * Fetches a library's CQL source text for the DAP `source()` response: first via the
+     * filesystem-based [contentService] (workspace files), then falling back to the execution
+     * engine's own [org.cqframework.cql.cql2elm.LibraryManager] (`streamingHandler.libraryManager`,
+     * set by [org.opencds.cqf.cql.ls.server.command.CqlEvaluator] when this debug session's engine
+     * was built). That engine's full library-source-provider chain (npm packages, bundled "quick"
+     * libraries like FHIRHelpers) is what actually resolved this library's source when the session
+     * launched — NOT `launchCompiler`, which is the LSP's separately-cached, potentially stale
+     * compiler from whenever the file was last opened/edited, and may never have successfully
+     * resolved an npm-installed or bundled library at all.
+     */
+    private fun resolveSourceContent(id: VersionedIdentifier): String? {
+        val fileContent =
+            try {
+                streamingLaunchUri?.let { launchUri ->
+                    val uris = contentService.locate(URI.create(launchUri), id)
+                    log.debug("resolveSourceContent: id={} contentService.locate returned {} uri(s): {}", id, uris.size, uris)
+                    uris.firstOrNull()
+                        ?.let { uri -> contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() } }
+                }
+            } catch (e: Exception) {
+                log.debug("resolveSourceContent: id={} contentService fast path threw: {}", id, e.toString())
+                null
+            }
+        if (fileContent != null) {
+            log.debug("resolveSourceContent: id={} resolved via workspace file, length={}", id, fileContent.length)
+            return fileContent
+        }
+        val libraryManager = streamingHandler?.libraryManager
+        log.debug(
+            "resolveSourceContent: id={} no workspace file; streamingHandler={} libraryManager={}",
+            id,
+            if (streamingHandler != null) "present" else "null",
+            if (libraryManager != null) "present" else "null",
+        )
+        val content = LibrarySourceResolver.resolve(libraryManager, id)
+        log.debug("resolveSourceContent: id={} LibrarySourceResolver.resolve returned {}", id, if (content != null) "content, length=${content.length}" else "null")
+        return content
     }
 
     @JsonRequest("setStepGranularity")
@@ -1508,9 +1867,15 @@ open class CqlDebugServer(
 
         val library =
             if (libId != null) {
-                launchCompiler?.libraryManager?.compiledLibraries?.entries
+                // Prefer the execution engine's LibraryManager (streamingHandler.libraryManager) —
+                // the fresh, always-successful one for THIS run — falling back to the LSP's
+                // separately-cached launchCompiler for the non-debug/static-analysis case.
+                streamingHandler?.libraryManager?.compiledLibraries?.entries
                     ?.firstOrNull { (vid, _) -> vid.id == libId }
                     ?.value?.library
+                    ?: launchCompiler?.libraryManager?.compiledLibraries?.entries
+                        ?.firstOrNull { (vid, _) -> vid.id == libId }
+                        ?.value?.library
             } else if (streamingLaunchUri != null && targetUri.toString() == streamingLaunchUri) {
                 launchCompiler?.compiledLibrary?.library
             } else {
@@ -1543,4 +1908,44 @@ open class CqlDebugServer(
         typeName: String,
         elementDef: BaseRuntimeElementDefinition<*>,
     ): List<BaseRuntimeChildDefinition> = varResolver.profileChildrenOf(typeName, elementDef, launchCompiler)
+}
+
+/**
+ * Converts a raw registry alias value into a genuine engine [Value] so it can be bound as a
+ * synthetic-function operand for ad-hoc Debug Console/watch evaluation.
+ *
+ * Registry values are stored unwrapped by `RuntimeValueRegistry.unwrapValue`: FHIR/HAPI objects and
+ * Kotlin primitives pass through unchanged and never implement the sealed [Value] interface, so the
+ * previous `value as? Value` cast silently produced `null` for these common cases. This reverses the
+ * unwrap only at the ad-hoc operand-binding call site, reusing existing conversion utilities rather
+ * than introducing new wrapping logic.
+ */
+internal fun convertToAdHocOperandValue(
+    name: String,
+    raw: Any?,
+    resolver: FhirModelResolver<*, *, *, *, *, *, *, *>,
+): Value {
+    if (raw is Value) {
+        return raw
+    }
+    if (raw is IBase) {
+        val cqlValue = resolver.toCqlValue(raw, false)
+        if (cqlValue != null) {
+            return cqlValue
+        }
+        throw IllegalArgumentException(
+            "Cannot bind alias '$name' of type ${raw.javaClass.name} to a CQL value: FHIR conversion returned null",
+        )
+    }
+    return when (raw) {
+        is String -> raw.toCqlString()
+        is Boolean -> raw.toCqlBoolean()
+        is Int -> raw.toCqlInteger()
+        is Long -> raw.toCqlLong()
+        is JavaBigDecimal -> raw.toCqlDecimal()
+        else ->
+            throw IllegalArgumentException(
+                "Cannot bind alias '$name' of type ${raw?.javaClass?.name ?: "null"} to a CQL value",
+            )
+    }
 }

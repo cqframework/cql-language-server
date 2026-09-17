@@ -2,9 +2,39 @@ package org.opencds.cqf.cql.debug
 
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.Interval
+import org.opencds.cqf.cql.engine.runtime.StructuredValue
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.slf4j.LoggerFactory
 import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
+import org.opencds.cqf.cql.engine.runtime.List as CqlList
+
+/**
+ * Unwraps engine [Value] objects to plain Java types so the DAP layer remains type-agnostic.
+ *
+ * [Interval], [StructuredValue] (Tuple, Code, Quantity, Ratio, Concept, ClassInstance), and
+ * [CqlList] (the engine's own list wrapper — e.g. the result of a Retrieve) are passed through
+ * unchanged rather than stringified, so [VariableResolver] can expand/convert them into child
+ * variables (including converting a ClassInstance/CqlList of FHIR resources back to real FHIR
+ * resources for display).
+ */
+private fun Any?.unwrapValue(): Any? =
+    when (this) {
+        is Value ->
+            when (this) {
+                is org.opencds.cqf.cql.engine.runtime.String -> this.value
+                is org.opencds.cqf.cql.engine.runtime.Boolean -> this.value
+                is org.opencds.cqf.cql.engine.runtime.Integer -> this.value
+                is org.opencds.cqf.cql.engine.runtime.Long -> this.value
+                is org.opencds.cqf.cql.engine.runtime.Decimal -> this.value
+                is Interval -> this
+                is StructuredValue -> this
+                is CqlList -> this
+                else -> this.toString()
+            }
+        else -> this
+    }
 
 enum class RuntimeValueCategory {
     PARAMETER,
@@ -65,7 +95,7 @@ class RuntimeValueRegistry {
         type: String?,
     ) {
         val k = key(category, libraryName, name)
-        val rv = RuntimeValue(name, value, category, libraryName, type)
+        val rv = RuntimeValue(name, value.unwrapValue(), category, libraryName, type)
         when (category) {
             RuntimeValueCategory.STACK_VARIABLE -> {
                 transient[k] = rv
@@ -203,6 +233,35 @@ class RuntimeValueRegistry {
     }
 
     /**
+     * Returns the distinct registered display names whose name matches [name] ignoring case,
+     * ordered by CQL scoping priority (STACK_VARIABLE > DEFINE > CONTEXT_RESOURCE > PARAMETER).
+     *
+     * Used only for diagnostic messaging — CQL identifiers remain case-sensitive, so the debug
+     * console never auto-resolves to these; it uses them to suggest the properly-cased name.
+     */
+    fun caseInsensitiveCandidates(name: String): List<String> {
+        val result = LinkedHashSet<String>()
+        for (category in listOf(
+            RuntimeValueCategory.STACK_VARIABLE,
+            RuntimeValueCategory.DEFINE,
+            RuntimeValueCategory.CONTEXT_RESOURCE,
+            RuntimeValueCategory.PARAMETER,
+        )) {
+            val prefix = "${category.name}|"
+            for (candidate in nameIndex.keys) {
+                if (candidate.equals(name, ignoreCase = true)) {
+                    val inCategory = nameIndex[candidate]?.any { it.startsWith(prefix) } == true
+                    if (inCategory) result.add(candidate)
+                }
+            }
+        }
+        return result.toList()
+    }
+
+    /** Sorted display names of all registered values, for debug logging. */
+    fun displayNames(): List<String> = nameIndex.keys.sorted()
+
+    /**
      * Finds a value by display name scoped to a specific library.
      * Only searches persistent categories (DEFINE, CONTEXT_RESOURCE, PARAMETER).
      * Returns null when [libraryName] is non-null and no matching entry is found
@@ -242,6 +301,11 @@ class RuntimeValueRegistry {
 
     fun getDefines(): List<RuntimeValue> =
         persistent.values.filter { it.category == RuntimeValueCategory.DEFINE }.sortedBy { it.name }
+
+    fun getDefinesByLibrary(): Map<String, List<RuntimeValue>> =
+        persistent.values
+            .filter { it.category == RuntimeValueCategory.DEFINE }
+            .groupBy { it.libraryName ?: "(Global)" }
 
     fun getParametersByLibrary(): Map<String, List<RuntimeValue>> =
         persistent.values

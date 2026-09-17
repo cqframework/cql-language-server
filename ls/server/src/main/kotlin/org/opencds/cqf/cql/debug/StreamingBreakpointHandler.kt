@@ -1,17 +1,24 @@
 package org.opencds.cqf.cql.debug
 
+import org.cqframework.cql.cql2elm.LibraryManager
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
+import org.opencds.cqf.cql.engine.elm.executing.FunctionRefEvaluator
+import org.opencds.cqf.cql.engine.execution.EvaluationVisitor
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.slf4j.LoggerFactory
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentHashMap.newKeySet
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class StreamingBreakpointHandler(
     val runtimeRegistry: RuntimeValueRegistry = RuntimeValueRegistry(),
@@ -33,6 +40,17 @@ class StreamingBreakpointHandler(
     @Volatile
     var onLibraryEnteredCallback: ((libraryId: String, identifier: VersionedIdentifier?) -> Unit)? = null
 
+    /**
+     * The [LibraryManager] actually used to execute this debug session (set by
+     * [org.opencds.cqf.cql.ls.server.command.CqlEvaluator] right after it builds the engine).
+     * This is a DIFFERENT, always-fresh instance from the LSP's cached `CqlCompilationManager`
+     * compiler — the only one guaranteed to have successfully resolved every library (including
+     * npm-installed / bundled ones like FHIRHelpers) actually used by THIS run, so it's what the
+     * debug server should query for source text of libraries with no workspace file.
+     */
+    @Volatile
+    var libraryManager: LibraryManager? = null
+
     @Volatile
     var primaryLibraryId: String? = null
 
@@ -46,6 +64,14 @@ class StreamingBreakpointHandler(
     private var depthAtStep: Int = 0
 
     private var lastPausedLine: Int = -1
+
+    /**
+     * Library id the last pause occurred in, paired with [lastPausedLine] for CQL-granularity
+     * dedup. Without this, a pause at the same line number in a DIFFERENT library (a common
+     * coincidence across small CQL functions) is treated as "already paused here" and silently
+     * skipped — see the `line != lastPausedLine` comparisons below, all of which also check this.
+     */
+    private var lastPausedLibId: String? = null
 
     @Volatile
     var lastPausedElm: Element? = null
@@ -102,6 +128,32 @@ class StreamingBreakpointHandler(
 
     /** Full FHIR resources for contexts, keyed by context name (e.g., "Patient"). */
     val contextResourcesByName = ConcurrentHashMap<String, Any?>()
+
+    /**
+     * A one-shot ad-hoc evaluation request submitted by the DAP `evaluate()` thread and
+     * consumed by the parked engine thread inside [waitForResume]. The result is delivered
+     * asynchronously via [resultFuture].
+     */
+    data class AdHocEvalRequest(
+        val functionDef: FunctionDef,
+        val argumentValues: List<Value?>,
+        val resultFuture: CompletableFuture<Value?>,
+    )
+
+    /** Single-slot hand-off from the DAP evaluate() thread to the parked engine thread. */
+    private val pendingEval = AtomicReference<AdHocEvalRequest?>()
+
+    /**
+     * A no-op [BreakpointHandler] swapped in for the duration of an ad-hoc evaluation to
+     * prevent re-entrant breakpoint pausing. Only [onBeforeExpression] is abstract on the
+     * interface; every other method already has a default no-op body.
+     */
+    private object ContinueOnlyBreakpointHandler : BreakpointHandler {
+        override fun onBeforeExpression(
+            elm: org.hl7.elm.r1.Element,
+            state: State,
+        ): BreakpointAction = BreakpointAction.CONTINUE
+    }
 
     /** Evaluated results by locator range, for position-based (@line:col) lookup. */
     private val evaluatedValuesByLocator = CopyOnWriteArrayList<Pair<LocatorRange, Any?>>()
@@ -160,6 +212,7 @@ class StreamingBreakpointHandler(
         )
         released = false
         lastPausedLine = -1
+        lastPausedLibId = null
         lastPausedElmIdentity = null
         clearEvaluatedValues()
     }
@@ -243,7 +296,7 @@ class StreamingBreakpointHandler(
             val locator = elm.locator ?: return BreakpointAction.CONTINUE
             val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
             val libBreakpoints = breakpointsByLibrary[currentLibId]
-            if (libBreakpoints?.contains(line) == true && line != lastPausedLine) {
+            if (libBreakpoints?.contains(line) == true && (line != lastPausedLine || currentLibId != lastPausedLibId)) {
                 log.debug("onBeforeExpression: PAUSE (included library breakpoint) lib={} line={}", currentLibId, line)
                 capturePauseState(elm, state, line)
                 return BreakpointAction.PAUSE
@@ -263,11 +316,16 @@ class StreamingBreakpointHandler(
             val locator = elm.locator ?: return BreakpointAction.CONTINUE
             val line = parseLine(locator) ?: return BreakpointAction.CONTINUE
             val depth = state.stack.size
-            val cqlFilter = cqlStepLinesByLibrary[currentLibId] ?: cqlStepLinesByLibrary[primaryLibraryId]
-            val stepInCondition = line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-            val stepOverCondition = line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+            // Falling back to the PRIMARY library's breakpointable-line set here would be wrong —
+            // it's a different file with unrelated line numbers, so it would filter out every
+            // real line in `currentLibId` and silently skip pausing anywhere in it. If this
+            // library's own line set isn't loaded yet, treat it as "no filter" instead.
+            val cqlFilter = cqlStepLinesByLibrary[currentLibId]
+            val pausedHere = line == lastPausedLine && currentLibId == lastPausedLibId
+            val stepInCondition = !pausedHere && (cqlFilter == null || line in cqlFilter)
+            val stepOverCondition = !pausedHere && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
             val stepOutCondition = depth < depthAtStep
-            val continueCondition = line in breakpointsByLibrary[currentLibId].orEmpty() && line != lastPausedLine
+            val continueCondition = line in breakpointsByLibrary[currentLibId].orEmpty() && !pausedHere
             val shouldPause =
                 when (stepMode) {
                     StepMode.STEP_IN -> stepInCondition
@@ -348,10 +406,11 @@ class StreamingBreakpointHandler(
         val primaryLibLines = if (primaryLibraryId != null) breakpointsByLibrary[primaryLibraryId] else null
         val cqlFilter = cqlStepLines
         val elmNotVisited = elmKey(elm, currentLibId) !in visitedElmKeysInStepSession
-        val cqlStepInCondition = line != lastPausedLine && (cqlFilter == null || line in cqlFilter)
-        val cqlStepOverCondition = line != lastPausedLine && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
+        val pausedHere = line == lastPausedLine && currentLibId == lastPausedLibId
+        val cqlStepInCondition = !pausedHere && (cqlFilter == null || line in cqlFilter)
+        val cqlStepOverCondition = !pausedHere && depth <= depthAtStep && (cqlFilter == null || line in cqlFilter)
         val cqlStepOutCondition = depth < depthAtStep
-        val cqlContinueCondition = line in (primaryLibLines ?: breakpointLines) && line != lastPausedLine
+        val cqlContinueCondition = line in (primaryLibLines ?: breakpointLines) && !pausedHere
         val astStepInCondition = elmNotVisited
         val astStepOverCondition = elmNotVisited && depth <= depthAtStep
         val astStepOutCondition = depth < depthAtStep
@@ -437,7 +496,7 @@ class StreamingBreakpointHandler(
     override fun onExpressionDefEvaluated(
         elm: ExpressionDef,
         state: State,
-        value: Any?,
+        value: org.opencds.cqf.cql.engine.runtime.Value?,
     ) {
         defineCallStack.removeLastOrNull()
         if (elm is FunctionDef) return
@@ -450,7 +509,7 @@ class StreamingBreakpointHandler(
     override fun onAfterExpression(
         elm: Element,
         state: State,
-        value: Any?,
+        value: org.opencds.cqf.cql.engine.runtime.Value?,
     ) {
         val locator = elm.locator
         if (locator != null) {
@@ -521,6 +580,7 @@ class StreamingBreakpointHandler(
             stepGranularity,
         )
         lastPausedLine = line
+        lastPausedLibId = libId
         lastPausedElmIdentity = elm
         lastPausedElm = elm
         visitedElmKeysInStepSession.add(elmKey(elm, libId))
@@ -558,6 +618,7 @@ class StreamingBreakpointHandler(
     fun reset() {
         released = false
         resumeLatch = CountDownLatch(0)
+        pendingEval.set(null)
         runtimeRegistry.reset()
         contextResourcesByName.clear()
         evaluatedValuesByLocator.clear()
@@ -566,6 +627,7 @@ class StreamingBreakpointHandler(
         knownLibraryIds.clear()
         visitedElmKeysInStepSession.clear()
         lastPausedLine = -1
+        lastPausedLibId = null
         lastPausedElm = null
         lastPausedElmIdentity = null
         lastPausedState = null
@@ -606,6 +668,67 @@ class StreamingBreakpointHandler(
         }
     }
 
+    /**
+     * Submits an ad-hoc CQL expression for evaluation on the parked engine thread.
+     * Called from the DAP `evaluate()` request thread.
+     *
+     * @param functionDef the compiled `__debugEval__` function (its operands are the query aliases)
+     * @param argumentValues the live alias values, in the same order as [FunctionDef.getOperand]
+     * @return a future that completes with the evaluated value (or an exception on failure)
+     */
+    fun submitAdHocEval(
+        functionDef: FunctionDef,
+        argumentValues: List<Value?>,
+    ): CompletableFuture<Value?> {
+        val future = CompletableFuture<Value?>()
+        pendingEval.set(AdHocEvalRequest(functionDef, argumentValues, future))
+        return future
+    }
+
+    /**
+     * Runs a single ad-hoc evaluation on the engine thread. Swaps in a
+     * [ContinueOnlyBreakpointHandler] to prevent re-entrant pausing, and defensively
+     * verifies that the stack depth is restored afterward.
+     */
+    private fun runAdHocEval(request: AdHocEvalRequest) {
+        val state = lastPausedState
+        if (state == null) {
+            request.resultFuture.completeExceptionally(IllegalStateException("no paused state"))
+            return
+        }
+        require(request.argumentValues.size == request.functionDef.operand.size) {
+            "ad-hoc eval argument count ${request.argumentValues.size} does not match function " +
+                "operand count ${request.functionDef.operand.size}"
+        }
+        val savedHandler = state.breakpointHandler
+        val depthBefore = state.stack.size
+        state.breakpointHandler = ContinueOnlyBreakpointHandler
+        try {
+            val value =
+                FunctionRefEvaluator.evaluateFunctionDef(
+                    request.functionDef,
+                    state,
+                    EvaluationVisitor(),
+                    request.argumentValues.toMutableList(),
+                )
+            request.resultFuture.complete(value)
+        } catch (e: Exception) {
+            request.resultFuture.completeExceptionally(e)
+        } finally {
+            state.breakpointHandler = savedHandler
+            if (state.stack.size > depthBefore) {
+                log.warn(
+                    "runAdHocEval: stack depth {} > {} after ad-hoc eval; forcibly popping",
+                    state.stack.size,
+                    depthBefore,
+                )
+                while (state.stack.size > depthBefore) {
+                    state.popActivationFrame()
+                }
+            }
+        }
+    }
+
     override fun waitForResume() {
         val t0 = System.nanoTime()
         log.debug("waitForResume: enter released={} [thread={}]", released, Thread.currentThread().name)
@@ -623,7 +746,12 @@ class StreamingBreakpointHandler(
                         lastPausedState,
                     )
                 }
-                resumeLatch.await()
+                while (!resumeLatch.await(50, TimeUnit.MILLISECONDS)) {
+                    pendingEval.getAndSet(null)?.let { request ->
+                        log.debug("waitForResume: processing ad-hoc eval [thread={}]", Thread.currentThread().name)
+                        runAdHocEval(request)
+                    }
+                }
                 log.debug("waitForResume: latch released [+{}ms]", (System.nanoTime() - t0) / 1_000_000)
             }
         } finally {

@@ -9,12 +9,17 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.visitor.CqlStepPositionCollector
+import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
 
 class BreakpointManager(
     private val contentService: ContentService,
 ) {
+    companion object {
+        private val log = LoggerFactory.getLogger(BreakpointManager::class.java)
+    }
+
     fun resolveLibraryIdFromPath(
         path: String?,
         librarySourceMap: Map<String, URI>,
@@ -53,6 +58,15 @@ class BreakpointManager(
         return libId != null && libId in relevant
     }
 
+    /**
+     * Returns every library id reachable from the primary library, at any include depth.
+     *
+     * `compiler.libraryManager.compiledLibraries` already holds the full transitive closure —
+     * cql2elm must resolve and compile every included library (and its own includes, recursively)
+     * to translate the primary library in the first place — so we read that closure directly
+     * instead of re-walking `IncludeDef`s ourselves (which previously only reached direct includes,
+     * leaving anything included by an include unresolved and permanently unverified).
+     */
     fun collectTransitiveIncludes(
         primaryId: String,
         compiler: CqlCompiler?,
@@ -60,33 +74,18 @@ class BreakpointManager(
         librarySourceMap: MutableMap<String, URI>,
     ): Set<String> {
         val result = mutableSetOf(primaryId)
-        val visited = mutableSetOf(primaryId)
-        val queue = ArrayDeque<org.hl7.elm.r1.IncludeDef>()
-        compiler?.compiledLibrary?.library?.includes?.def?.forEach { queue.addLast(it) }
-
-        while (queue.isNotEmpty()) {
-            val includeDef = queue.removeFirst()
-            val libPath = includeDef.path ?: continue
-            if (libPath in visited) continue
-            visited.add(libPath)
-
-            val uri = librarySourceMap[libPath]
-            if (uri == null) {
-                try {
-                    val identifier =
-                        VersionedIdentifier().also { vi ->
-                            vi.id = includeDef.path
-                            vi.version = includeDef.version
-                        }
-                    val uris = contentService.locate(URI.create(streamingLaunchUri ?: ""), identifier)
-                    val resolvedUri = uris.firstOrNull()
-                    if (resolvedUri != null) {
-                        librarySourceMap[libPath] = resolvedUri
-                    }
-                } catch (_: Exception) {
+        val compiledLibraries = compiler?.libraryManager?.compiledLibraries ?: return result
+        for (identifier in compiledLibraries.keys) {
+            val libId = identifier.id ?: continue
+            result.add(libId)
+            if (librarySourceMap.containsKey(libId)) continue
+            try {
+                val resolvedUri = contentService.locate(URI.create(streamingLaunchUri ?: ""), identifier).firstOrNull()
+                if (resolvedUri != null) {
+                    librarySourceMap[libId] = resolvedUri
                 }
+            } catch (_: Exception) {
             }
-            result.add(libPath)
         }
         return result
     }
@@ -170,22 +169,41 @@ class BreakpointManager(
         val uri = librarySourceMap[libraryId]
         return Source().also { s ->
             if (uri != null && uri.scheme == "file") {
+                log.debug("resolveSource: libraryId={} branch=file path={}", libraryId, uri)
                 s.path = Paths.get(uri).toString()
             } else if (streamingLaunchUri != null && uri == null &&
                 (libraryId.isEmpty() || libraryId == streamingHandler?.primaryLibraryId)
             ) {
+                log.debug("resolveSource: libraryId={} branch=streamingLaunchUri path={}", libraryId, streamingLaunchUri)
                 s.path = Paths.get(URI.create(streamingLaunchUri)).toString()
             } else {
+                // The ref is already encoded in `uri` (minted as "cql-source://$ref" at
+                // registration time, CqlDebugServer.kt's onLibraryEnteredCallback) — read it
+                // back directly rather than re-deriving it via an identifier-equality scan,
+                // which can silently miss the matching entry and fall back to a bogus `0`
+                // (a real, but wrong, registry key), producing empty DAP `source()` content.
                 val ref =
-                    sourceReferenceRegistry.entries
-                        .firstOrNull { (_, id) -> id.id == libraryId }?.key
+                    uri?.takeIf { it.scheme == "cql-source" }?.host?.toIntOrNull()
+                        ?: sourceReferenceRegistry.entries.firstOrNull { (_, id) -> id.id == libraryId }?.key
                 s.sourceReference = ref ?: 0
+                // Always label the source so an unresolved library shows a legible
+                // placeholder tab instead of a bare "." title in the editor.
+                s.name = if (libraryId.isNotEmpty()) "$libraryId.cql" else "unknown"
+                log.debug(
+                    "resolveSource: libraryId={} branch=sourceReference uri={} ref={} name={}",
+                    libraryId,
+                    uri,
+                    s.sourceReference,
+                    s.name,
+                )
             }
         }
     }
 
     fun resolveFrameLibraryId(streamingHandler: StreamingBreakpointHandler?): String {
-        return streamingHandler?.lastPausedCallStack?.firstOrNull()?.libraryId
+        // lastPausedCallStack is stored outermost-first (oldest push first), so the innermost
+        // (currently-executing) frame is the LAST entry — matching buildCqlStackFrames' convention.
+        return streamingHandler?.lastPausedCallStack?.lastOrNull()?.libraryId
             ?: streamingHandler?.primaryLibraryId
             ?: ""
     }

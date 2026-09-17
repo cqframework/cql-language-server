@@ -134,6 +134,31 @@ class BreakpointManagerTest {
         }
 
         @Test
+        fun `cql-source URI reads ref directly from the URI, even when the registry lookup would miss`() {
+            // Regression test: a live debug session showed librarySourceMap holding
+            // "cql-source://1" while the identifier-equality registry scan (id.id == libraryId)
+            // failed to find the matching entry and fell back to a bogus ref of 0, which was
+            // never actually registered — DAP source() then returned empty content. The ref must
+            // be read directly out of the URI, which is unambiguous, instead of re-derived.
+            val uri = URI.create("cql-source://1")
+            val map = mapOf("FHIRHelpers" to uri)
+            // Registry deliberately does NOT have an entry whose id.id equals "FHIRHelpers" —
+            // simulates the identity-lookup miss observed in the field.
+            val reg = mapOf(1 to org.hl7.elm.r1.VersionedIdentifier().also { it.id = "SomethingElse" })
+            val source = manager.resolveSource("FHIRHelpers", null, null, map, reg)
+            assertEquals(1, source.sourceReference)
+        }
+
+        @Test
+        fun `cql-source URI ref wins over a registry scan that would return a different key`() {
+            val uri = URI.create("cql-source://7")
+            val map = mapOf("FHIRHelpers" to uri)
+            val reg = mapOf(7 to org.hl7.elm.r1.VersionedIdentifier().also { it.id = "FHIRHelpers" })
+            val source = manager.resolveSource("FHIRHelpers", null, null, map, reg)
+            assertEquals(7, source.sourceReference)
+        }
+
+        @Test
         fun `streaming fallback when uri is null`() {
             val handler =
                 mock(StreamingBreakpointHandler::class.java).also {
@@ -154,6 +179,12 @@ class BreakpointManagerTest {
         fun `unknown library returns sourceReference 0`() {
             val source = manager.resolveSource("Unknown", null, null, emptyMap(), emptyMap())
             assertEquals(0, source.sourceReference)
+        }
+
+        @Test
+        fun `unresolved library still gets a legible source name, not blank`() {
+            val source = manager.resolveSource("CQMCommon", null, null, emptyMap(), emptyMap())
+            assertEquals("CQMCommon.cql", source.name)
         }
 
         @Test
@@ -180,80 +211,86 @@ class BreakpointManagerTest {
         }
 
         @Test
-        fun `compiler with null compiledLibrary returns just primary`() {
+        fun `compiler with null libraryManager returns just primary`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(null)
+            `when`(compiler.libraryManager).thenReturn(null)
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
             assertEquals(setOf("Primary"), result)
         }
 
         @Test
-        fun `compiler with null library returns just primary`() {
+        fun `identifier with null id is skipped`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(null)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val unnamedId = org.hl7.elm.r1.VersionedIdentifier()
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(unnamedId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
             assertEquals(setOf("Primary"), result)
         }
 
         @Test
-        fun `includeDef with null path is skipped`() {
+        fun `returns every compiled library regardless of include depth`() {
+            // Mirrors Primary -> TJCOverall -> CQMCommon: cql2elm must fully compile the whole
+            // include graph to translate Primary, so LibraryManager.compiledLibraries already
+            // contains all three, even though CQMCommon is only a transitive (depth-2) include.
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            val library = mock(org.hl7.elm.r1.Library::class.java)
-            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
-            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(library)
-            `when`(library.includes).thenReturn(includes)
-            `when`(includes.def).thenReturn(mutableListOf(includeDef))
-            `when`(includeDef.path).thenReturn(null)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val primaryId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "Primary" }
+            val directId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TJCOverall" }
+            val transitiveId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "CQMCommon" }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(
+                    primaryId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java),
+                    directId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java),
+                    transitiveId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java),
+                ),
+            )
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
-            assertEquals(setOf("Primary"), result)
+
+            assertEquals(setOf("Primary", "TJCOverall", "CQMCommon"), result)
         }
 
         @Test
-        fun `duplicate library in includes is deduped`() {
+        fun `resolves and registers a file URI for a transitively-included library`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            val library = mock(org.hl7.elm.r1.Library::class.java)
-            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
-            val includeDef1 = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            val includeDef2 = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(library)
-            `when`(library.includes).thenReturn(includes)
-            `when`(includes.def).thenReturn(mutableListOf(includeDef1, includeDef2))
-            `when`(includeDef1.path).thenReturn("DuplicateLib")
-            `when`(includeDef2.path).thenReturn("DuplicateLib")
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val libId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "CQMCommon" }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(libId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
+            val resolvedUri = URI.create("file:///CQMCommon.cql")
+            `when`(contentService.locate(URI.create("file:///primary.cql"), libId)).thenReturn(setOf(resolvedUri))
 
-            val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
-            assertEquals(setOf("Primary", "DuplicateLib"), result)
+            val librarySourceMap = mutableMapOf<String, URI>()
+            manager.collectTransitiveIncludes("Primary", compiler, "file:///primary.cql", librarySourceMap)
+
+            assertEquals(resolvedUri, librarySourceMap["CQMCommon"])
         }
 
         @Test
         fun `library already in librarySourceMap skips contentService lookup`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            val library = mock(org.hl7.elm.r1.Library::class.java)
-            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
-            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(library)
-            `when`(library.includes).thenReturn(includes)
-            `when`(includes.def).thenReturn(mutableListOf(includeDef))
-            `when`(includeDef.path).thenReturn("ExistingLib")
-            `when`(includeDef.version).thenReturn(null)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val libId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "ExistingLib" }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(libId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
 
             val librarySourceMap = mutableMapOf("ExistingLib" to URI.create("file:///existing.cql"))
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, librarySourceMap)
 
             assertEquals(setOf("Primary", "ExistingLib"), result)
+            Mockito.verifyNoInteractions(contentService)
         }
     }
 
@@ -324,6 +361,19 @@ class BreakpointManagerTest {
                     `when`(it.lastPausedCallStack).thenReturn(listOf(entry))
                 }
             assertEquals("MyLib", manager.resolveFrameLibraryId(handler))
+        }
+
+        @Test
+        fun `with multiple call stack entries returns the innermost (last-pushed) library id`() {
+            // lastPausedCallStack is stored outermost-first (push order), so the currently-executing
+            // frame is the LAST entry, not the first.
+            val outer = StreamingBreakpointHandler.CallStackEntry(def = mock(), callSite = null, libraryId = "OuterLib")
+            val inner = StreamingBreakpointHandler.CallStackEntry(def = mock(), callSite = null, libraryId = "InnerLib")
+            val handler =
+                mock(StreamingBreakpointHandler::class.java).also {
+                    `when`(it.lastPausedCallStack).thenReturn(listOf(outer, inner))
+                }
+            assertEquals("InnerLib", manager.resolveFrameLibraryId(handler))
         }
 
         @Test

@@ -511,13 +511,14 @@ class CqlDebugServerHelperTest {
             CqlDebugServer::class.java.getDeclaredMethod(
                 "buildLibraryGroupVariables",
                 Map::class.java,
+                String::class.java,
             )
         method.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val groups = mapOf("Beta" to emptyList<RuntimeValue>(), "Alpha" to emptyList<RuntimeValue>())
 
         @Suppress("UNCHECKED_CAST")
-        val result = method.invoke(server, groups) as List<org.eclipse.lsp4j.debug.Variable>
+        val result = method.invoke(server, groups, "parameter") as List<org.eclipse.lsp4j.debug.Variable>
         assertEquals(2, result.size)
         // Should be sorted: Alpha before Beta
         assertEquals("Alpha", result[0].name)
@@ -535,10 +536,11 @@ class CqlDebugServerHelperTest {
             CqlDebugServer::class.java.getDeclaredMethod(
                 "buildLibraryGroupVariables",
                 Map::class.java,
+                String::class.java,
             )
         method.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val result = method.invoke(server, emptyMap<String, List<RuntimeValue>>()) as List<org.eclipse.lsp4j.debug.Variable>
+        val result = method.invoke(server, emptyMap<String, List<RuntimeValue>>(), "parameter") as List<org.eclipse.lsp4j.debug.Variable>
         assertEquals(0, result.size)
     }
 
