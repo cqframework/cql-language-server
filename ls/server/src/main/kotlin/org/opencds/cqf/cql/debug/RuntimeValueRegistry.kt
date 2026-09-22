@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.debug
 
 import org.hl7.elm.r1.VersionedIdentifier
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.BaseTemporal
 import org.opencds.cqf.cql.engine.runtime.Interval
 import org.opencds.cqf.cql.engine.runtime.StructuredValue
 import org.opencds.cqf.cql.engine.runtime.Value
@@ -13,11 +14,11 @@ import org.opencds.cqf.cql.engine.runtime.List as CqlList
 /**
  * Unwraps engine [Value] objects to plain Java types so the DAP layer remains type-agnostic.
  *
- * [Interval], [StructuredValue] (Tuple, Code, Quantity, Ratio, Concept, ClassInstance), and
- * [CqlList] (the engine's own list wrapper — e.g. the result of a Retrieve) are passed through
- * unchanged rather than stringified, so [VariableResolver] can expand/convert them into child
- * variables (including converting a ClassInstance/CqlList of FHIR resources back to real FHIR
- * resources for display).
+ * [Interval], [StructuredValue] (Tuple, Code, Quantity, Ratio, Concept, ClassInstance),
+ * [CqlList] (the engine's own list wrapper — e.g. the result of a Retrieve), and
+ * [BaseTemporal] (Date/DateTime/Time) are passed through unchanged rather than stringified, so
+ * [VariableResolver] can expand/convert them into child variables (including converting a
+ * ClassInstance/CqlList of FHIR resources back to real FHIR resources for display).
  */
 private fun Any?.unwrapValue(): Any? =
     when (this) {
@@ -31,6 +32,12 @@ private fun Any?.unwrapValue(): Any? =
                 is Interval -> this
                 is StructuredValue -> this
                 is CqlList -> this
+                // Date/DateTime/Time share BaseTemporal (a SimpleValue/Value). Previously they fell
+                // through to `toString()` like CqlList once did, stringifying e.g. a paused
+                // System.Date stack variable to "@2024-01-15" before the ad-hoc operand converter
+                // ever ran. Keep them as-is so the ad-hoc evaluate path binds them as real typed
+                // values (Date/year arithmetic, comparisons, etc.).
+                is BaseTemporal -> this
                 else -> this.toString()
             }
         else -> this

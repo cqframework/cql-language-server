@@ -6,10 +6,15 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.opencds.cqf.cql.engine.runtime.BaseTemporal
 import org.opencds.cqf.cql.engine.runtime.Interval
 import org.opencds.cqf.cql.engine.runtime.Tuple
+import java.time.ZoneOffset
+import org.opencds.cqf.cql.engine.runtime.Date as CqlDate
+import org.opencds.cqf.cql.engine.runtime.DateTime as CqlDateTime
 import org.opencds.cqf.cql.engine.runtime.Integer as CqlInteger
 import org.opencds.cqf.cql.engine.runtime.List as CqlList
+import org.opencds.cqf.cql.engine.runtime.Time as CqlTime
 
 class RuntimeValueRegistryTest {
     // -- put / find basic ---------------------------------------------------
@@ -50,6 +55,26 @@ class RuntimeValueRegistryTest {
         val cqlList = CqlList(listOf(CqlInteger(1), CqlInteger(2)))
         reg.putDefine("Numbers", cqlList, "List<System.Integer>", null)
         assertTrue(reg.find("Numbers")?.value === cqlList)
+    }
+
+    @Test
+    fun `putDefine passes temporal values through unstringified`() {
+        // Date/DateTime/Time all extend BaseTemporal. They are genuine engine Values (the alias
+        // types the ad-hoc evaluate path must bind as real operands) and, like CqlList before them,
+        // previously fell through to `toString()` (e.g. "@2024-01-15") at registry write time.
+        val reg = RuntimeValueRegistry()
+        val date = CqlDate("2024-01-15")
+        val dateTime = CqlDateTime("2024-01-15T10:30:00.000", ZoneOffset.UTC)
+        val time = CqlTime("10:30:00")
+        reg.putDefine("D", date, "System.Date", null)
+        reg.putDefine("DT", dateTime, "System.DateTime", null)
+        reg.putDefine("T", time, "System.Time", null)
+        assertTrue(reg.find("D")?.value === date)
+        assertTrue(reg.find("DT")?.value === dateTime)
+        assertTrue(reg.find("T")?.value === time)
+        assertTrue(reg.find("D")?.value is BaseTemporal)
+        assertTrue(reg.find("DT")?.value is BaseTemporal)
+        assertTrue(reg.find("T")?.value is BaseTemporal)
     }
 
     @Test

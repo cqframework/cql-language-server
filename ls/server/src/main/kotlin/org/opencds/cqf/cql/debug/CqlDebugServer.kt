@@ -1480,7 +1480,16 @@ open class CqlDebugServer(
         name: String,
         value: Any?,
     ): String? {
+        // The translator resolves aliases declared inside included libraries under their qualified
+        // "$libId.$name" key (loadVariableTypesForLibrary), while the stack variable carrying the
+        // live value is registered under the bare name. Look up the innermost frame's library
+        // (same resolveFrameLibraryId() helper already used above for source text) qualified first,
+        // then fall back to the bare name — mirroring the qualified-then-bare pattern in the
+        // define/stack-variable snapshot paths.
+        val frameLibId = resolveFrameLibraryId()
+        variableTypeMap["$frameLibId.$name"]?.let { return it }
         variableTypeMap[name]?.let { return it }
+        streamingHandler?.variableTypeMap?.get("$frameLibId.$name")?.let { return it }
         streamingHandler?.variableTypeMap?.get(name)?.let { return it }
         return varResolver.fhirResourceTypeOf(value)
     }
