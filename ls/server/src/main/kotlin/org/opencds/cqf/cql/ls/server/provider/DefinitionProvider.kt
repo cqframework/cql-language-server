@@ -24,6 +24,7 @@ import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.LibrarySourceResolver
+import org.opencds.cqf.cql.ls.server.manager.VirtualLibraryUris
 import org.opencds.cqf.cql.ls.server.utility.TrackBacks
 import org.opencds.cqf.cql.ls.server.visitor.DefinitionTrackBackVisitor
 import org.slf4j.LoggerFactory
@@ -222,11 +223,7 @@ class DefinitionProvider(
         identifier: VersionedIdentifier,
         compiler: CqlCompiler,
     ): URI? {
-        val sourceText = LibrarySourceResolver.resolve(compiler.libraryManager, identifier) ?: return null
-        val bareId = identifier.id?.substringAfterLast('/') ?: return null
-        val virtualUri = URI.create("cql-virtual:///$bareId-${identifier.version ?: "unversioned"}.cql")
-        compilationManager.compile(virtualUri, sourceText.byteInputStream())
-        return virtualUri
+        return VirtualLibraryUris.ensureCompiled(compilationManager, compiler.libraryManager, identifier)
     }
 
     private fun locationLinkFromElements(

@@ -474,17 +474,12 @@ class CqlDebugServerHelperTest {
     // -- loadStepLinesForLibrary exception path --------------------------------
 
     @Test
-    fun `loadStepLinesForLibrary with null streamingLaunchUri does not throw`() {
+    fun `loadStepLinesForLibrary with an unmapped library does not throw`() {
         val server = makeServer()
-        val method =
-            CqlDebugServer::class.java.getDeclaredMethod(
-                "loadStepLinesForLibrary",
-                String::class.java,
-                org.hl7.elm.r1.VersionedIdentifier::class.java,
-            )
+        val method = CqlDebugServer::class.java.getDeclaredMethod("loadStepLinesForLibrary", String::class.java)
         method.isAccessible = true
-        // streamingLaunchUri is null, so method should return early without throwing
-        method.invoke(server, "SomeLib", null)
+        // SomeLib has no librarySourceMap entry, so the method should return early without throwing
+        method.invoke(server, "SomeLib")
     }
 
     // -- loadVariableTypesForLibrary exception path ----------------------------

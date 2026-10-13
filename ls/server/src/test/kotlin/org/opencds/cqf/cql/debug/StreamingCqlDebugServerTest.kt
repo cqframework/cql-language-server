@@ -93,33 +93,6 @@ class StreamingCqlDebugServerTest {
             // no-op for tests
         }
 
-        /**
-         * Migrates path-keyed breakpoints for [libId] from sourcePathBreakpoints
-         * into breakpointsByLibrary and handler.breakpointsByLibrary.
-         * Mirrors the migration block in [CqlDebugServer]'s onLibraryEnteredCallback.
-         */
-        fun triggerBreakpointMigration(libId: String) {
-            val libMapField = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
-            libMapField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val libMap = libMapField.get(this) as ConcurrentHashMap<String, URI>
-            val uri = libMap[libId] ?: return
-            val pathStr = Paths.get(uri).toString()
-
-            val bpField = CqlDebugServer::class.java.getDeclaredField("sourcePathBreakpoints")
-            bpField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val spb = bpField.get(this) as ConcurrentHashMap<String, MutableSet<Int>>
-            val pending = spb[pathStr] ?: return
-
-            val srvBpField = CqlDebugServer::class.java.getDeclaredField("breakpointsByLibrary")
-            srvBpField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val srvBp = srvBpField.get(this) as ConcurrentHashMap<String, MutableSet<Int>>
-            srvBp[libId] = pending
-            testHandler.breakpointsByLibrary[libId] = pending
-        }
-
         fun setLaunchUri(uri: String) {
             streamingLaunchUri = uri
         }
@@ -2888,8 +2861,8 @@ class StreamingCqlDebugServerTest {
         // Now simulate collectTransitiveIncludes populating librarySourceMap
         server.addLibrarySource("FHIRHelpers", fhirHelpersUri)
 
-        // This is the migration the callback performs (now outside the !containsKey guard)
-        server.triggerBreakpointMigration("FHIRHelpers")
+        // The production library-entered callback migrates even though the library was pre-mapped
+        server.onLibraryEntered("FHIRHelpers", null)
 
         // After migration: handler has FHIRHelpers breakpoints
         assertTrue(handler.breakpointsByLibrary.containsKey("FHIRHelpers"))
@@ -3302,104 +3275,148 @@ class StreamingCqlDebugServerTest {
         assertEquals("", response.content)
     }
 
-    @Test
-    fun `source falls back to the execution engine's library-source-provider chain for bundled libraries with no workspace file`() {
-        // Mirrors FHIRHelpers: no workspace file (contentService.locate finds nothing), but the
-        // execution engine's LibraryManager (streamingHandler.libraryManager — set by CqlEvaluator
-        // when this debug session's engine was built) can still produce real source text via its
-        // bundled provider. This must NOT rely on launchCompiler, which is a separately-cached,
-        // potentially stale LSP compiler that may never have resolved this library at all.
-        val server = setupServer()
-        val identifier =
-            VersionedIdentifier().also {
-                it.id = "FHIRHelpers"
-                it.version = "4.0.1"
-            }
+    // -- libraries with no workspace file (cql-virtual) ---------------------
 
-        val registryField = CqlDebugServer::class.java.getDeclaredField("sourceReferenceRegistry")
-        registryField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val registry = registryField.get(server) as ConcurrentHashMap<Int, VersionedIdentifier>
-        registry[99] = identifier
+    private val fhirHelpers401 =
+        VersionedIdentifier().also {
+            it.id = "FHIRHelpers"
+            it.version = "4.0.1"
+        }
 
-        val librarySourceLoader = Mockito.mock(org.cqframework.cql.cql2elm.LibrarySourceLoader::class.java)
-        Mockito.`when`(librarySourceLoader.getLibrarySource(identifier))
-            .thenReturn(org.opencds.cqf.cql.ls.core.utility.Converters.stringToSource("library FHIRHelpers version '4.0.1'"))
-        val libraryManager = Mockito.mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
-        Mockito.`when`(libraryManager.librarySourceLoader).thenReturn(librarySourceLoader)
-        server.testHandler.libraryManager = libraryManager
+    /**
+     * Server whose [ContentService] never locates anything (a library with no workspace file,
+     * e.g. bundled FHIRHelpers) backed by a real [CqlCompilationManager], so cql-virtual
+     * libraries are really compiled into its cache.
+     */
+    private fun setupVirtualSourceServer(): Pair<TestStreamingServer, CqlCompilationManager> {
+        val testContent = org.opencds.cqf.cql.ls.server.service.TestContentService()
+        val cm =
+            CqlCompilationManager(
+                testContent,
+                org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(testContent),
+                IgContextManager(testContent),
+                LibraryResolutionManager(emptyList()),
+            )
+        val server = TestStreamingServer(cm, mock(ContentService::class.java), mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+        server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+        server.setLaunchUri("file:///primary/Library.cql")
+        server.testHandler.primaryLibraryId = "Primary"
+        return server to cm
+    }
 
-        val response = server.source(org.eclipse.lsp4j.debug.SourceArguments().also { it.sourceReference = 99 }).get()
-
-        assertEquals("library FHIRHelpers version '4.0.1'", response.content)
+    private fun TestStreamingServer.sourceFor(libId: String): Source {
+        val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSource", String::class.java)
+        method.isAccessible = true
+        return method.invoke(this, libId) as Source
     }
 
     @Test
-    fun `source falls back to the bundled FhirLibrarySourceProvider directly when the registered provider chain returns null`() {
+    fun `entering a library with no workspace file reports it under its cql-virtual URI`() {
+        val (server, cm) = setupVirtualSourceServer()
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        val source = server.sourceFor("FHIRHelpers")
+        assertEquals("cql-virtual:///FHIRHelpers-4.0.1.cql", source.path)
+        assertNull(source.sourceReference)
+        assertEquals("FHIRHelpers-4.0.1.cql", source.name)
+        // The editor tab's content comes from the shared compilation cache (virtualSource command).
+        assertTrue(cm.getSourceText(URI.create(source.path))!!.contains("library FHIRHelpers"))
+    }
+
+    @Test
+    fun `entering a library with no workspace file loads its step lines`() {
+        val (server, _) = setupVirtualSourceServer()
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        assertFalse(server.testHandler.cqlStepLinesByLibrary["FHIRHelpers"].isNullOrEmpty())
+    }
+
+    @Test
+    fun `falls back to the bundled provider when the engine's provider chain returns null`() {
         // Regression test for a live-session bug: streamingHandler.libraryManager was present and
-        // its librarySourceLoader.getLibrarySource(id) returned null for FHIRHelpers (root cause
-        // not fully pinned down — a provider-registration/ordering issue), even though the bundled
-        // resource genuinely exists on the classpath. The direct, stateless fallback must still
-        // resolve real content in that case.
-        val server = setupServer()
-        val identifier =
-            VersionedIdentifier().also {
-                it.id = "FHIRHelpers"
-                it.version = "4.0.1"
-            }
-
-        val registryField = CqlDebugServer::class.java.getDeclaredField("sourceReferenceRegistry")
-        registryField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val registry = registryField.get(server) as ConcurrentHashMap<Int, VersionedIdentifier>
-        registry[100] = identifier
-
-        // The registered provider chain returns null, mirroring the observed bug.
+        // its librarySourceLoader.getLibrarySource(id) returned null for FHIRHelpers, even though
+        // the bundled resource genuinely exists on the classpath.
+        val (server, cm) = setupVirtualSourceServer()
         val librarySourceLoader = Mockito.mock(org.cqframework.cql.cql2elm.LibrarySourceLoader::class.java)
-        Mockito.`when`(librarySourceLoader.getLibrarySource(identifier)).thenReturn(null)
+        Mockito.`when`(librarySourceLoader.getLibrarySource(fhirHelpers401)).thenReturn(null)
         val libraryManager = Mockito.mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
         Mockito.`when`(libraryManager.librarySourceLoader).thenReturn(librarySourceLoader)
         server.testHandler.libraryManager = libraryManager
 
-        val response = server.source(org.eclipse.lsp4j.debug.SourceArguments().also { it.sourceReference = 100 }).get()
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
 
-        assertTrue(response.content.isNotEmpty(), "Expected real FHIRHelpers CQL text from the direct bundled-provider fallback")
-        assertTrue(response.content.contains("library FHIRHelpers"), "Expected FHIRHelpers source text, got: ${response.content.take(100)}")
+        val path = server.sourceFor("FHIRHelpers").path
+        assertEquals("cql-virtual:///FHIRHelpers-4.0.1.cql", path)
+        assertTrue(cm.getSourceText(URI.create(path))!!.contains("library FHIRHelpers"))
     }
 
     @Test
-    fun `source normalizes a namespace-qualified id (system baked into id, not a separate field) before the bundled-provider lookup`() {
-        // Regression test for a live-session bug: the identifier reaching resolveSourceContent had
-        // id = "http://hl7.org/fhir/uv/cql/FHIRHelpers" (the full namespaced URI concatenated with
-        // the name) with `.system` left null, instead of id = "FHIRHelpers" with `.system` set
-        // separately. FhirLibrarySourceProvider builds "<id>-<version>.cql" for its classpath
-        // lookup, so the un-normalized id can never match the real bundled resource. Uses the REAL
-        // FhirLibrarySourceProvider (no mocking) since the resource genuinely exists on the
-        // classpath — this must resolve via the bare trailing segment.
-        val server = setupServer()
-        val identifier =
+    fun `a namespace-qualified id is reported under its bare-id cql-virtual URI`() {
+        // The identifier can arrive as id = "http://hl7.org/fhir/uv/cql/FHIRHelpers" (system baked
+        // into the id) — it must map to the same URI go-to-definition mints for the bare id.
+        val (server, cm) = setupVirtualSourceServer()
+        val namespaced =
             VersionedIdentifier().also {
                 it.id = "http://hl7.org/fhir/uv/cql/FHIRHelpers"
                 it.version = "4.0.1"
             }
 
-        val registryField = CqlDebugServer::class.java.getDeclaredField("sourceReferenceRegistry")
-        registryField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val registry = registryField.get(server) as ConcurrentHashMap<Int, VersionedIdentifier>
-        registry[101] = identifier
+        server.onLibraryEntered("FHIRHelpers", namespaced)
 
-        // The registered provider chain also returns null for the un-normalized id, mirroring the
-        // observed bug — left unstubbed, so it returns null for any argument by default, and the
-        // fix must still find real content via the direct bundled-provider fallback.
-        val librarySourceLoader = Mockito.mock(org.cqframework.cql.cql2elm.LibrarySourceLoader::class.java)
-        val libraryManager = Mockito.mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
-        Mockito.`when`(libraryManager.librarySourceLoader).thenReturn(librarySourceLoader)
-        server.testHandler.libraryManager = libraryManager
+        val path = server.sourceFor("FHIRHelpers").path
+        assertEquals("cql-virtual:///FHIRHelpers-4.0.1.cql", path)
+        assertTrue(cm.getSourceText(URI.create(path))!!.contains("library FHIRHelpers"))
+    }
 
-        val response = server.source(org.eclipse.lsp4j.debug.SourceArguments().also { it.sourceReference = 101 }).get()
+    @Test
+    fun `an unmapped cql-virtual breakpoint is not attached to the primary library`() {
+        // Regression: an unresolved path used to fall back to primaryLibraryId, making the
+        // primary library pause on the virtual document's line numbers.
+        val (server, _) = setupVirtualSourceServer()
 
-        assertTrue(response.content.contains("library FHIRHelpers"), "Expected FHIRHelpers source text, got: ${response.content.take(100)}")
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "cql-virtual:/FHIRHelpers-4.0.1.cql" }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 7 })
+            },
+        ).get()
+
+        assertFalse(server.testHandler.breakpointsByLibrary.containsKey("Primary"))
+        assertFalse(server.testHandler.breakpointsByLibrary.containsKey(""))
+    }
+
+    @Test
+    fun `a cql-virtual breakpoint set before the library is entered migrates to it`() {
+        val (server, _) = setupVirtualSourceServer()
+        // VS Code sends the single-slash form for a breakpoint set in a cql-virtual tab.
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "cql-virtual:/FHIRHelpers-4.0.1.cql" }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 7 })
+            },
+        ).get()
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        assertEquals(setOf(7), server.testHandler.breakpointsByLibrary["FHIRHelpers"])
+    }
+
+    @Test
+    fun `a cql-virtual breakpoint set after the library is mapped attaches to it directly`() {
+        val (server, _) = setupVirtualSourceServer()
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "cql-virtual:/FHIRHelpers-4.0.1.cql" }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 9 })
+            },
+        ).get()
+
+        assertEquals(setOf(9), server.testHandler.breakpointsByLibrary["FHIRHelpers"])
+        assertFalse(server.testHandler.breakpointsByLibrary.containsKey("Primary"))
     }
 
     // -- getAst ------------------------------------------------------------
@@ -3409,6 +3426,21 @@ class StreamingCqlDebugServerTest {
         val server = setupServer()
         val response = server.getAst(emptyMap<String, Any>()).get()
         assertNull(response["ast"])
+    }
+
+    @Test
+    fun `getAst resolves a cql-virtual URI sent in VS Code's single-slash form`() {
+        val server = setupServer()
+        server.addLibrarySource("FHIRHelpers", URI.create("cql-virtual:///FHIRHelpers-4.0.1.cql"))
+        val compiled = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+        Mockito.`when`(compiled.library).thenReturn(Library().also { it.identifier = fhirHelpers401 })
+        val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+        Mockito.`when`(libraryManager.compiledLibraries).thenReturn(hashMapOf(fhirHelpers401 to compiled))
+        server.testHandler.libraryManager = libraryManager
+
+        val response = server.getAst(mapOf("uri" to "cql-virtual:/FHIRHelpers-4.0.1.cql")).get()
+
+        assertNotNull(response["ast"])
     }
 
     @Test
@@ -3454,40 +3486,9 @@ class StreamingCqlDebugServerTest {
 
         assertFalse(handler.breakpointsByLibrary.containsKey("LibC"))
 
-        // Wire up a callback that mirrors the production logic:
-        // 1. URI resolution uses libraryIdentifier fallback (LibC not a direct include)
-        // 2. Breakpoint migration always runs
-        handler.onLibraryEnteredCallback = { libId, libraryIdentifier ->
-            // URI resolution block (guarded by !containsKey)
-            try {
-                val libMapField = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
-                libMapField.isAccessible = true
-                @Suppress("UNCHECKED_CAST")
-                val libMap = libMapField.get(server) as ConcurrentHashMap<String, URI>
-
-                if (!libMap.containsKey(libId) && libraryIdentifier != null) {
-                    val csField = CqlDebugServer::class.java.getDeclaredField("contentService")
-                    csField.isAccessible = true
-                    val contentSvc = csField.get(server) as ContentService
-                    val uris =
-                        contentSvc.locate(
-                            URI.create(launchUriStr),
-                            libraryIdentifier,
-                        )
-                    val uri = uris.firstOrNull()
-                    if (uri != null) {
-                        libMap[libId] = uri
-                    }
-                }
-            } catch (_: Exception) {
-            }
-
-            // Migration block (always runs)
-            server.triggerBreakpointMigration(libId)
-        }
-
-        // Invoke the callback with the transitive library's identifier
-        handler.onLibraryEnteredCallback?.invoke("LibC", libCIdentifier)
+        // Run the production library-entered callback with the transitive library's identifier
+        // (LibC is not a direct include, so it resolves via the libraryIdentifier fallback).
+        server.onLibraryEntered("LibC", libCIdentifier)
 
         // Verify breakpoints migrated
         assertTrue(handler.breakpointsByLibrary.containsKey("LibC"))
@@ -4253,6 +4254,54 @@ class StreamingCqlDebugServerTest {
             val result = method.invoke(server) as? String
 
             assertEquals(includedSource, result, "Should resolve included library's source text when paused inside it")
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame uses a cql-virtual library's source when paused inside it`() {
+            val cs = mock(ContentService::class.java)
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            val virtualUri = URI.create("cql-virtual:///Included-1.0.0.cql")
+            val includedSource = "library Included version '1.0.0'\n\ndefine \"Y\": 20"
+            cm.compile(virtualUri, includedSource.byteInputStream())
+            val server = TestStreamingServer(cm, cs, mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+            server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+            server.testHandler.primaryLibraryId = "Primary"
+            server.addLibrarySource("Included", virtualUri)
+            server.testHandler.lastPausedCallStack =
+                listOf(StreamingBreakpointHandler.CallStackEntry(ExpressionDef().also { it.name = "Y" }, null, "Included"))
+
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+
+            assertEquals(includedSource, method.invoke(server) as? String)
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame re-resolves an evicted cql-virtual library instead of using the primary's`() {
+            // The cql-virtual cache entry can be evicted (CqlCompilationManager.invalidate drops
+            // reverse dependencies); the frame must still get the included library's own text.
+            val server = makeServer()
+            server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+            server.testHandler.primaryLibraryId = "Primary"
+            server.addLibrarySource("FHIRHelpers", URI.create("cql-virtual:///FHIRHelpers-4.0.1.cql"))
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            Mockito.`when`(libraryManager.compiledLibraries)
+                .thenReturn(hashMapOf(fhirHelpers401 to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)))
+            server.testHandler.libraryManager = libraryManager
+            server.testHandler.lastPausedCallStack =
+                listOf(StreamingBreakpointHandler.CallStackEntry(ExpressionDef().also { it.name = "ToString" }, null, "FHIRHelpers"))
+
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+            val result = method.invoke(server) as? String
+
+            assertTrue(result?.contains("library FHIRHelpers") == true, "Expected FHIRHelpers source, got: ${result?.take(100)}")
         }
 
         @Test

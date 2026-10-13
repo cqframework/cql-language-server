@@ -5,7 +5,6 @@ import ca.uhn.fhir.context.BaseRuntimeElementDefinition
 import ca.uhn.fhir.context.FhirContext
 import com.google.gson.Gson
 import org.cqframework.cql.cql2elm.CqlCompiler
-import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
 import org.eclipse.lsp4j.debug.Capabilities
@@ -77,6 +76,7 @@ import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
 import org.opencds.cqf.cql.ls.server.manager.LibrarySourceResolver
+import org.opencds.cqf.cql.ls.server.manager.VirtualLibraryUris
 import org.opencds.cqf.cql.ls.server.provider.CursorCategory
 import org.opencds.cqf.cql.ls.server.provider.CursorClassifier
 import org.opencds.cqf.cql.ls.server.utility.ElmAstLibraryWriter
@@ -172,8 +172,6 @@ open class CqlDebugServer(
 
     /** Backing maps — kept on CqlDebugServer for reflection-based test access. */
     private val librarySourceMap = ConcurrentHashMap<String, URI>()
-    private val sourceReferenceRegistry = ConcurrentHashMap<Int, VersionedIdentifier>()
-    private val nextSourceReference = AtomicInteger(1)
     private val breakpointsByLibrary = ConcurrentHashMap<String, MutableSet<Int>>()
 
     /** Path-based fallback for breakpoints set before the library is resolved. */
@@ -251,11 +249,23 @@ open class CqlDebugServer(
 
     override fun setBreakpoints(args: SetBreakpointsArguments): CompletableFuture<SetBreakpointsResponse> {
         val sourcePath = args.source?.path
-        val libId = resolveLibraryIdFromPath(sourcePath) ?: streamingHandler?.primaryLibraryId ?: ""
+        // A URI-shaped path (a cql-virtual tab for a library with no workspace file) that isn't
+        // mapped yet must NOT fall back to the primary library — that would make the primary
+        // library pause on the virtual document's line numbers. Such breakpoints stay pending in
+        // sourcePathBreakpoints until the library is mapped (see the migration callback in launch).
+        val libId =
+            resolveLibraryIdFromPath(sourcePath)
+                ?: if (sourcePath != null && VirtualLibraryUris.looksLikeUri(sourcePath)) {
+                    null
+                } else {
+                    streamingHandler?.primaryLibraryId ?: ""
+                }
 
         val lines = args.breakpoints?.map { it.line }?.toMutableSet() ?: mutableSetOf()
-        breakpointsByLibrary[libId] = lines
-        streamingHandler?.breakpointsByLibrary?.set(libId, lines)
+        if (libId != null) {
+            breakpointsByLibrary[libId] = lines
+            streamingHandler?.breakpointsByLibrary?.set(libId, lines)
+        }
 
         // Store by source path as well for resolution before library is entered
         if (sourcePath != null) {
@@ -269,13 +279,7 @@ open class CqlDebugServer(
         // Compute breakpointable lines from the ANTLR parse tree, if available.
         // This allows marking breakpoints on blank/invalid lines as unverified.
         val breakpointableLines: Set<Int>? =
-            runCatching {
-                val treeUri =
-                    resolveLibraryIdFromPath(sourcePath)?.let { librarySourceMap[it] }
-                        ?: if (sourcePath != null) Paths.get(sourcePath).toUri() else null
-                treeUri?.let { compilationManager.getParseTree(it) }
-                    ?.let { CqlStepPositionCollector.collectBreakpointableLines(it) }
-            }.getOrNull()
+            breakpointManager.applyBreakpointableLinesFilter(sourcePath, streamingLaunchUri, compilationManager, librarySourceMap)
 
         val bps =
             args.breakpoints?.map { bp ->
@@ -304,14 +308,14 @@ open class CqlDebugServer(
     internal fun collectTransitiveIncludes(
         primaryId: String,
         compiler: CqlCompiler?,
-    ): Set<String> = breakpointManager.collectTransitiveIncludes(primaryId, compiler, streamingLaunchUri, librarySourceMap)
+    ): Set<String> = breakpointManager.collectTransitiveIncludes(primaryId, compiler, streamingLaunchUri, librarySourceMap, compilationManager)
 
     private fun updateBreakpointVerification() {
         breakpointManager.updateBreakpointVerification(client.join(), breakpointIdsByPath, librarySourceMap, relevantLibraryIds)
     }
 
-    private fun updateBreakpointLineVerification(parseTree: cqlParser.LibraryContext) {
-        breakpointManager.updateBreakpointLineVerification(parseTree, client.join(), breakpointIdsByPath)
+    private fun updateBreakpointLineVerification() {
+        breakpointManager.updateBreakpointLineVerification(client.join(), breakpointIdsByPath, librarySourceMap, compilationManager)
     }
 
     private fun extractParameterMetadata(libraryUri: URI): Map<String, List<ParameterMetadata>> {
@@ -467,61 +471,7 @@ open class CqlDebugServer(
             }
         }
 
-        handler.onLibraryEnteredCallback = migration@{ libId, libraryIdentifier ->
-            if (!librarySourceMap.containsKey(libId)) {
-                try {
-                    val compiler = launchCompiler
-                    val allDefs = compiler?.compiledLibrary?.library?.includes?.def ?: emptyList()
-                    val identifier =
-                        allDefs.firstOrNull { it.path == libId || it.localIdentifier == libId }
-                            ?.let { def ->
-                                VersionedIdentifier().also { vi ->
-                                    vi.id = def.path
-                                    vi.version = def.version
-                                }
-                            } ?: libraryIdentifier
-                    if (identifier != null) {
-                        val uris = contentService.locate(URI.create(streamingLaunchUri!!), identifier)
-                        val uri = uris.firstOrNull()
-                        if (uri != null) {
-                            librarySourceMap[libId] = uri
-                        } else {
-                            val ref = nextSourceReference.getAndIncrement()
-                            sourceReferenceRegistry[ref] = identifier
-                            librarySourceMap[libId] = URI.create("cql-source://$ref")
-                        }
-                        loadStepLinesForLibrary(libId, identifier)
-                        loadVariableTypesForLibrary(libId)
-                    }
-                } catch (e: Exception) {
-                    log.debug("onLibraryEnteredCallback: failed to resolve library $libId", e)
-                }
-            }
-
-            // Migrate path-keyed breakpoints set before this library's ID was known.
-            // This runs OUTSIDE the !containsKey guard because collectTransitiveIncludes
-            // pre-populates librarySourceMap for direct includes before execution starts,
-            // which would otherwise prevent migration from ever running.
-            // Use Path.equals() for the lookup — on Windows this is case-insensitive,
-            // which handles drive-letter case differences (File.toURI() → uppercase C:
-            // vs VS Code source.path → lowercase c:).
-            try {
-                val uri = librarySourceMap[libId] ?: return@migration
-                val uriPath = Paths.get(uri)
-                val pending =
-                    sourcePathBreakpoints.entries
-                        .firstOrNull { (key, _) ->
-                            try {
-                                Paths.get(key) == uriPath
-                            } catch (_: Exception) {
-                                false
-                            }
-                        }?.value ?: return@migration
-                breakpointsByLibrary[libId] = pending
-                handler.breakpointsByLibrary[libId] = pending
-            } catch (_: Exception) {
-            }
-        }
+        handler.onLibraryEnteredCallback = ::onLibraryEntered
 
         streamingLaunchUri = args.libraryUri
 
@@ -582,10 +532,7 @@ open class CqlDebugServer(
 
             // After library resolution, correct verification for breakpoints on
             // lines that don't correspond to evaluatable CQL expressions.
-            val parseTreeAfterLaunch = compilationManager.getParseTree(libraryUri)
-            if (parseTreeAfterLaunch != null) {
-                updateBreakpointLineVerification(parseTreeAfterLaunch)
-            }
+            updateBreakpointLineVerification()
         }
 
         handler.stepGranularity =
@@ -625,14 +572,76 @@ open class CqlDebugServer(
         }
     }
 
-    private fun loadStepLinesForLibrary(
+    /**
+     * Invoked (via [StreamingBreakpointHandler.onLibraryEnteredCallback]) the first time
+     * execution enters each library. Maps the library to its source URI — the workspace file, or
+     * the cql-virtual URI for a library with no workspace file — loads its step lines and variable
+     * types, then migrates any path-keyed breakpoints set before the library was known.
+     */
+    internal fun onLibraryEntered(
         libId: String,
-        identifier: VersionedIdentifier?,
+        libraryIdentifier: VersionedIdentifier?,
     ) {
-        if (identifier == null) return
+        if (!librarySourceMap.containsKey(libId)) {
+            try {
+                val compiler = launchCompiler
+                val allDefs = compiler?.compiledLibrary?.library?.includes?.def ?: emptyList()
+                val identifier =
+                    allDefs.firstOrNull { it.path == libId || it.localIdentifier == libId }
+                        ?.let { def ->
+                            VersionedIdentifier().also { vi ->
+                                vi.id = def.path
+                                vi.version = def.version
+                            }
+                        } ?: libraryIdentifier
+                if (identifier != null) {
+                    val uris = contentService.locate(URI.create(streamingLaunchUri!!), identifier)
+                    val uri = uris.firstOrNull()
+                    if (uri != null) {
+                        librarySourceMap[libId] = uri
+                    } else {
+                        // No workspace file (bundled / npm library): report it under the same
+                        // cql-virtual URI go-to-definition opens, so both share one editor tab.
+                        VirtualLibraryUris.ensureCompiled(
+                            compilationManager,
+                            streamingHandler?.libraryManager ?: compiler?.libraryManager,
+                            identifier,
+                        )?.let { librarySourceMap[libId] = it }
+                    }
+                }
+            } catch (e: Exception) {
+                log.debug("onLibraryEnteredCallback: failed to resolve library $libId", e)
+            }
+        }
+
+        // Outside the guard: collectTransitiveIncludes usually maps the library at launch, and
+        // this callback fires only once per library, so this is the one chance to load them.
+        loadStepLinesForLibrary(libId)
+        loadVariableTypesForLibrary(libId)
+
+        // Migrate path-keyed breakpoints set before this library's ID was known.
+        // This runs OUTSIDE the !containsKey guard because collectTransitiveIncludes
+        // pre-populates librarySourceMap for direct includes before execution starts,
+        // which would otherwise prevent migration from ever running.
+        // BreakpointManager.sourcePathMatches compares file paths with Path.equals() (on
+        // Windows this is case-insensitive, which handles drive-letter case differences:
+        // File.toURI() → uppercase C: vs VS Code source.path → lowercase c:) and cql-virtual
+        // URIs as normalized URIs (VS Code sends cql-virtual:/X.cql for cql-virtual:///X.cql).
         try {
-            val uris = contentService.locate(URI.create(streamingLaunchUri ?: return), identifier)
-            val uri = uris.firstOrNull() ?: return
+            val uri = librarySourceMap[libId] ?: return
+            val pending =
+                sourcePathBreakpoints.entries
+                    .firstOrNull { (key, _) -> breakpointManager.sourcePathMatches(key, uri) }
+                    ?.value ?: return
+            breakpointsByLibrary[libId] = pending
+            streamingHandler?.breakpointsByLibrary?.set(libId, pending)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun loadStepLinesForLibrary(libId: String) {
+        try {
+            val uri = librarySourceMap[libId] ?: return
             val parseTree = compilationManager.getParseTree(uri) ?: return
             val lines = CqlStepPositionCollector.collect(parseTree)
             streamingHandler?.cqlStepLinesByLibrary?.set(libId, lines)
@@ -1747,7 +1756,7 @@ open class CqlDebugServer(
     }
 
     private fun resolveSource(libraryId: String): Source =
-        breakpointManager.resolveSource(libraryId, streamingLaunchUri, streamingHandler, librarySourceMap, sourceReferenceRegistry)
+        breakpointManager.resolveSource(libraryId, streamingLaunchUri, streamingHandler, librarySourceMap)
 
     private fun resolveFrameLibraryId(): String =
         breakpointManager.resolveFrameLibraryId(streamingHandler)
@@ -1758,10 +1767,11 @@ open class CqlDebugServer(
      * types a REPL expression, the synthetic CQL must be compiled against that library's source
      * so its top-level declarations (code definitions, value sets, etc.) are in scope.
      *
-     * Three-tier resolution mirrors [resolveSourceContent]:
-     * 1. Compilation cache (instant, covers the primary library)
+     * Three-tier resolution:
+     * 1. Compilation cache (instant; covers the primary library and cql-virtual libraries)
      * 2. [contentService] (workspace files + active editor buffer)
-     * 3. [LibrarySourceResolver] (npm/bundled libraries via engine provider chain)
+     * 3. [LibrarySourceResolver] (npm/bundled libraries via the engine provider chain, in case
+     *    the cql-virtual cache entry was evicted)
      */
     private fun resolveSourceTextForFrame(): String? {
         val libId = resolveFrameLibraryId()
@@ -1774,70 +1784,16 @@ open class CqlDebugServer(
             contentService.read(uri)?.use { return it.bufferedReader().readText() }
         } catch (_: Exception) {
         }
-        // Virtual URI (cql-source://N) — resolve via VersionedIdentifier
-        val ref = uri.toString().removePrefix("cql-source://").toIntOrNull()
-        val identifier = ref?.let { sourceReferenceRegistry[it] }
-        if (identifier != null) {
-            return LibrarySourceResolver.resolve(streamingHandler?.libraryManager, identifier)
-        }
-        return null
+        if (!VirtualLibraryUris.isVirtual(uri)) return null
+        val libraryManager = streamingHandler?.libraryManager ?: launchCompiler?.libraryManager
+        val identifier = libraryManager?.compiledLibraries?.keys?.firstOrNull { it.id == libId } ?: return null
+        return LibrarySourceResolver.resolve(libraryManager, identifier)
     }
 
-    override fun source(args: SourceArguments): CompletableFuture<SourceResponse> {
-        log.debug("source: ENTER sourceReference={}", args.sourceReference)
-        val ref =
-            args.sourceReference ?: run {
-                log.debug("source: no sourceReference in request, returning empty content")
-                return CompletableFuture.completedFuture(
-                    SourceResponse().also { it.content = "" },
-                )
-            }
-        val identifier = sourceReferenceRegistry[ref]
-        log.debug("source: ref={} resolved identifier={} (registrySize={})", ref, identifier, sourceReferenceRegistry.size)
-        val content = identifier?.let { id -> resolveSourceContent(id) } ?: ""
-        log.debug("source: ref={} returning content length={}", ref, content.length)
-        return CompletableFuture.completedFuture(SourceResponse().also { it.content = content })
-    }
-
-    /**
-     * Fetches a library's CQL source text for the DAP `source()` response: first via the
-     * filesystem-based [contentService] (workspace files), then falling back to the execution
-     * engine's own [org.cqframework.cql.cql2elm.LibraryManager] (`streamingHandler.libraryManager`,
-     * set by [org.opencds.cqf.cql.ls.server.command.CqlEvaluator] when this debug session's engine
-     * was built). That engine's full library-source-provider chain (npm packages, bundled "quick"
-     * libraries like FHIRHelpers) is what actually resolved this library's source when the session
-     * launched — NOT `launchCompiler`, which is the LSP's separately-cached, potentially stale
-     * compiler from whenever the file was last opened/edited, and may never have successfully
-     * resolved an npm-installed or bundled library at all.
-     */
-    private fun resolveSourceContent(id: VersionedIdentifier): String? {
-        val fileContent =
-            try {
-                streamingLaunchUri?.let { launchUri ->
-                    val uris = contentService.locate(URI.create(launchUri), id)
-                    log.debug("resolveSourceContent: id={} contentService.locate returned {} uri(s): {}", id, uris.size, uris)
-                    uris.firstOrNull()
-                        ?.let { uri -> contentService.read(uri)?.use { stream -> stream.bufferedReader().readText() } }
-                }
-            } catch (e: Exception) {
-                log.debug("resolveSourceContent: id={} contentService fast path threw: {}", id, e.toString())
-                null
-            }
-        if (fileContent != null) {
-            log.debug("resolveSourceContent: id={} resolved via workspace file, length={}", id, fileContent.length)
-            return fileContent
-        }
-        val libraryManager = streamingHandler?.libraryManager
-        log.debug(
-            "resolveSourceContent: id={} no workspace file; streamingHandler={} libraryManager={}",
-            id,
-            if (streamingHandler != null) "present" else "null",
-            if (libraryManager != null) "present" else "null",
-        )
-        val content = LibrarySourceResolver.resolve(libraryManager, id)
-        log.debug("resolveSourceContent: id={} LibrarySourceResolver.resolve returned {}", id, if (content != null) "content, length=${content.length}" else "null")
-        return content
-    }
+    // Every library is reported with a `path` (a file path or a cql-virtual URI) and never a
+    // sourceReference, so there is never any content to serve here.
+    override fun source(args: SourceArguments): CompletableFuture<SourceResponse> =
+        CompletableFuture.completedFuture(SourceResponse().also { it.content = "" })
 
     @JsonRequest("setStepGranularity")
     fun setStepGranularity(args: Map<String, Any>): CompletableFuture<Void> {
@@ -1872,7 +1828,10 @@ open class CqlDebugServer(
                 return CompletableFuture.completedFuture(mapOf("ast" to null))
             }
 
-        val libId = librarySourceMap.entries.firstOrNull { (_, u) -> u == targetUri }?.key
+        // The extension sends cql-virtual URIs as cql-virtual:/X.cql (VS Code drops the empty
+        // authority); normalize to the cql-virtual:///X.cql form stored in librarySourceMap.
+        val normalized = VirtualLibraryUris.parse(uriStr) ?: targetUri
+        val libId = librarySourceMap.entries.firstOrNull { (_, u) -> u == normalized }?.key
 
         val library =
             if (libId != null) {
