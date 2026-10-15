@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.StoppedEventArguments
 import org.eclipse.lsp4j.debug.TerminateArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionRef
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -57,6 +59,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
 
 private fun Any?.toValue(): Value? =
     when (this) {
@@ -447,6 +450,74 @@ class StreamingCqlDebugServerTest {
     }
 
     // -- evaluate -----------------------------------------------------------
+
+    /** Pauses the handler and registers a define, so name lookups have something to hit. */
+    private fun pauseWithDefine(server: TestStreamingServer): String {
+        val handler = server.testHandler
+        pauseAt(handler, 1, 1, 1, 10, "TestExpr")
+        handler.runtimeRegistry.putDefine(
+            "Qualifying Encounters",
+            listOf("a", "b"),
+            null,
+            VersionedIdentifier().also { it.id = "TestLib" },
+        )
+        return "Qualifying Encounters"
+    }
+
+    private fun assertCopyValueRejected(
+        server: TestStreamingServer,
+        expression: String,
+        context: String,
+    ) {
+        val future =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = expression
+                    it.context = context
+                    it.frameId = 0
+                },
+            )
+        val thrown = assertThrows(ExecutionException::class.java) { future.get() }
+        assertTrue(
+            thrown.cause is ResponseErrorException,
+            "expected ResponseErrorException so VS Code falls back to the panel value, got ${thrown.cause}",
+        )
+    }
+
+    @Test
+    fun `evaluate rejects Copy Value (variables context) of a displayed value`() {
+        val server = setupServer()
+        pauseWithDefine(server)
+        assertCopyValueRejected(server, "[Encounter/a, Encounter/b]", "variables")
+    }
+
+    @Test
+    fun `evaluate rejects Copy Value even when the expression matches a registered name`() {
+        // A displayed value that happens to equal a stored name must not be resolved as that name.
+        val server = setupServer()
+        val name = pauseWithDefine(server)
+        assertCopyValueRejected(server, name, "variables")
+        assertCopyValueRejected(server, "\"$name\"", "variables")
+    }
+
+    @Test
+    fun `evaluate still resolves define names for repl, watch, hover and clipboard`() {
+        val server = setupServer()
+        val name = pauseWithDefine(server)
+        // "clipboard" keeps name lookup too (see the Copy-value clipboard tests below).
+        for (context in listOf("repl", "watch", "hover", "clipboard")) {
+            val response =
+                server.evaluate(
+                    EvaluateArguments().also {
+                        it.expression = "\"$name\""
+                        it.context = context
+                        it.frameId = 0
+                    },
+                ).get()
+            assertEquals("[\"a\",\"b\"]", response.result, "context=$context")
+        }
+    }
+
 
     @Test
     fun `evaluate reports doesn't exist when state is null`() {

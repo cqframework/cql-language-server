@@ -42,6 +42,9 @@ import org.eclipse.lsp4j.debug.VariablesArguments
 import org.eclipse.lsp4j.debug.VariablesResponse
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.FunctionDef
@@ -104,6 +107,13 @@ open class CqlDebugServer(
 
         /** Debug Console contexts that should attempt ad-hoc CQL compilation. */
         private val AD_HOC_EVAL_CONTEXTS = setOf("repl", "watch")
+
+        /**
+         * Context VS Code's built-in Variables-panel "Copy Value" sends while supportsClipboardContext
+         * is not advertised. "clipboard" is deliberately excluded: it keeps name-based lookup for
+         * clients that send a real expression with it (see the Copy-value clipboard tests).
+         */
+        private const val COPY_VALUE_CONTEXT = "variables"
 
         /** Maximum seconds to wait for an ad-hoc evaluation to complete on the engine thread. */
         private const val AD_HOC_EVAL_TIMEOUT_SECONDS = 10L
@@ -1079,6 +1089,21 @@ open class CqlDebugServer(
     override fun evaluate(args: EvaluateArguments): CompletableFuture<EvaluateResponse> {
         val handler = streamingHandler
         if (handler != null) {
+            // VS Code's "Copy Value" evaluates `evaluateName || value`. Streaming variables carry no
+            // evaluateName, so the expression is the displayed value text, not a CQL name. Failing
+            // the request makes VS Code fall back to copying the Variables panel's displayed value
+            // verbatim (otherwise the lookup misses and "not available" is what gets copied).
+            if (args.context == COPY_VALUE_CONTEXT) {
+                return CompletableFuture.failedFuture(
+                    ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.RequestFailed,
+                            "Copy Value is served from the Variables panel",
+                            null,
+                        ),
+                    ),
+                )
+            }
             return CompletableFuture.supplyAsync {
                 val registry = handler.runtimeRegistry
                 val state = handler.lastPausedState
