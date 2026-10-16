@@ -8,6 +8,9 @@ import org.cqframework.cql.cql2elm.CqlCompiler
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.debug.Breakpoint
 import org.eclipse.lsp4j.debug.Capabilities
+import org.eclipse.lsp4j.debug.CompletionItem
+import org.eclipse.lsp4j.debug.CompletionsArguments
+import org.eclipse.lsp4j.debug.CompletionsResponse
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.ContinueResponse
@@ -134,6 +137,14 @@ open class CqlDebugServer(
         )
     protected val breakpointManager: BreakpointManager = BreakpointManager(contentService)
     protected val evaluateHelper: EvaluateHelper = EvaluateHelper(varResolver, compilationManager)
+    private val consoleCompleter = DebugConsoleCompleter(varResolver)
+
+    // Client's line/column base from initialize (DAP defaults to 1-based).
+    @Volatile
+    private var linesStartAt1 = true
+
+    @Volatile
+    private var columnsStartAt1 = true
 
     private val terminatedSent = java.util.concurrent.atomic.AtomicBoolean(false)
     private val exitedSent = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -221,6 +232,10 @@ open class CqlDebugServer(
         capabilities.supportsConfigurationDoneRequest = true
         capabilities.supportsEvaluateForHovers = true
         capabilities.supportsTerminateRequest = true
+        capabilities.supportsCompletionsRequest = true
+        capabilities.completionTriggerCharacters = arrayOf(".")
+        linesStartAt1 = args.linesStartAt1 ?: true
+        columnsStartAt1 = args.columnsStartAt1 ?: true
 
         setState(ServerState.INITIALIZED)
         return CompletableFuture.completedFuture(capabilities)
@@ -1084,6 +1099,37 @@ open class CqlDebugServer(
 
     private fun findLaunchParameterType(paramName: String): String? {
         return launchParameters?.find { it.parameterName == paramName }?.parameterType
+    }
+
+    /**
+     * Debug Console completions from values held at the current pause: registry names (aliases,
+     * evaluated defines, context, parameters) and child properties of real paused values. Never
+     * fails the request — any problem yields an empty list so the console shows no error.
+     */
+    override fun completions(args: CompletionsArguments): CompletableFuture<CompletionsResponse> =
+        CompletableFuture.supplyAsync {
+            val targets =
+                try {
+                    computeCompletions(args)
+                } catch (e: Exception) {
+                    log.debug("completions: failed for text={} column={}", args.text, args.column, e)
+                    emptyList()
+                }
+            CompletionsResponse().also { it.targets = targets.toTypedArray() }
+        }
+
+    private fun computeCompletions(args: CompletionsArguments): List<CompletionItem> {
+        val handler = streamingHandler ?: return emptyList()
+        if (handler.lastPausedState == null) return emptyList()
+        val text = args.text ?: return emptyList()
+        val lines = text.split('\n')
+        val lineIndex = args.line?.let { it - (if (linesStartAt1) 1 else 0) } ?: 0
+        val line = lines.getOrNull(lineIndex) ?: return emptyList()
+        val columnBase = if (columnsStartAt1) 1 else 0
+        val target = findCompletionTarget(line, args.column - columnBase) ?: return emptyList()
+        return consoleCompleter.complete(target, handler.runtimeRegistry).onEach { item ->
+            item.start = item.start?.plus(columnBase)
+        }
     }
 
     override fun evaluate(args: EvaluateArguments): CompletableFuture<EvaluateResponse> {

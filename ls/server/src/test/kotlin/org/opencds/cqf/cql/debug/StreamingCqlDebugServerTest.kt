@@ -6,6 +6,7 @@ import org.antlr.v4.kotlinruntime.CommonTokenStream
 import org.cqframework.cql.gen.cqlLexer
 import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.debug.BreakpointEventArguments
+import org.eclipse.lsp4j.debug.CompletionsArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.DisconnectArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
@@ -645,6 +646,94 @@ class StreamingCqlDebugServerTest {
                 },
             ).get()
         assertEquals("Identifier doesn't exist (CQL is case-sensitive)", response.result)
+    }
+
+    // -- completions --------------------------------------------------------
+
+    private fun pausedServerWithEncounter(): TestStreamingServer {
+        val server = setupServer()
+        pauseAt(server.testHandler, 1, 1, 1, 10, "TestExpr")
+        server.testHandler.runtimeRegistry.putStackVariable(
+            "E",
+            Encounter().also { it.period = Period() },
+            "FHIR.Encounter",
+        )
+        server.testHandler.runtimeRegistry.putDefine("Qualifying Encounters", listOf(Encounter()), null, null)
+        return server
+    }
+
+    private fun completions(
+        server: CqlDebugServer,
+        text: String,
+        column: Int = text.length + 1,
+        line: Int? = null,
+    ) = server.completions(
+        CompletionsArguments().also {
+            it.text = text
+            it.column = column
+            it.line = line
+        },
+    ).get().targets.toList()
+
+    @Test
+    fun `completions lists locals and evaluated defines when paused`() {
+        val server = pausedServerWithEncounter()
+        val labels = completions(server, "").map { it.label }
+        assertTrue(labels.containsAll(listOf("E", "\"Qualifying Encounters\"")), "got $labels")
+    }
+
+    @Test
+    fun `completions lists properties of a paused value after a dot`() {
+        val server = pausedServerWithEncounter()
+        val targets = completions(server, "E.per")
+        assertTrue(targets.any { it.label == "period" }, "got ${targets.map { it.label }}")
+        // 1-based by default: prefix "per" starts at column 3.
+        assertEquals(3, targets.first().start)
+        assertEquals(3, targets.first().length)
+    }
+
+    @Test
+    fun `completions completes only the trailing word of an expression`() {
+        val server = pausedServerWithEncounter()
+        val text = "E.period ends before E.per"
+        val targets = completions(server, text)
+        assertTrue(targets.any { it.label == "period" })
+        assertEquals(text.lastIndexOf("per") + 1, targets.first().start)
+    }
+
+    @Test
+    fun `completions honors 0-based columns from initialize`() {
+        val server = pausedServerWithEncounter()
+        server.initialize(InitializeRequestArguments().also { it.columnsStartAt1 = false }).get()
+        val targets = completions(server, "E.per", column = 5)
+        assertEquals(2, targets.first().start)
+    }
+
+    @Test
+    fun `completions uses the requested line of multi-line input`() {
+        val server = pausedServerWithEncounter()
+        val targets = completions(server, "1 +\nE.per", column = 6, line = 2)
+        assertTrue(targets.any { it.label == "period" })
+    }
+
+    @Test
+    fun `completions is empty when not paused`() {
+        val server = setupServer()
+        server.testHandler.runtimeRegistry.putStackVariable("E", Encounter(), null)
+        assertTrue(completions(server, "E").isEmpty())
+    }
+
+    @Test
+    fun `completions is empty for an unknown root or inside a string`() {
+        val server = pausedServerWithEncounter()
+        assertTrue(completions(server, "Nope.").isEmpty())
+        assertTrue(completions(server, "'E.").isEmpty())
+    }
+
+    @Test
+    fun `completions is empty without a streaming handler`() {
+        val server = setupNonStreamingServer()
+        assertTrue(completions(server, "E").isEmpty())
     }
 
     // -- setBreakpoints -----------------------------------------------------
@@ -2998,6 +3087,8 @@ class StreamingCqlDebugServerTest {
         assertTrue(caps.supportsConfigurationDoneRequest)
         assertTrue(caps.supportsEvaluateForHovers)
         assertTrue(caps.supportsTerminateRequest)
+        assertTrue(caps.supportsCompletionsRequest)
+        assertEquals(listOf("."), caps.completionTriggerCharacters.toList())
     }
 
     @Test
