@@ -1,12 +1,12 @@
 package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.FhirContext
-import com.google.gson.Gson
 import org.antlr.v4.kotlinruntime.CharStreams
 import org.antlr.v4.kotlinruntime.CommonTokenStream
 import org.cqframework.cql.gen.cqlLexer
 import org.cqframework.cql.gen.cqlParser
 import org.eclipse.lsp4j.debug.BreakpointEventArguments
+import org.eclipse.lsp4j.debug.CompletionsArguments
 import org.eclipse.lsp4j.debug.ContinueArguments
 import org.eclipse.lsp4j.debug.DisconnectArguments
 import org.eclipse.lsp4j.debug.EvaluateArguments
@@ -21,6 +21,7 @@ import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.StoppedEventArguments
 import org.eclipse.lsp4j.debug.TerminateArguments
 import org.eclipse.lsp4j.debug.VariablesArguments
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionRef
@@ -31,10 +32,13 @@ import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.Meta
 import org.hl7.fhir.r4.model.Patient
+import org.hl7.fhir.r4.model.Period
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -42,17 +46,34 @@ import org.junit.jupiter.api.io.TempDir
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
+import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.execution.Environment
 import org.opencds.cqf.cql.engine.execution.State
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import java.io.InputStream
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+
+private fun Any?.toValue(): Value? =
+    when (this) {
+        null -> null
+        is Value -> this
+        is Boolean -> org.opencds.cqf.cql.engine.runtime.Boolean(this)
+        is Int -> org.opencds.cqf.cql.engine.runtime.Integer(this)
+        is Long -> org.opencds.cqf.cql.engine.runtime.Long(this)
+        is String -> org.opencds.cqf.cql.engine.runtime.String(this)
+        else -> org.opencds.cqf.cql.engine.runtime.String(this.toString())
+    }
+
+private fun <K> Map<K, Any?>.toValueMap(): Map<K, Value?> = mapValues { it.value.toValue() }
 
 class StreamingCqlDebugServerTest {
     /**
@@ -74,33 +95,6 @@ class StreamingCqlDebugServerTest {
 
         override fun executeLaunchStreaming(args: DebugLaunchArgs) {
             // no-op for tests
-        }
-
-        /**
-         * Migrates path-keyed breakpoints for [libId] from sourcePathBreakpoints
-         * into breakpointsByLibrary and handler.breakpointsByLibrary.
-         * Mirrors the migration block in [CqlDebugServer]'s onLibraryEnteredCallback.
-         */
-        fun triggerBreakpointMigration(libId: String) {
-            val libMapField = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
-            libMapField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val libMap = libMapField.get(this) as ConcurrentHashMap<String, URI>
-            val uri = libMap[libId] ?: return
-            val pathStr = Paths.get(uri).toString()
-
-            val bpField = CqlDebugServer::class.java.getDeclaredField("sourcePathBreakpoints")
-            bpField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val spb = bpField.get(this) as ConcurrentHashMap<String, MutableSet<Int>>
-            val pending = spb[pathStr] ?: return
-
-            val srvBpField = CqlDebugServer::class.java.getDeclaredField("breakpointsByLibrary")
-            srvBpField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            val srvBp = srvBpField.get(this) as ConcurrentHashMap<String, MutableSet<Int>>
-            srvBp[libId] = pending
-            testHandler.breakpointsByLibrary[libId] = pending
         }
 
         fun setLaunchUri(uri: String) {
@@ -458,8 +452,75 @@ class StreamingCqlDebugServerTest {
 
     // -- evaluate -----------------------------------------------------------
 
+    /** Pauses the handler and registers a define, so name lookups have something to hit. */
+    private fun pauseWithDefine(server: TestStreamingServer): String {
+        val handler = server.testHandler
+        pauseAt(handler, 1, 1, 1, 10, "TestExpr")
+        handler.runtimeRegistry.putDefine(
+            "Qualifying Encounters",
+            listOf("a", "b"),
+            null,
+            VersionedIdentifier().also { it.id = "TestLib" },
+        )
+        return "Qualifying Encounters"
+    }
+
+    private fun assertCopyValueRejected(
+        server: TestStreamingServer,
+        expression: String,
+        context: String,
+    ) {
+        val future =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = expression
+                    it.context = context
+                    it.frameId = 0
+                },
+            )
+        val thrown = assertThrows(ExecutionException::class.java) { future.get() }
+        assertTrue(
+            thrown.cause is ResponseErrorException,
+            "expected ResponseErrorException so VS Code falls back to the panel value, got ${thrown.cause}",
+        )
+    }
+
     @Test
-    fun `evaluate returns notAvailable when state is null`() {
+    fun `evaluate rejects Copy Value (variables context) of a displayed value`() {
+        val server = setupServer()
+        pauseWithDefine(server)
+        assertCopyValueRejected(server, "[Encounter/a, Encounter/b]", "variables")
+    }
+
+    @Test
+    fun `evaluate rejects Copy Value even when the expression matches a registered name`() {
+        // A displayed value that happens to equal a stored name must not be resolved as that name.
+        val server = setupServer()
+        val name = pauseWithDefine(server)
+        assertCopyValueRejected(server, name, "variables")
+        assertCopyValueRejected(server, "\"$name\"", "variables")
+    }
+
+    @Test
+    fun `evaluate still resolves define names for repl, watch, hover and clipboard`() {
+        val server = setupServer()
+        val name = pauseWithDefine(server)
+        // "clipboard" keeps name lookup too (see the Copy-value clipboard tests below).
+        for (context in listOf("repl", "watch", "hover", "clipboard")) {
+            val response =
+                server.evaluate(
+                    EvaluateArguments().also {
+                        it.expression = "\"$name\""
+                        it.context = context
+                        it.frameId = 0
+                    },
+                ).get()
+            assertEquals("[\"a\",\"b\"]", response.result, "context=$context")
+        }
+    }
+
+    @Test
+    fun `evaluate reports doesn't exist when state is null`() {
         val server = setupServer()
         val response =
             server.evaluate(
@@ -469,7 +530,7 @@ class StreamingCqlDebugServerTest {
                     it.frameId = 0
                 },
             ).get()
-        assertEquals("not available", response.result)
+        assertEquals("Identifier doesn't exist (CQL is case-sensitive)", response.result)
     }
 
     @Test
@@ -543,7 +604,7 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
         // Populate the evaluation cache with a define result
         val libId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TestLib" }
-        state.cache.cacheExpression(libId, "isOfficial", org.opencds.cqf.cql.engine.execution.ExpressionResult(true, null))
+        state.cache.cacheExpression(libId, "isOfficial", org.opencds.cqf.cql.engine.execution.ExpressionResult(org.opencds.cqf.cql.engine.runtime.Boolean(true), null))
         handler.onBeforeExpression(elm, state)
 
         val response =
@@ -571,7 +632,7 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
-            org.opencds.cqf.cql.engine.execution.Variable("patientId").withValue("1111"),
+            org.opencds.cqf.cql.engine.execution.Variable("patientId").withValue(org.opencds.cqf.cql.engine.runtime.String("1111")),
         )
         handler.onBeforeExpression(elm, state)
 
@@ -583,7 +644,95 @@ class StreamingCqlDebugServerTest {
                     it.frameId = 0
                 },
             ).get()
-        assertEquals("not available", response.result)
+        assertEquals("Identifier doesn't exist (CQL is case-sensitive)", response.result)
+    }
+
+    // -- completions --------------------------------------------------------
+
+    private fun pausedServerWithEncounter(): TestStreamingServer {
+        val server = setupServer()
+        pauseAt(server.testHandler, 1, 1, 1, 10, "TestExpr")
+        server.testHandler.runtimeRegistry.putStackVariable(
+            "E",
+            Encounter().also { it.period = Period() },
+            "FHIR.Encounter",
+        )
+        server.testHandler.runtimeRegistry.putDefine("Qualifying Encounters", listOf(Encounter()), null, null)
+        return server
+    }
+
+    private fun completions(
+        server: CqlDebugServer,
+        text: String,
+        column: Int = text.length + 1,
+        line: Int? = null,
+    ) = server.completions(
+        CompletionsArguments().also {
+            it.text = text
+            it.column = column
+            it.line = line
+        },
+    ).get().targets.toList()
+
+    @Test
+    fun `completions lists locals and evaluated defines when paused`() {
+        val server = pausedServerWithEncounter()
+        val labels = completions(server, "").map { it.label }
+        assertTrue(labels.containsAll(listOf("E", "\"Qualifying Encounters\"")), "got $labels")
+    }
+
+    @Test
+    fun `completions lists properties of a paused value after a dot`() {
+        val server = pausedServerWithEncounter()
+        val targets = completions(server, "E.per")
+        assertTrue(targets.any { it.label == "period" }, "got ${targets.map { it.label }}")
+        // 1-based by default: prefix "per" starts at column 3.
+        assertEquals(3, targets.first().start)
+        assertEquals(3, targets.first().length)
+    }
+
+    @Test
+    fun `completions completes only the trailing word of an expression`() {
+        val server = pausedServerWithEncounter()
+        val text = "E.period ends before E.per"
+        val targets = completions(server, text)
+        assertTrue(targets.any { it.label == "period" })
+        assertEquals(text.lastIndexOf("per") + 1, targets.first().start)
+    }
+
+    @Test
+    fun `completions honors 0-based columns from initialize`() {
+        val server = pausedServerWithEncounter()
+        server.initialize(InitializeRequestArguments().also { it.columnsStartAt1 = false }).get()
+        val targets = completions(server, "E.per", column = 5)
+        assertEquals(2, targets.first().start)
+    }
+
+    @Test
+    fun `completions uses the requested line of multi-line input`() {
+        val server = pausedServerWithEncounter()
+        val targets = completions(server, "1 +\nE.per", column = 6, line = 2)
+        assertTrue(targets.any { it.label == "period" })
+    }
+
+    @Test
+    fun `completions is empty when not paused`() {
+        val server = setupServer()
+        server.testHandler.runtimeRegistry.putStackVariable("E", Encounter(), null)
+        assertTrue(completions(server, "E").isEmpty())
+    }
+
+    @Test
+    fun `completions is empty for an unknown root or inside a string`() {
+        val server = pausedServerWithEncounter()
+        assertTrue(completions(server, "Nope.").isEmpty())
+        assertTrue(completions(server, "'E.").isEmpty())
+    }
+
+    @Test
+    fun `completions is empty without a streaming handler`() {
+        val server = setupNonStreamingServer()
+        assertTrue(completions(server, "E").isEmpty())
     }
 
     // -- setBreakpoints -----------------------------------------------------
@@ -1146,8 +1295,8 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
 
         // Add parameters to state - no library prefix means "(Global)"
-        state.setParameter(null, "Measurement Period", "Interval[@2026-01-01, @2027-01-01)")
-        state.setParameter(null, "Patient Type", "HMO")
+        state.setParameter(null, "Measurement Period", "Interval[@2026-01-01, @2027-01-01)".toValue())
+        state.setParameter(null, "Patient Type", "HMO".toValue())
 
         handler.onBeforeExpression(elm, state)
 
@@ -1240,7 +1389,7 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
-            org.opencds.cqf.cql.engine.execution.Variable("localVar").withValue("123"),
+            org.opencds.cqf.cql.engine.execution.Variable("localVar").withValue("123".toValue()),
         )
 
         handler.onBeforeExpression(elm, state)
@@ -1426,7 +1575,7 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        state.setParameters(null, mapOf("TestLibrary.Measurement Period" to "Interval[@2026-01-01, @2027-01-01)"))
+        state.setParameters(null, mapOf("TestLibrary.Measurement Period" to "Interval[@2026-01-01, @2027-01-01)".toValue()))
         handler.onBeforeExpression(elm, state)
 
         server.initParameterMetadata(
@@ -1475,9 +1624,9 @@ class StreamingCqlDebugServerTest {
         state.setParameters(
             null,
             mapOf(
-                "LibA.Param1" to "valueA1",
-                "LibA.Param2" to "valueA2",
-                "LibB.Param1" to "valueB1",
+                "LibA.Param1" to "valueA1".toValue(),
+                "LibA.Param2" to "valueA2".toValue(),
+                "LibB.Param1" to "valueB1".toValue(),
             ),
         )
 
@@ -1680,7 +1829,7 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
-    fun `variables list-valued variable expands to indexed children`() {
+    fun `variables list-valued FHIR resource variable expands to ResourceType-id children`() {
         val server = setupServer()
         val handler = server.testHandler
 
@@ -1711,13 +1860,281 @@ class StreamingCqlDebugServerTest {
         val encountersVar = rootResponse.variables.firstOrNull { it.name == "Encounters" }
         assertNotNull(encountersVar)
         assertTrue(encountersVar!!.variablesReference != 0, "Encounters variable should have non-zero variablesReference")
+        assertEquals("List<Encounter>", encountersVar.type)
+        assertEquals("[Encounter/enc-1, Encounter/enc-2]", encountersVar.value)
 
         val childrenResponse = server.variables(VariablesArguments().also { it.variablesReference = encountersVar.variablesReference }).get()
         val childNames = childrenResponse.variables.map { it.name }
 
-        assertTrue(childNames.contains("[0]"), "Children should include '[0]', got $childNames")
-        assertTrue(childNames.contains("[1]"), "Children should include '[1]', got $childNames")
+        assertTrue(childNames.contains("Encounter/enc-1"), "Children should include 'Encounter/enc-1', got $childNames")
+        assertTrue(childNames.contains("Encounter/enc-2"), "Children should include 'Encounter/enc-2', got $childNames")
         assertEquals(2, childrenResponse.variables.size, "Should have exactly 2 children")
+    }
+
+    @Test
+    fun `variables Resolved Defines scope renders List of FHIR resource define using Test Case style`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+
+        val encounter1 = Encounter().also { it.id = "enc-1" }
+        val encounter2 = Encounter().also { it.id = "enc-2" }
+        handler.runtimeRegistry.putDefine("Ambulatory Encounters", listOf(encounter1, encounter2), "List<FHIR.Encounter>", null)
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        // Define was registered with null library, so it's grouped under "(Global)"
+        val groupVar = response.variables.firstOrNull { it.name == "(Global)" }
+        assertNotNull(groupVar, "Defines should be grouped by library; expected a (Global) group")
+        assertTrue(groupVar!!.variablesReference >= 100000, "Group ref must be >= 100000")
+
+        val expandResponse = server.variables(VariablesArguments().also { it.variablesReference = groupVar.variablesReference }).get()
+        val defineVar = expandResponse.variables.firstOrNull { it.name == "Ambulatory Encounters" }
+        assertNotNull(defineVar)
+        assertEquals("List<Encounter>", defineVar!!.type, "Type should be the bare FHIR type, not the CQL ELM type string")
+        assertEquals("[Encounter/enc-1, Encounter/enc-2]", defineVar.value)
+        assertTrue(defineVar.variablesReference > 0)
+
+        val children = server.variables(VariablesArguments().also { it.variablesReference = defineVar.variablesReference }).get()
+        val childNames = children.variables.map { it.name }
+        assertTrue(childNames.contains("Encounter/enc-1"))
+        assertTrue(childNames.contains("Encounter/enc-2"))
+    }
+
+    @Test
+    fun `variables Resolved Defines scope uses bare FHIR type for single-resource define`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+
+        val patient = Patient().also { it.id = "pat-1" }
+        handler.runtimeRegistry.putDefine("Patient", patient, "FHIR.Patient", null)
+
+        val response = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        // Define was registered with null library, so it's grouped under "(Global)"
+        val groupVar = response.variables.firstOrNull { it.name == "(Global)" }
+        assertNotNull(groupVar, "Defines should be grouped by library; expected a (Global) group")
+        assertTrue(groupVar!!.variablesReference >= 100000, "Group ref must be >= 100000")
+
+        val expandResponse = server.variables(VariablesArguments().also { it.variablesReference = groupVar.variablesReference }).get()
+        val defineVar = expandResponse.variables.firstOrNull { it.name == "Patient" }
+        assertNotNull(defineVar)
+        assertEquals("Patient", defineVar!!.type, "Type should be the bare FHIR type, not \"FHIR.Patient\"")
+    }
+
+    @Test
+    fun `Resolved Defines groups same-named defines by library preserving each value`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+
+        val cms130 = VersionedIdentifier().also { it.id = "CMS130" }
+        val advFrailty = VersionedIdentifier().also { it.id = "AdvancedIllnessandFrailty" }
+        handler.runtimeRegistry.putDefine("Patient", "cms130-patient", "FHIR.Patient", cms130)
+        handler.runtimeRegistry.putDefine("Patient", "advfrailty-patient", "FHIR.Patient", advFrailty)
+
+        // Resolved Defines scope returns one expandable group node per library
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(2, groupsResponse.variables.size, "Should return one group node per library")
+        val cms130Group = groupsResponse.variables.firstOrNull { it.name == "CMS130" }
+        val advFrailtyGroup = groupsResponse.variables.firstOrNull { it.name == "AdvancedIllnessandFrailty" }
+        assertNotNull(cms130Group, "Expected a CMS130 group node")
+        assertNotNull(advFrailtyGroup, "Expected an AdvancedIllnessandFrailty group node")
+        assertEquals("1 define(s)", cms130Group!!.value)
+        assertEquals("1 define(s)", advFrailtyGroup!!.value)
+        assertTrue(cms130Group.variablesReference >= 100000, "Group ref must be >= 100000")
+        assertTrue(advFrailtyGroup.variablesReference >= 100000, "Group ref must be >= 100000")
+        assertTrue(
+            cms130Group.variablesReference != advFrailtyGroup.variablesReference,
+            "Library groups must have distinct refs",
+        )
+
+        // Expanding the CMS130 group yields only CMS130's Patient, not AdvancedIllnessandFrailty's
+        val cms130Defines =
+            server.variables(VariablesArguments().also { it.variablesReference = cms130Group.variablesReference }).get()
+        assertEquals(1, cms130Defines.variables.size, "CMS130 group should have exactly one Patient")
+        assertEquals("Patient", cms130Defines.variables[0].name)
+        assertEquals("\"cms130-patient\"", cms130Defines.variables[0].value)
+
+        // Mirror image — AdvancedIllnessandFrailty keeps its own value
+        val advFrailtyDefines =
+            server.variables(VariablesArguments().also { it.variablesReference = advFrailtyGroup.variablesReference }).get()
+        assertEquals(1, advFrailtyDefines.variables.size, "AdvancedIllnessandFrailty group should have exactly one Patient")
+        assertEquals("Patient", advFrailtyDefines.variables[0].name)
+        assertEquals("\"advfrailty-patient\"", advFrailtyDefines.variables[0].value)
+    }
+
+    @Test
+    fun `Resolved Defines accumulates library groups across pauses`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        val libA = VersionedIdentifier().also { it.id = "LibA" }
+        val libB = VersionedIdentifier().also { it.id = "LibB" }
+
+        // First pause — defines from LibA only
+        handler.runtimeRegistry.putDefine("DefineA", 1, "Integer", libA)
+        var groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(setOf("LibA"), groupsResponse.variables.map { it.name }.toSet())
+
+        // Second pause — stepping into LibB adds defines without dropping LibA's group
+        handler.runtimeRegistry.putDefine("DefineB", 2, "Integer", libB)
+        groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(
+            setOf("LibA", "LibB"),
+            groupsResponse.variables.map { it.name }.toSet(),
+            "Earlier libraries' groups shouldn't be dropped when a later pause introduces a new library",
+        )
+        assertEquals(2, groupsResponse.variables.size)
+    }
+
+    @Test
+    fun `Resolved Defines renders single expandable group for one library`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+
+        val lib = VersionedIdentifier().also { it.id = "SingleLib" }
+        handler.runtimeRegistry.putDefine("Numerator", 42, "Integer", lib)
+
+        val groupsResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        assertEquals(1, groupsResponse.variables.size, "Common case should render one expandable group, not a flat list")
+        val group = groupsResponse.variables[0]
+        assertEquals("SingleLib", group.name)
+        assertEquals("1 define(s)", group.value)
+        assertTrue(group.variablesReference >= 100000, "Group ref must be >= 100000")
+
+        val expandResponse =
+            server.variables(VariablesArguments().also { it.variablesReference = group.variablesReference }).get()
+        assertEquals(1, expandResponse.variables.size)
+        assertEquals("Numerator", expandResponse.variables[0].name)
+    }
+
+    @Test
+    fun `Parameters and Defines group refs resolve independently in the same pause`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onBeforeExpression(elm, state)
+
+        // Parameters from LibA (loaded via the same path the server's onPauseCallback uses)
+        state.setParameters(null, mapOf("LibA.Param1" to "valueA".toValue()))
+        val paramTypes = mapOf("LibA" to mapOf("Param1" to "String"))
+        handler.runtimeRegistry.loadParameters(state, paramTypes)
+
+        // A define from LibA too
+        val libA = VersionedIdentifier().also { it.id = "LibA" }
+        handler.runtimeRegistry.putDefine("DefineA", 42, "Integer", libA)
+
+        // Fetch the Parameters group ref
+        val paramsResponse = server.variables(VariablesArguments().also { it.variablesReference = 2 }).get()
+        val paramGroup = paramsResponse.variables.firstOrNull { it.name == "LibA" }
+        assertNotNull(paramGroup, "Expected a LibA parameters group")
+
+        // Fetch the Defines group ref in the same pause
+        val definesResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        val defineGroup = definesResponse.variables.firstOrNull { it.name == "LibA" }
+        assertNotNull(defineGroup, "Expected a LibA defines group")
+        assertTrue(
+            paramGroup!!.variablesReference != defineGroup!!.variablesReference,
+            "Param and define group refs must not collide in the shared map",
+        )
+
+        // Expanding the Parameters group still yields Param1
+        val paramExpand =
+            server.variables(VariablesArguments().also { it.variablesReference = paramGroup.variablesReference }).get()
+        assertNotNull(paramExpand.variables.firstOrNull { it.name == "Param1" })
+
+        // Expanding the Defines group still yields DefineA
+        val defineExpand =
+            server.variables(VariablesArguments().also { it.variablesReference = defineGroup.variablesReference }).get()
+        assertNotNull(defineExpand.variables.firstOrNull { it.name == "DefineA" })
+    }
+
+    @Test
+    fun `variables Locals and Test Case scopes expand the same resource with identical field order`(
+        @TempDir tempDir: Path,
+    ) {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        val patient = Patient().also { it.id = "pat-1" }
+        val json = FhirContext.forR4().newJsonParser().encodeToString(patient)
+        Files.writeString(tempDir.resolve("patient.json"), json)
+        server.initLaunchArgs(
+            DebugLaunchArgs(
+                libraryUri = "file:///test/TestLib.cql",
+                libraryName = "TestLib",
+                fhirVersion = "R4",
+                testCaseName = "TestPatient",
+                testCaseUri = tempDir.toUri().toString(),
+            ),
+        )
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        handler.onBeforeExpression(elm, State(Environment(null)))
+        // Re-parse from the same JSON so the Defines-side resource has identical internal
+        // state to the Test-Case-side resource (a freshly-constructed Patient() has subtly
+        // different populated fields than one round-tripped through the FHIR JSON parser).
+        val definePatient = FhirContext.forR4().newJsonParser().parseResource(json) as Patient
+        handler.runtimeRegistry.putDefine("PatientDefine", definePatient, "FHIR.Patient", null)
+
+        val definesResponse = server.variables(VariablesArguments().also { it.variablesReference = 3 }).get()
+        // Define was registered with null library, so it's grouped under "(Global)"
+        val groupVar = definesResponse.variables.first { it.name == "(Global)" }
+        val defineVars =
+            server.variables(VariablesArguments().also { it.variablesReference = groupVar.variablesReference }).get()
+        val defineVar = defineVars.variables.first { it.name == "PatientDefine" }
+        val defineChildren =
+            server.variables(VariablesArguments().also { it.variablesReference = defineVar.variablesReference }).get()
+                .variables.map { it.name }
+
+        val testCaseResponse = server.variables(VariablesArguments().also { it.variablesReference = 4 }).get()
+        val testCaseVar = testCaseResponse.variables.first { it.name == "Patient/pat-1" }
+        val testCaseChildren =
+            server.variables(VariablesArguments().also { it.variablesReference = testCaseVar.variablesReference }).get()
+                .variables.map { it.name }
+
+        assertEquals(testCaseChildren, defineChildren, "Expanding the same resource via Defines vs Test Case should yield identical field order")
     }
 
     @Test
@@ -1798,7 +2215,7 @@ class StreamingCqlDebugServerTest {
             }
         val state1 = State(Environment(null))
         handler.onBeforeExpression(elm1, state1)
-        handler.onExpressionDefEvaluated(elm1, state1, 42)
+        handler.onExpressionDefEvaluated(elm1, state1, 42.toValue())
 
         // Step 2: step forward — define should still be available
         handler.stepIn()
@@ -1827,7 +2244,7 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        handler.onExpressionDefEvaluated(elm, state, "define-value")
+        handler.onExpressionDefEvaluated(elm, state, "define-value".toValue())
 
         val found = handler.runtimeRegistry.find("MyDefine")
         assertNotNull(found)
@@ -1849,7 +2266,7 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        handler.onAfterExpression(elm, state, "some-value")
+        handler.onAfterExpression(elm, state, "some-value".toValue())
 
         assertNull(handler.runtimeRegistry.find("ShouldNotCapture"))
     }
@@ -1905,7 +2322,7 @@ class StreamingCqlDebugServerTest {
         val state = State(Environment(null))
         state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
         state.topActivationFrame.variables.addFirst(
-            org.opencds.cqf.cql.engine.execution.Variable("myVar").withValue("hello"),
+            org.opencds.cqf.cql.engine.execution.Variable("myVar").withValue("hello".toValue()),
         )
         handler.onBeforeExpression(elm, state)
 
@@ -1934,7 +2351,7 @@ class StreamingCqlDebugServerTest {
             }
         val state = State(Environment(null))
         handler.onBeforeExpression(elm, state)
-        handler.onExpressionDefEvaluated(elm, state, 100)
+        handler.onExpressionDefEvaluated(elm, state, 100.toValue())
 
         val response =
             server.evaluate(
@@ -1979,6 +2396,156 @@ class StreamingCqlDebugServerTest {
     }
 
     @Test
+    fun `clipboard evaluate resolves dotted property path on context resource`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        val encounter = Encounter()
+        encounter.id = "enc-pcp"
+        encounter.period =
+            Period().also {
+                it.start = java.util.Date(1700000000000L)
+                it.end = java.util.Date(1800000000000L)
+            }
+        handler.contextResourcesByName["IndexPCP"] = encounter
+        state.setContextValue("IndexPCP", encounter.id!!)
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "IndexPCP.period"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertNotNull(response.result)
+        assertNotEquals("not available", response.result)
+        assert(response.result!!.startsWith("["))
+        assert(response.result!!.endsWith(")"))
+        assert(response.variablesReference > 0)
+    }
+
+    @Test
+    fun `clipboard evaluate suggests corrected dotted path on case-mismatched root`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.contextResourcesByName["IndexPCP"] = Encounter().also { it.id = "enc-1" }
+        state.setContextValue("IndexPCP", "enc-1")
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "indexPCP.period"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertEquals("CQL identifiers are case-sensitive; did you mean IndexPCP.period?", response.result)
+    }
+
+    @Test
+    fun `clipboard evaluate resolves quoted identifier by inner name`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        val encounter = Encounter().also { it.id = "enc-1" }
+        handler.contextResourcesByName["IndexPCP"] = encounter
+        state.setContextValue("IndexPCP", encounter.id!!)
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "\"IndexPCP\""
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertNotNull(response.result)
+        assertNotEquals("not available", response.result)
+        assert(response.result!!.contains("enc-1"))
+    }
+
+    @Test
+    fun `clipboard evaluate reports doesn't exist for unknown dotted path`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "Unknown.period"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertEquals("Identifier doesn't exist (CQL is case-sensitive)", response.result)
+    }
+
+    @Test
+    fun `clipboard evaluate keeps notAvailable for non-identifier expression`() {
+        val server = setupServer()
+        val handler = server.testHandler
+
+        handler.stepIn()
+        val elm =
+            ExpressionDef().also {
+                it.name = "TestExpr"
+                it.locator = "1:1-1:10"
+            }
+        val state = State(Environment(null))
+        handler.onBeforeExpression(elm, state)
+
+        val response =
+            server.evaluate(
+                EvaluateArguments().also {
+                    it.expression = "1 + 2"
+                    it.context = "clipboard"
+                    it.frameId = 0
+                },
+            ).get()
+
+        assertEquals("not available", response.result)
+    }
+
+    @Test
     fun `clipboard evaluate returns notAvailable for unknown`() {
         val server = setupServer()
         val handler = server.testHandler
@@ -2001,7 +2568,7 @@ class StreamingCqlDebugServerTest {
                 },
             ).get()
 
-        assertEquals("not available", response.result)
+        assertEquals("Identifier doesn't exist (CQL is case-sensitive)", response.result)
     }
 
     // -- Copy-value: nested FHIR child variable ------------------------------
@@ -2108,8 +2675,8 @@ class StreamingCqlDebugServerTest {
         state1.setParameters(
             null,
             mapOf(
-                "MyLib.MeasurementPeriod" to "Interval[2026-01-01, 2027-01-01]",
-                "MyLib.Threshold" to 50,
+                "MyLib.MeasurementPeriod" to "Interval[2026-01-01, 2027-01-01]".toValue(),
+                "MyLib.Threshold" to 50.toValue(),
             ),
         )
         // Simulate what the server's onPauseCallback does
@@ -2154,7 +2721,7 @@ class StreamingCqlDebugServerTest {
         val reg = RuntimeValueRegistry()
 
         val state = State(Environment(null))
-        state.setParameters(null, mapOf("Lib.Param1" to "firstValue"))
+        state.setParameters(null, mapOf("Lib.Param1" to "firstValue".toValue()))
         val types = mapOf("Lib" to mapOf("Param1" to "String"))
 
         // First load
@@ -2164,7 +2731,7 @@ class StreamingCqlDebugServerTest {
         assertEquals("firstValue", afterFirst["Lib"]!!.first().value)
 
         // Second load with different values — must be ignored
-        state.setParameters(null, mapOf("Lib.Param1" to "overwritten"))
+        state.setParameters(null, mapOf("Lib.Param1" to "overwritten".toValue()))
         reg.loadParameters(state, types)
         val afterSecond = reg.getParametersByLibrary()
         assertEquals(1, afterSecond.size, "Should still be one parameter")
@@ -2180,7 +2747,7 @@ class StreamingCqlDebugServerTest {
         val reg = RuntimeValueRegistry()
         val state = State(Environment(null))
         // Engine stores keys without library prefix (e.g. "Measurement Period" not "Lib.Measurement Period")
-        state.setParameters(null, mapOf("Measurement Period" to "Interval[2026-01-01, 2027-01-01]"))
+        state.setParameters(null, mapOf("Measurement Period" to "Interval[2026-01-01, 2027-01-01]".toValue()))
         val paramTypes = mapOf("MyLib" to mapOf("Measurement Period" to "Interval<DateTime>"))
 
         reg.loadParameters(state, paramTypes)
@@ -2204,7 +2771,7 @@ class StreamingCqlDebugServerTest {
 
         // Second call: populated state — must load parameters
         val fullState = State(Environment(null))
-        fullState.setParameters(null, mapOf("Threshold" to 50))
+        fullState.setParameters(null, mapOf("Threshold" to 50.toValue()))
         val types = mapOf("MyLib" to mapOf("Threshold" to "Integer"))
         reg.loadParameters(fullState, types)
 
@@ -2219,7 +2786,7 @@ class StreamingCqlDebugServerTest {
 
         // Load a parameter named "Patient"
         val state = State(Environment(null))
-        state.setParameters(null, mapOf("Lib.Patient" to "param-patient-value"))
+        state.setParameters(null, mapOf("Lib.Patient" to "param-patient-value".toValue()))
         val types = mapOf("Lib" to mapOf("Patient" to "String"))
         reg.loadParameters(state, types)
 
@@ -2290,7 +2857,7 @@ class StreamingCqlDebugServerTest {
         val library = Library().also { it.identifier = libId }
         val state = State(Environment(null))
         state.init(library)
-        handler.onExpressionDefEvaluated(elm, state, "cross-lib-value")
+        handler.onExpressionDefEvaluated(elm, state, "cross-lib-value".toValue())
 
         // Unqualified find should work
         assertEquals("cross-lib-value", reg.find("LibDefine")!!.value)
@@ -2312,7 +2879,7 @@ class StreamingCqlDebugServerTest {
                 it.locator = "1:1-1:10"
             }
         val state = State(Environment(null))
-        handler.onExpressionDefEvaluated(elm, state, "define-value")
+        handler.onExpressionDefEvaluated(elm, state, "define-value".toValue())
 
         // Stack variable should still be findable
         assertEquals("stack-value", reg.find("tempVar")!!.value)
@@ -2336,22 +2903,19 @@ class StreamingCqlDebugServerTest {
     @Test
     fun `formatVariableValue on Enumeration returns lowercased FHIR code`() {
         val server = makeServer()
-        val gson = Gson()
-
-        // Use getStatusElement() which returns the Enumeration<EncounterStatus> wrapper
-        // (an IPrimitiveType), not the raw Java enum.
         val encounter = Encounter()
         encounter.status = Encounter.EncounterStatus.FINISHED
+        // Use getStatusElement() which returns the Enumeration<EncounterStatus> wrapper
+        // (an IPrimitiveType), not the raw Java enum.
         val statusValue = encounter.getStatusElement()
 
         val method =
             CqlDebugServer::class.java.getDeclaredMethod(
                 "formatVariableValue",
                 Any::class.java,
-                Gson::class.java,
             )
         method.isAccessible = true
-        val result = method.invoke(server, statusValue, gson) as String
+        val result = method.invoke(server, statusValue) as String
 
         assertEquals("finished", result)
     }
@@ -2359,8 +2923,6 @@ class StreamingCqlDebugServerTest {
     @Test
     fun `extractPropertyValue returns IPrimitiveType wrapper not raw enum`() {
         val server = makeServer()
-        val gson = Gson()
-
         val encounter = Encounter()
         encounter.status = Encounter.EncounterStatus.FINISHED
 
@@ -2384,10 +2946,9 @@ class StreamingCqlDebugServerTest {
             CqlDebugServer::class.java.getDeclaredMethod(
                 "formatVariableValue",
                 Any::class.java,
-                Gson::class.java,
             )
         formatMethod.isAccessible = true
-        val formatted = formatMethod.invoke(server, result, gson) as String
+        val formatted = formatMethod.invoke(server, result) as String
 
         assertEquals("finished", formatted)
     }
@@ -2459,8 +3020,8 @@ class StreamingCqlDebugServerTest {
         // Now simulate collectTransitiveIncludes populating librarySourceMap
         server.addLibrarySource("FHIRHelpers", fhirHelpersUri)
 
-        // This is the migration the callback performs (now outside the !containsKey guard)
-        server.triggerBreakpointMigration("FHIRHelpers")
+        // The production library-entered callback migrates even though the library was pre-mapped
+        server.onLibraryEntered("FHIRHelpers", null)
 
         // After migration: handler has FHIRHelpers breakpoints
         assertTrue(handler.breakpointsByLibrary.containsKey("FHIRHelpers"))
@@ -2525,6 +3086,8 @@ class StreamingCqlDebugServerTest {
         assertTrue(caps.supportsConfigurationDoneRequest)
         assertTrue(caps.supportsEvaluateForHovers)
         assertTrue(caps.supportsTerminateRequest)
+        assertTrue(caps.supportsCompletionsRequest)
+        assertEquals(listOf("."), caps.completionTriggerCharacters.toList())
     }
 
     @Test
@@ -2873,6 +3436,150 @@ class StreamingCqlDebugServerTest {
         assertEquals("", response.content)
     }
 
+    // -- libraries with no workspace file (cql-virtual) ---------------------
+
+    private val fhirHelpers401 =
+        VersionedIdentifier().also {
+            it.id = "FHIRHelpers"
+            it.version = "4.0.1"
+        }
+
+    /**
+     * Server whose [ContentService] never locates anything (a library with no workspace file,
+     * e.g. bundled FHIRHelpers) backed by a real [CqlCompilationManager], so cql-virtual
+     * libraries are really compiled into its cache.
+     */
+    private fun setupVirtualSourceServer(): Pair<TestStreamingServer, CqlCompilationManager> {
+        val testContent = org.opencds.cqf.cql.ls.server.service.TestContentService()
+        val cm =
+            CqlCompilationManager(
+                testContent,
+                org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(testContent),
+                IgContextManager(testContent),
+                LibraryResolutionManager(emptyList()),
+            )
+        val server = TestStreamingServer(cm, mock(ContentService::class.java), mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+        server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+        server.setLaunchUri("file:///primary/Library.cql")
+        server.testHandler.primaryLibraryId = "Primary"
+        return server to cm
+    }
+
+    private fun TestStreamingServer.sourceFor(libId: String): Source {
+        val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSource", String::class.java)
+        method.isAccessible = true
+        return method.invoke(this, libId) as Source
+    }
+
+    @Test
+    fun `entering a library with no workspace file reports it under its cql-virtual URI`() {
+        val (server, cm) = setupVirtualSourceServer()
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        val source = server.sourceFor("FHIRHelpers")
+        assertEquals("cql-virtual:///FHIRHelpers-4.0.1.cql", source.path)
+        assertNull(source.sourceReference)
+        assertEquals("FHIRHelpers-4.0.1.cql", source.name)
+        // The editor tab's content comes from the shared compilation cache (virtualSource command).
+        assertTrue(cm.getSourceText(URI.create(source.path))!!.contains("library FHIRHelpers"))
+    }
+
+    @Test
+    fun `entering a library with no workspace file loads its step lines`() {
+        val (server, _) = setupVirtualSourceServer()
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        assertFalse(server.testHandler.cqlStepLinesByLibrary["FHIRHelpers"].isNullOrEmpty())
+    }
+
+    @Test
+    fun `falls back to the bundled provider when the engine's provider chain returns null`() {
+        // Regression test for a live-session bug: streamingHandler.libraryManager was present and
+        // its librarySourceLoader.getLibrarySource(id) returned null for FHIRHelpers, even though
+        // the bundled resource genuinely exists on the classpath.
+        val (server, cm) = setupVirtualSourceServer()
+        val librarySourceLoader = Mockito.mock(org.cqframework.cql.cql2elm.LibrarySourceLoader::class.java)
+        Mockito.`when`(librarySourceLoader.getLibrarySource(fhirHelpers401)).thenReturn(null)
+        val libraryManager = Mockito.mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+        Mockito.`when`(libraryManager.librarySourceLoader).thenReturn(librarySourceLoader)
+        server.testHandler.libraryManager = libraryManager
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        val path = server.sourceFor("FHIRHelpers").path
+        assertEquals("cql-virtual:///FHIRHelpers-4.0.1.cql", path)
+        assertTrue(cm.getSourceText(URI.create(path))!!.contains("library FHIRHelpers"))
+    }
+
+    @Test
+    fun `a namespace-qualified id is reported under its bare-id cql-virtual URI`() {
+        // The identifier can arrive as id = "http://hl7.org/fhir/uv/cql/FHIRHelpers" (system baked
+        // into the id) — it must map to the same URI go-to-definition mints for the bare id.
+        val (server, cm) = setupVirtualSourceServer()
+        val namespaced =
+            VersionedIdentifier().also {
+                it.id = "http://hl7.org/fhir/uv/cql/FHIRHelpers"
+                it.version = "4.0.1"
+            }
+
+        server.onLibraryEntered("FHIRHelpers", namespaced)
+
+        val path = server.sourceFor("FHIRHelpers").path
+        assertEquals("cql-virtual:///FHIRHelpers-4.0.1.cql", path)
+        assertTrue(cm.getSourceText(URI.create(path))!!.contains("library FHIRHelpers"))
+    }
+
+    @Test
+    fun `an unmapped cql-virtual breakpoint is not attached to the primary library`() {
+        // Regression: an unresolved path used to fall back to primaryLibraryId, making the
+        // primary library pause on the virtual document's line numbers.
+        val (server, _) = setupVirtualSourceServer()
+
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "cql-virtual:/FHIRHelpers-4.0.1.cql" }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 7 })
+            },
+        ).get()
+
+        assertFalse(server.testHandler.breakpointsByLibrary.containsKey("Primary"))
+        assertFalse(server.testHandler.breakpointsByLibrary.containsKey(""))
+    }
+
+    @Test
+    fun `a cql-virtual breakpoint set before the library is entered migrates to it`() {
+        val (server, _) = setupVirtualSourceServer()
+        // VS Code sends the single-slash form for a breakpoint set in a cql-virtual tab.
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "cql-virtual:/FHIRHelpers-4.0.1.cql" }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 7 })
+            },
+        ).get()
+
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        assertEquals(setOf(7), server.testHandler.breakpointsByLibrary["FHIRHelpers"])
+    }
+
+    @Test
+    fun `a cql-virtual breakpoint set after the library is mapped attaches to it directly`() {
+        val (server, _) = setupVirtualSourceServer()
+        server.onLibraryEntered("FHIRHelpers", fhirHelpers401)
+
+        server.setBreakpoints(
+            SetBreakpointsArguments().also {
+                it.source = Source().also { s -> s.path = "cql-virtual:/FHIRHelpers-4.0.1.cql" }
+                it.breakpoints = arrayOf(SourceBreakpoint().also { bp -> bp.line = 9 })
+            },
+        ).get()
+
+        assertEquals(setOf(9), server.testHandler.breakpointsByLibrary["FHIRHelpers"])
+        assertFalse(server.testHandler.breakpointsByLibrary.containsKey("Primary"))
+    }
+
     // -- getAst ------------------------------------------------------------
 
     @Test
@@ -2880,6 +3587,21 @@ class StreamingCqlDebugServerTest {
         val server = setupServer()
         val response = server.getAst(emptyMap<String, Any>()).get()
         assertNull(response["ast"])
+    }
+
+    @Test
+    fun `getAst resolves a cql-virtual URI sent in VS Code's single-slash form`() {
+        val server = setupServer()
+        server.addLibrarySource("FHIRHelpers", URI.create("cql-virtual:///FHIRHelpers-4.0.1.cql"))
+        val compiled = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
+        Mockito.`when`(compiled.library).thenReturn(Library().also { it.identifier = fhirHelpers401 })
+        val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+        Mockito.`when`(libraryManager.compiledLibraries).thenReturn(hashMapOf(fhirHelpers401 to compiled))
+        server.testHandler.libraryManager = libraryManager
+
+        val response = server.getAst(mapOf("uri" to "cql-virtual:/FHIRHelpers-4.0.1.cql")).get()
+
+        assertNotNull(response["ast"])
     }
 
     @Test
@@ -2925,40 +3647,9 @@ class StreamingCqlDebugServerTest {
 
         assertFalse(handler.breakpointsByLibrary.containsKey("LibC"))
 
-        // Wire up a callback that mirrors the production logic:
-        // 1. URI resolution uses libraryIdentifier fallback (LibC not a direct include)
-        // 2. Breakpoint migration always runs
-        handler.onLibraryEnteredCallback = { libId, libraryIdentifier ->
-            // URI resolution block (guarded by !containsKey)
-            try {
-                val libMapField = CqlDebugServer::class.java.getDeclaredField("librarySourceMap")
-                libMapField.isAccessible = true
-                @Suppress("UNCHECKED_CAST")
-                val libMap = libMapField.get(server) as ConcurrentHashMap<String, URI>
-
-                if (!libMap.containsKey(libId) && libraryIdentifier != null) {
-                    val csField = CqlDebugServer::class.java.getDeclaredField("contentService")
-                    csField.isAccessible = true
-                    val contentSvc = csField.get(server) as ContentService
-                    val uris =
-                        contentSvc.locate(
-                            URI.create(launchUriStr),
-                            libraryIdentifier,
-                        )
-                    val uri = uris.firstOrNull()
-                    if (uri != null) {
-                        libMap[libId] = uri
-                    }
-                }
-            } catch (_: Exception) {
-            }
-
-            // Migration block (always runs)
-            server.triggerBreakpointMigration(libId)
-        }
-
-        // Invoke the callback with the transitive library's identifier
-        handler.onLibraryEnteredCallback?.invoke("LibC", libCIdentifier)
+        // Run the production library-entered callback with the transitive library's identifier
+        // (LibC is not a direct include, so it resolves via the libraryIdentifier fallback).
+        server.onLibraryEntered("LibC", libCIdentifier)
 
         // Verify breakpoints migrated
         assertTrue(handler.breakpointsByLibrary.containsKey("LibC"))
@@ -3160,6 +3851,655 @@ class StreamingCqlDebugServerTest {
             val registry = server.testHandler.runtimeRegistry
             assertNotNull(registry)
             Mockito.verify(mockClient).stopped(any())
+        }
+    }
+
+    // -- Ad-hoc CQL expression evaluation -------------------------------------
+
+    @Nested
+    inner class AdHocEval {
+        private val cqlSourceText =
+            """
+            library AdHocTest
+
+            define "X": 10
+
+            define "Y": 20
+            """.trimIndent()
+
+        /**
+         * Sets up a server with a real [org.cqframework.cql.cql2elm.LibraryManager] on the
+         * handler and a [CqlCompilationManager] (built from a [ContentService] that serves the
+         * test CQL) which returns [cqlSourceText] from [CqlCompilationManager.getSourceText].
+         * Does NOT park an engine thread — callers pause, then [parkEngineThread].
+         */
+        private fun setupServerWithAdHocEval(): TestStreamingServer {
+            val sourceUri = URI.create("file:///test.cql")
+
+            val cs =
+                object : ContentService {
+                    override fun locate(
+                        root: URI,
+                        libraryIdentifier: VersionedIdentifier,
+                    ): Set<URI> = setOf(sourceUri)
+
+                    override fun read(uri: URI): InputStream? {
+                        if (uri == sourceUri) return cqlSourceText.byteInputStream()
+                        return null
+                    }
+                }
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            // Precompile so getSourceText(uri) has an entry in the cache
+            cm.compile(sourceUri)
+
+            val client = Mockito.mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            val server = TestStreamingServer(cm, cs, Mockito.mock(IgContextManager::class.java), Mockito.mock(LibraryResolutionManager::class.java))
+            server.connect(client)
+
+            val handler = server.testHandler
+            server.setLaunchUri(sourceUri.toString())
+
+            // Real LibraryManager so CqlCompiler can actually compile
+            val modelManager = org.cqframework.cql.cql2elm.ModelManager()
+            val libraryManager = org.cqframework.cql.cql2elm.LibraryManager(modelManager)
+            handler.libraryManager = libraryManager
+
+            return server
+        }
+
+        /**
+         * Pauses on the handler (arming the resume latch), then parks a daemon engine thread in
+         * [StreamingBreakpointHandler.waitForResume] so ad-hoc eval requests get drained. The
+         * returned thread must be released with [StreamingBreakpointHandler.release] + [Thread.join].
+         */
+        private fun parkEngineThread(
+            handler: StreamingBreakpointHandler,
+            elm: ExpressionDef,
+            state: State,
+        ): Thread {
+            assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+            val engineReady = java.util.concurrent.CyclicBarrier(2)
+            val engineThread =
+                Thread {
+                    engineReady.await()
+                    handler.waitForResume()
+                }
+            engineThread.isDaemon = true
+            engineThread.start()
+            engineReady.await()
+            Thread.sleep(50) // let the engine thread enter waitForResume and start polling
+            return engineThread
+        }
+
+        private fun pauseState(server: TestStreamingServer): Pair<Library, State> {
+            // Build the state's library from the ACTUAL compiled library so that ExpressionRefs
+            // in ad-hoc expressions (e.g. "X + Y") can resolve to the real define ELM.
+            val compiled = compileLibrary(cqlSourceText)
+            val state = State(Environment(null))
+            state.init(compiled)
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+            return compiled to state
+        }
+
+        private fun compileLibrary(sourceText: String): Library {
+            val modelManager = org.cqframework.cql.cql2elm.ModelManager()
+            val libraryManager = org.cqframework.cql.cql2elm.LibraryManager(modelManager)
+            val compiler: org.cqframework.cql.cql2elm.CqlCompiler =
+                org.cqframework.cql.cql2elm.CqlCompiler(null, null, libraryManager)
+            return compiler.run(sourceText)
+        }
+
+        @Test
+        fun `ad-hoc expression evaluating arithmetic returns correct result`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.stepIn()
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = "1 + 2"
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                assertNotNull(response.result)
+                // The result should be 3 (integer)
+                assertEquals("3", response.result)
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc expression referencing defines returns correct result`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.stepIn()
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = "X + Y"
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                assertNotNull(response.result)
+                assertEquals("30", response.result)
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc invalid expression returns compile error`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.stepIn()
+            // Compile errors are returned before the thread hand-off, so no parked thread needed,
+            // but park one anyway to mirror the real flow.
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = "NonexistentDefine + 1"
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                assertNotNull(response.result)
+                assertTrue(response.result.startsWith("Compile error:"))
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc eval skipped for hover context`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+
+            handler.stepIn()
+            val lib =
+                Library().also {
+                    it.identifier = VersionedIdentifier().also { vi -> vi.id = "AdHocTest" }
+                }
+            val state = State(Environment(null))
+            state.init(lib)
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.onBeforeExpression(elm, state)
+
+            // "hover" context should NOT attempt ad-hoc compilation
+            val response =
+                server.evaluate(
+                    EvaluateArguments().also {
+                        it.expression = "1 + 2"
+                        it.context = "hover"
+                        it.frameId = 0
+                    },
+                ).get()
+
+            // Should fall through to notAvailable since 1+2 isn't a known name
+            assertEquals("not available", response.result)
+        }
+
+        @Test
+        fun `ad-hoc eval returns notAvailable when sourceText is null`() {
+            val server = setupServer()
+            val handler = server.testHandler
+            server.setLaunchUri("file:///missing.cql")
+
+            // Set a real libraryManager but don't populate the compilation cache
+            val modelManager = org.cqframework.cql.cql2elm.ModelManager()
+            handler.libraryManager = org.cqframework.cql.cql2elm.LibraryManager(modelManager)
+
+            handler.stepIn()
+            val state = State(Environment(null))
+            state.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            handler.onBeforeExpression(elm, state)
+
+            val response =
+                server.evaluate(
+                    EvaluateArguments().also {
+                        it.expression = "1 + 2"
+                        it.context = "repl"
+                        it.frameId = 0
+                    },
+                ).get()
+
+            assertEquals("not available", response.result)
+        }
+
+        /** Registers a transient stack variable so query-alias resolution sees it as live. */
+        private fun registerStackVar(
+            handler: StreamingBreakpointHandler,
+            name: String,
+            value: Any,
+        ) {
+            handler.runtimeRegistry.putStackVariable(name, value, null)
+        }
+
+        private fun evaluateRepl(
+            server: TestStreamingServer,
+            expression: String,
+            register: (StreamingBreakpointHandler) -> Unit = {},
+        ): String {
+            val handler = server.testHandler
+            handler.stepIn()
+            val (_, state) = pauseState(server)
+            val elm =
+                ExpressionDef().also {
+                    it.name = "X"
+                    it.locator = "5:1-5:10"
+                }
+            val engineThread = parkEngineThread(handler, elm, state)
+            try {
+                // Register query-alias stack variables only AFTER the pause (which clears
+                // transient stack variables), mirroring how a real query frame would have
+                // populated them before the DAP evaluate arrived.
+                register(handler)
+                val response =
+                    server.evaluate(
+                        EvaluateArguments().also {
+                            it.expression = expression
+                            it.context = "repl"
+                            it.frameId = 0
+                        },
+                    ).get(15, java.util.concurrent.TimeUnit.SECONDS)
+                return response.result
+            } finally {
+                handler.release()
+                engineThread.join(2000)
+            }
+        }
+
+        @Test
+        fun `ad-hoc query alias with injected runtime value evaluates property`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // The alias type resolves via the handler's variableTypeMap (translator-resolved),
+            // then the synthetic function binds the live runtime value positionally.
+            handler.variableTypeMap = mapOf("VTEStudy" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "VTEStudy.value") { h ->
+                    registerStackVar(
+                        h,
+                        "VTEStudy",
+                        org.opencds.cqf.cql.engine.runtime.Quantity()
+                            .withValue(java.math.BigDecimal("5")),
+                    )
+                }
+            assertEquals("5", result)
+        }
+
+        @Test
+        fun `two query aliases bind positionally in signature order`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("A" to "System.Quantity", "B" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "A.value + B.value") { h ->
+                    registerStackVar(
+                        h,
+                        "A",
+                        org.opencds.cqf.cql.engine.runtime.Quantity().withValue(java.math.BigDecimal("5")),
+                    )
+                    registerStackVar(
+                        h,
+                        "B",
+                        org.opencds.cqf.cql.engine.runtime.Quantity().withValue(java.math.BigDecimal("7")),
+                    )
+                }
+            assertEquals("12", result)
+        }
+
+        @Test
+        fun `ad-hoc query alias without resolvable type returns degraded response`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // No translator type and no FHIR resource fallback -> type is unresolvable.
+            handler.variableTypeMap = emptyMap()
+
+            val result =
+                evaluateRepl(server, "VTEStudy.effective") { h ->
+                    registerStackVar(h, "VTEStudy", "a-plain-string-lacking-a-type")
+                }
+            assertTrue(result.startsWith("not supported for this alias type"))
+        }
+
+        @Test
+        fun `ad-hoc query alias singular type enables arithmetic`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // collectAliasTypes now maps a list-backed query alias to its SINGULAR element type
+            // (System.Quantity, not list<System.Quantity>). A singular Quantity alias lets
+            // `W.value * 2` type-check and evaluate; a List<System.Quantity> alias would distribute
+            // `.value` to a list and fail to compile the multiplication.
+            handler.variableTypeMap = mapOf("W" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "W.value * 2") { h ->
+                    registerStackVar(
+                        h,
+                        "W",
+                        org.opencds.cqf.cql.engine.runtime.Quantity()
+                            .withValue(java.math.BigDecimal("5")),
+                    )
+                }
+            assertEquals("10", result)
+        }
+
+        @Test
+        fun `ad-hoc expression referencing unknown top-level define still returns compile error`() {
+            val server = setupServerWithAdHocEval()
+            // "NoSuchTopLevelDefine" is neither a query alias (not on the stack) nor a real define,
+            // so the synthetic compile fails and the error is surfaced.
+            val result = evaluateRepl(server, "NoSuchTopLevelDefine + 1")
+            assertTrue(result.startsWith("Compile error:"))
+        }
+
+        @Test
+        fun `ad-hoc list-valued function parameter compiles successfully`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // Simulate what buildVariableTypeMap now captures for a FunctionDef operand
+            // with a list type (e.g. conditions List<FHIR.Condition>).
+            handler.variableTypeMap = mapOf("conditions" to "List<System.Integer>")
+
+            val result =
+                evaluateRepl(server, "\"conditions\"") { h ->
+                    registerStackVar(
+                        h,
+                        "conditions",
+                        listOf(1, 2, 3),
+                    )
+                }
+            // Before the fix, this would return "not supported for this alias type".
+            // Now the list-typed parameter resolves and evaluates to the list value.
+            assertFalse(result.startsWith("not supported for this alias type"), result)
+            assertTrue(result.contains("1"), "Expected list to contain value 1, got: $result")
+        }
+
+        @Test
+        fun `ad-hoc nested generic alias type compiles (normalizeType regression)`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // buildVariableTypeMap records translator DataType.toString() verbatim, which uses
+            // lowercase generic keywords everywhere (e.g. list<interval<System.DateTime>>).
+            // Previously normalizeType only capitalized the outer generic, leaving the inner
+            // `interval<` lowercase and producing "Syntax error at <" during synthetic compile.
+            handler.variableTypeMap = mapOf("I" to "list<interval<System.DateTime>>")
+
+            val result =
+                evaluateRepl(server, "I") { h ->
+                    registerStackVar(h, "I", emptyList<Any>())
+                }
+            assertFalse(result.startsWith("Compile error:"), "Expected valid compile, got: $result")
+            assertFalse(result.startsWith("not supported"), result)
+        }
+
+        @Test
+        fun `ad-hoc choice-of-tuples alias type with colon elements compiles (regression)`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            // TupleTypeElement.toString emits `name:type` (with a colon), but cql.g4
+            // tupleElementDefinition is `referentialIdentifier typeSpecifier` (no colon).
+            // Splice a Choice<Tuple{...},Tuple{...}> alias (the shape of the CMS190
+            // "NoVTEMedication" query alias) that previously failed synthetic compile
+            // with "Syntax error at :".
+            handler.variableTypeMap =
+                mapOf(
+                    "NoVTEMedication" to
+                        "choice<tuple{id:System.String,medicationStatusReason:list<System.String>,authoredOn:choice<System.DateTime,System.Date>}," +
+                        "tuple{id:System.String,medicationStatusReason:list<System.String>,authoredOn:System.Date}>",
+                )
+
+            val result =
+                evaluateRepl(server, "NoVTEMedication") { h ->
+                    registerStackVar(h, "NoVTEMedication", "placeholder")
+                }
+            assertFalse(result.startsWith("Compile error:"), "Expected valid compile, got: $result")
+            assertFalse(result.startsWith("not supported"), result)
+        }
+
+        @Test
+        fun `ad-hoc raw Kotlin String alias binds and evaluates (regression)`() {
+            // Regression for the operand-binding bug: stack-variable values that pass through
+            // RuntimeValueRegistry.unwrapValue as raw Kotlin primitives (String here) never
+            // implemented the sealed `Value` interface, so the previous `value as? Value` cast
+            // silently bound `null` and any operation on the alias returned null.
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("S" to "System.String")
+
+            val result =
+                evaluateRepl(server, "S + ' world'") { h ->
+                    registerStackVar(h, "S", "hello")
+                }
+            // Before the fix this returned "null"; now the raw String is reverse-wrapped and bound.
+            // Engine String values render with surrounding single quotes.
+            assertEquals("'hello world'", result)
+        }
+
+        @Test
+        fun `ad-hoc raw Kotlin Boolean alias binds and evaluates (regression)`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("B" to "System.Boolean")
+
+            val result =
+                evaluateRepl(server, "B and true") { h ->
+                    registerStackVar(h, "B", true)
+                }
+            assertEquals("true", result)
+        }
+
+        @Test
+        fun `ad-hoc inconvertible alias returns runtime error response`() {
+            val server = setupServerWithAdHocEval()
+            val handler = server.testHandler
+            handler.variableTypeMap = mapOf("G" to "System.Quantity")
+
+            val result =
+                evaluateRepl(server, "G.value") { h ->
+                    registerStackVar(h, "G", java.util.UUID.randomUUID())
+                }
+            assertTrue(result.startsWith("Runtime error:"), result)
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame uses included library source when paused inside it`() {
+            val primaryUri = URI.create("file:///Primary.cql")
+            val includedUri = URI.create("file:///Included.cql")
+            val primarySource = "library Primary\n\ndefine \"X\": 10"
+            val includedSource = "library Included\ncode \"confirmed\": 'confirmed' from \"TestCS\"\n\ndefine \"Y\": 20"
+
+            val cs =
+                object : ContentService {
+                    private val files = mapOf(primaryUri to primarySource, includedUri to includedSource)
+
+                    override fun locate(
+                        root: URI,
+                        identifier: VersionedIdentifier,
+                    ): Set<URI> {
+                        val id = identifier.id ?: return emptySet()
+                        return files.keys.filter { it.toString().contains(id) }.toSet()
+                    }
+
+                    override fun read(uri: URI): InputStream? = files[uri]?.byteInputStream()
+                }
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            // Pre-compile both libraries so getSourceText() has entries in the cache.
+            cm.compile(primaryUri, primarySource.byteInputStream())
+            cm.compile(includedUri, includedSource.byteInputStream())
+
+            val client = mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            val server = TestStreamingServer(cm, cs, mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+            server.connect(client)
+            server.setLaunchUri(primaryUri.toString())
+
+            val handler = server.testHandler
+            handler.primaryLibraryId = "Primary"
+
+            // Map the included library ID to its URI.
+            server.addLibrarySource("Included", includedUri)
+
+            // Simulate being paused inside the included library by setting the call stack.
+            handler.lastPausedCallStack =
+                listOf(
+                    StreamingBreakpointHandler.CallStackEntry(
+                        def = ExpressionDef().also { it.name = "isVerified" },
+                        callSite = null,
+                        libraryId = "Included",
+                    ),
+                )
+
+            // Invoke resolveSourceTextForFrame() via reflection.
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+            val result = method.invoke(server) as? String
+
+            assertEquals(includedSource, result, "Should resolve included library's source text when paused inside it")
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame uses a cql-virtual library's source when paused inside it`() {
+            val cs = mock(ContentService::class.java)
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            val virtualUri = URI.create("cql-virtual:///Included-1.0.0.cql")
+            val includedSource = "library Included version '1.0.0'\n\ndefine \"Y\": 20"
+            cm.compile(virtualUri, includedSource.byteInputStream())
+            val server = TestStreamingServer(cm, cs, mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+            server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+            server.testHandler.primaryLibraryId = "Primary"
+            server.addLibrarySource("Included", virtualUri)
+            server.testHandler.lastPausedCallStack =
+                listOf(StreamingBreakpointHandler.CallStackEntry(ExpressionDef().also { it.name = "Y" }, null, "Included"))
+
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+
+            assertEquals(includedSource, method.invoke(server) as? String)
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame re-resolves an evicted cql-virtual library instead of using the primary's`() {
+            // The cql-virtual cache entry can be evicted (CqlCompilationManager.invalidate drops
+            // reverse dependencies); the frame must still get the included library's own text.
+            val server = makeServer()
+            server.connect(mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java))
+            server.testHandler.primaryLibraryId = "Primary"
+            server.addLibrarySource("FHIRHelpers", URI.create("cql-virtual:///FHIRHelpers-4.0.1.cql"))
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            Mockito.`when`(libraryManager.compiledLibraries)
+                .thenReturn(hashMapOf(fhirHelpers401 to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)))
+            server.testHandler.libraryManager = libraryManager
+            server.testHandler.lastPausedCallStack =
+                listOf(StreamingBreakpointHandler.CallStackEntry(ExpressionDef().also { it.name = "ToString" }, null, "FHIRHelpers"))
+
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+            val result = method.invoke(server) as? String
+
+            assertTrue(result?.contains("library FHIRHelpers") == true, "Expected FHIRHelpers source, got: ${result?.take(100)}")
+        }
+
+        @Test
+        fun `resolveSourceTextForFrame falls back to primary library when frame not resolved`() {
+            val primaryUri = URI.create("file:///Primary.cql")
+            val primarySource = "library Primary\n\ndefine \"X\": 10"
+
+            val cs =
+                object : ContentService {
+                    override fun read(uri: URI): InputStream? =
+                        if (uri == primaryUri) primarySource.byteInputStream() else null
+                }
+            val cm =
+                CqlCompilationManager(
+                    cs,
+                    org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager(cs),
+                    IgContextManager(cs),
+                    LibraryResolutionManager(emptyList()),
+                )
+            cm.compile(primaryUri, primarySource.byteInputStream())
+
+            val client = mock(org.eclipse.lsp4j.debug.services.IDebugProtocolClient::class.java)
+            val server = TestStreamingServer(cm, cs, mock(IgContextManager::class.java), mock(LibraryResolutionManager::class.java))
+            server.connect(client)
+            server.setLaunchUri(primaryUri.toString())
+
+            val handler = server.testHandler
+            handler.primaryLibraryId = "Primary"
+            server.addLibrarySource("Primary", primaryUri)
+            // Call stack is empty — resolveFrameLibraryId falls back to primaryLibraryId.
+            handler.lastPausedCallStack = emptyList()
+
+            val method = CqlDebugServer::class.java.getDeclaredMethod("resolveSourceTextForFrame")
+            method.isAccessible = true
+            val result = method.invoke(server) as? String
+
+            assertEquals(primarySource, result, "Should fall back to primary library when call stack is empty")
         }
     }
 }

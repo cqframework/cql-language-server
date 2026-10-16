@@ -17,6 +17,11 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.opencds.cqf.cql.ls.core.ContentService
+import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
+import org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager
+import org.opencds.cqf.cql.ls.server.manager.IgContextManager
+import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.ls.server.service.TestContentService
 import java.net.URI
 import java.nio.file.Paths
 
@@ -28,6 +33,11 @@ class BreakpointManagerTest {
     fun setUp() {
         contentService = mock(ContentService::class.java)
         manager = BreakpointManager(contentService)
+    }
+
+    private fun compilationManager(): CqlCompilationManager {
+        val cs = TestContentService()
+        return CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
     }
 
     // -- resolveLibraryIdFromPath -------------------------------------------
@@ -81,6 +91,73 @@ class BreakpointManagerTest {
             // Windows accepts forward slashes in paths
             assertEquals("FHIRHelpers", manager.resolveLibraryIdFromPath("c:/Users/user/project/FHIRHelpers.cql", map))
         }
+
+        @Test
+        fun `virtual path in minted triple-slash form returns lib id`() {
+            val map = mapOf("FHIRCommon" to URI.create("cql-virtual:///FHIRCommon-2.0.0.cql"))
+            assertEquals("FHIRCommon", manager.resolveLibraryIdFromPath("cql-virtual:///FHIRCommon-2.0.0.cql", map))
+        }
+
+        @Test
+        fun `virtual path in VS Code single-slash form returns lib id`() {
+            // VS Code's Uri.toString() drops the empty authority, so breakpoints set in a
+            // cql-virtual tab come back as cql-virtual:/X.cql.
+            val map = mapOf("FHIRCommon" to URI.create("cql-virtual:///FHIRCommon-2.0.0.cql"))
+            assertEquals("FHIRCommon", manager.resolveLibraryIdFromPath("cql-virtual:/FHIRCommon-2.0.0.cql", map))
+        }
+
+        @Test
+        fun `unknown virtual path returns null`() {
+            val map = mapOf("FHIRCommon" to URI.create("cql-virtual:///FHIRCommon-2.0.0.cql"))
+            assertNull(manager.resolveLibraryIdFromPath("cql-virtual:///FHIRCommon-3.0.0.cql", map))
+        }
+
+        @Test
+        fun `virtual path never matches a file entry`() {
+            val map = mapOf("TestLib" to Paths.get("/test/path.cql").toUri())
+            assertNull(manager.resolveLibraryIdFromPath("cql-virtual:///TestLib-1.0.0.cql", map))
+        }
+    }
+
+    // -- sourcePathMatches ---------------------------------------------------
+
+    // | Source.path                         | Library URI                              | Match |
+    // | ----------------------------------- | ---------------------------------------- | ----- |
+    // | /a/b/Lib.cql                        | file:///a/b/Lib.cql                      | yes   |
+    // | C:\a\b\Lib.cql, C:/a/b/Lib.cql      | cql-virtual:///Lib-1.0.0.cql             | no    |
+    // | cql-virtual:/Lib-1.0.0.cql          | cql-virtual:///Lib-1.0.0.cql             | yes   |
+    // | cql-virtual:///Lib-1.0.0.cql        | file:///a/b/Lib.cql                      | no    |
+    // Windows drive-letter paths matching file URIs are covered by the @EnabledOnOs(WINDOWS)
+    // tests above (Paths.get on a drive-letter path is only meaningful on Windows).
+    @Nested
+    inner class SourcePathMatches {
+        private val virtualUri = URI.create("cql-virtual:///Lib-1.0.0.cql")
+
+        @Test
+        fun `posix path matches its file URI`() {
+            assertTrue(manager.sourcePathMatches("/a/b/Lib.cql", Paths.get("/a/b/Lib.cql").toUri()))
+        }
+
+        @Test
+        fun `windows backslash path never matches a virtual URI`() {
+            assertFalse(manager.sourcePathMatches("C:\\a\\b\\Lib.cql", virtualUri))
+        }
+
+        @Test
+        fun `windows forward slash path never matches a virtual URI`() {
+            assertFalse(manager.sourcePathMatches("C:/a/b/Lib.cql", virtualUri))
+        }
+
+        @Test
+        fun `both virtual URI forms match`() {
+            assertTrue(manager.sourcePathMatches("cql-virtual:///Lib-1.0.0.cql", virtualUri))
+            assertTrue(manager.sourcePathMatches("cql-virtual:/Lib-1.0.0.cql", virtualUri))
+        }
+
+        @Test
+        fun `virtual path never matches a file URI`() {
+            assertFalse(manager.sourcePathMatches("cql-virtual:///Lib-1.0.0.cql", Paths.get("/a/b/Lib.cql").toUri()))
+        }
     }
 
     // -- isRelevantSourcePath ------------------------------------------------
@@ -120,17 +197,38 @@ class BreakpointManagerTest {
         fun `file URI returns path`() {
             val uri = Paths.get("/test.cql").toUri()
             val map = mapOf("TestLib" to uri)
-            val source = manager.resolveSource("TestLib", null, null, map, emptyMap())
+            val source = manager.resolveSource("TestLib", null, null, map)
             assertTrue(source.path.endsWith("test.cql"))
         }
 
         @Test
-        fun `non-file URI uses sourceReference`() {
+        fun `unsupported non-file URI falls back to a named placeholder`() {
             val uri = URI.create("https://example.com/lib.cql")
             val map = mapOf("TestLib" to uri)
-            val reg = mapOf(42 to org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TestLib" })
-            val source = manager.resolveSource("TestLib", null, null, map, reg)
-            assertEquals(42, source.sourceReference)
+            val source = manager.resolveSource("TestLib", null, null, map)
+            assertNull(source.path)
+            assertEquals(0, source.sourceReference)
+            assertEquals("TestLib.cql", source.name)
+        }
+
+        @Test
+        fun `virtual URI path is the cql-virtual URI, no sourceReference, name includes version`() {
+            val uri = URI.create("cql-virtual:///FHIRCommon-2.0.0.cql")
+            val map = mapOf("FHIRCommon" to uri)
+            val source = manager.resolveSource("FHIRCommon", null, null, map)
+            assertEquals("cql-virtual:///FHIRCommon-2.0.0.cql", source.path)
+            assertNull(source.sourceReference)
+            assertEquals("FHIRCommon-2.0.0.cql", source.name)
+        }
+
+        @Test
+        fun `unversioned virtual URI`() {
+            val uri = URI.create("cql-virtual:///X-unversioned.cql")
+            val map = mapOf("X" to uri)
+            val source = manager.resolveSource("X", null, null, map)
+            assertEquals("cql-virtual:///X-unversioned.cql", source.path)
+            assertNull(source.sourceReference)
+            assertEquals("X-unversioned.cql", source.name)
         }
 
         @Test
@@ -145,15 +243,20 @@ class BreakpointManagerTest {
                     "file:///streaming.cql",
                     handler,
                     emptyMap(),
-                    emptyMap(),
                 )
             assertTrue(source.path.endsWith("streaming.cql"))
         }
 
         @Test
         fun `unknown library returns sourceReference 0`() {
-            val source = manager.resolveSource("Unknown", null, null, emptyMap(), emptyMap())
+            val source = manager.resolveSource("Unknown", null, null, emptyMap())
             assertEquals(0, source.sourceReference)
+        }
+
+        @Test
+        fun `unresolved library still gets a legible source name, not blank`() {
+            val source = manager.resolveSource("CQMCommon", null, null, emptyMap())
+            assertEquals("CQMCommon.cql", source.name)
         }
 
         @Test
@@ -163,7 +266,7 @@ class BreakpointManagerTest {
                     `when`(it.primaryLibraryId).thenReturn("PrimaryLib")
                 }
             val source =
-                manager.resolveSource("", null, handler, emptyMap(), emptyMap())
+                manager.resolveSource("", null, handler, emptyMap())
             assertNull(source.path)
             assertEquals(0, source.sourceReference)
         }
@@ -180,80 +283,131 @@ class BreakpointManagerTest {
         }
 
         @Test
-        fun `compiler with null compiledLibrary returns just primary`() {
+        fun `compiler with null libraryManager returns just primary`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(null)
+            `when`(compiler.libraryManager).thenReturn(null)
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
             assertEquals(setOf("Primary"), result)
         }
 
         @Test
-        fun `compiler with null library returns just primary`() {
+        fun `identifier with null id is skipped`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(null)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val unnamedId = org.hl7.elm.r1.VersionedIdentifier()
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(unnamedId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
             assertEquals(setOf("Primary"), result)
         }
 
         @Test
-        fun `includeDef with null path is skipped`() {
+        fun `returns every compiled library regardless of include depth`() {
+            // Mirrors Primary -> TJCOverall -> CQMCommon: cql2elm must fully compile the whole
+            // include graph to translate Primary, so LibraryManager.compiledLibraries already
+            // contains all three, even though CQMCommon is only a transitive (depth-2) include.
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            val library = mock(org.hl7.elm.r1.Library::class.java)
-            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
-            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(library)
-            `when`(library.includes).thenReturn(includes)
-            `when`(includes.def).thenReturn(mutableListOf(includeDef))
-            `when`(includeDef.path).thenReturn(null)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val primaryId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "Primary" }
+            val directId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "TJCOverall" }
+            val transitiveId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "CQMCommon" }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(
+                    primaryId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java),
+                    directId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java),
+                    transitiveId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java),
+                ),
+            )
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
-            assertEquals(setOf("Primary"), result)
+
+            assertEquals(setOf("Primary", "TJCOverall", "CQMCommon"), result)
         }
 
         @Test
-        fun `duplicate library in includes is deduped`() {
+        fun `resolves and registers a file URI for a transitively-included library`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            val library = mock(org.hl7.elm.r1.Library::class.java)
-            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
-            val includeDef1 = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            val includeDef2 = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(library)
-            `when`(library.includes).thenReturn(includes)
-            `when`(includes.def).thenReturn(mutableListOf(includeDef1, includeDef2))
-            `when`(includeDef1.path).thenReturn("DuplicateLib")
-            `when`(includeDef2.path).thenReturn("DuplicateLib")
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val libId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "CQMCommon" }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(libId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
+            val resolvedUri = URI.create("file:///CQMCommon.cql")
+            `when`(contentService.locate(URI.create("file:///primary.cql"), libId)).thenReturn(setOf(resolvedUri))
 
-            val result = manager.collectTransitiveIncludes("Primary", compiler, null, mutableMapOf())
-            assertEquals(setOf("Primary", "DuplicateLib"), result)
+            val librarySourceMap = mutableMapOf<String, URI>()
+            manager.collectTransitiveIncludes("Primary", compiler, "file:///primary.cql", librarySourceMap)
+
+            assertEquals(resolvedUri, librarySourceMap["CQMCommon"])
         }
 
         @Test
         fun `library already in librarySourceMap skips contentService lookup`() {
             val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
-            val compiledLib = mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)
-            val library = mock(org.hl7.elm.r1.Library::class.java)
-            val includes = mock(org.hl7.elm.r1.Library.Includes::class.java)
-            val includeDef = mock(org.hl7.elm.r1.IncludeDef::class.java)
-            `when`(compiler.compiledLibrary).thenReturn(compiledLib)
-            `when`(compiledLib.library).thenReturn(library)
-            `when`(library.includes).thenReturn(includes)
-            `when`(includes.def).thenReturn(mutableListOf(includeDef))
-            `when`(includeDef.path).thenReturn("ExistingLib")
-            `when`(includeDef.version).thenReturn(null)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val libId = org.hl7.elm.r1.VersionedIdentifier().also { it.id = "ExistingLib" }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(libId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
 
             val librarySourceMap = mutableMapOf("ExistingLib" to URI.create("file:///existing.cql"))
 
             val result = manager.collectTransitiveIncludes("Primary", compiler, null, librarySourceMap)
 
             assertEquals(setOf("Primary", "ExistingLib"), result)
+            Mockito.verifyNoInteractions(contentService)
+        }
+
+        @Test
+        fun `library with no workspace file is mapped to its cql-virtual URI`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val libId =
+                org.hl7.elm.r1.VersionedIdentifier().also {
+                    it.id = "FHIRCommon"
+                    it.version = "2.0.0"
+                }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(libId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
+            val cm = compilationManager()
+            val virtualUri = URI.create("cql-virtual:///FHIRCommon-2.0.0.cql")
+            cm.compile(virtualUri, "library FHIRCommon version '2.0.0'\ndefine \"A\": 1".byteInputStream())
+
+            val librarySourceMap = mutableMapOf<String, URI>()
+            manager.collectTransitiveIncludes("Primary", compiler, "file:///primary.cql", librarySourceMap, cm)
+
+            assertEquals(virtualUri, librarySourceMap["FHIRCommon"])
+        }
+
+        @Test
+        fun `library with no workspace file and no resolvable source stays unmapped`() {
+            val compiler = mock(org.cqframework.cql.cql2elm.CqlCompiler::class.java)
+            val libraryManager = mock(org.cqframework.cql.cql2elm.LibraryManager::class.java)
+            val libId =
+                org.hl7.elm.r1.VersionedIdentifier().also {
+                    it.id = "NoSuchLibrary"
+                    it.version = "9.9.9"
+                }
+            `when`(compiler.libraryManager).thenReturn(libraryManager)
+            `when`(libraryManager.compiledLibraries).thenReturn(
+                linkedMapOf(libId to mock(org.cqframework.cql.cql2elm.model.CompiledLibrary::class.java)),
+            )
+
+            val librarySourceMap = mutableMapOf<String, URI>()
+            val result =
+                manager.collectTransitiveIncludes("Primary", compiler, "file:///primary.cql", librarySourceMap, compilationManager())
+
+            assertEquals(setOf("Primary", "NoSuchLibrary"), result)
+            assertNull(librarySourceMap["NoSuchLibrary"])
         }
     }
 
@@ -288,7 +442,44 @@ class BreakpointManagerTest {
         @Test
         fun `empty breakpoints does not call client`() {
             val client = mock(IDebugProtocolClient::class.java)
-            manager.updateBreakpointLineVerification(mock(), client, emptyMap())
+            manager.updateBreakpointLineVerification(client, emptyMap(), emptyMap(), mock())
+            Mockito.verifyNoInteractions(client)
+        }
+
+        @Test
+        fun `each path is checked against its own library's lines, not the primary's`() {
+            val cm = compilationManager()
+            // Primary: line 2 is breakpointable. Included library: line 2 is blank, line 3 is not.
+            val primaryUri = URI.create("cql-virtual:///Primary-1.0.0.cql")
+            cm.compile(primaryUri, "library Primary version '1.0.0'\ndefine \"P\": 1".byteInputStream())
+            val includedUri = URI.create("cql-virtual:///Included-1.0.0.cql")
+            cm.compile(includedUri, "library Included version '1.0.0'\n\ndefine \"I\": 1".byteInputStream())
+            val librarySourceMap = mapOf("Primary" to primaryUri, "Included" to includedUri)
+            val client = mock(IDebugProtocolClient::class.java)
+            val captor = org.mockito.ArgumentCaptor.forClass(BreakpointEventArguments::class.java)
+
+            manager.updateBreakpointLineVerification(
+                client,
+                mapOf("cql-virtual:/Included-1.0.0.cql" to mapOf(2 to 11, 3 to 12)),
+                librarySourceMap,
+                cm,
+            )
+
+            verify(client, Mockito.times(1)).breakpoint(captor.capture())
+            assertEquals(11, captor.value.breakpoint.id)
+            assertFalse(captor.value.breakpoint.isVerified)
+        }
+
+        @Test
+        fun `unmapped paths are left alone`() {
+            val client = mock(IDebugProtocolClient::class.java)
+            manager.updateBreakpointLineVerification(
+                client,
+                mapOf("cql-virtual:/Unknown-1.0.0.cql" to mapOf(1 to 1)),
+                emptyMap(),
+                compilationManager(),
+            )
+            Mockito.verifyNoInteractions(client)
         }
     }
 
@@ -299,6 +490,17 @@ class BreakpointManagerTest {
         @Test
         fun `null sourcePath returns null`() {
             assertNull(manager.applyBreakpointableLinesFilter(null, null, mock(), emptyMap()))
+        }
+
+        @Test
+        fun `virtual path in single-slash form uses that library's parse tree`() {
+            val cm = compilationManager()
+            val uri = URI.create("cql-virtual:///Included-1.0.0.cql")
+            cm.compile(uri, "library Included version '1.0.0'\n\ndefine \"I\": 1".byteInputStream())
+
+            val lines = manager.applyBreakpointableLinesFilter("cql-virtual:/Included-1.0.0.cql", null, cm, mapOf("Included" to uri))
+
+            assertTrue(lines != null && 3 in lines && 2 !in lines)
         }
     }
 
@@ -324,6 +526,19 @@ class BreakpointManagerTest {
                     `when`(it.lastPausedCallStack).thenReturn(listOf(entry))
                 }
             assertEquals("MyLib", manager.resolveFrameLibraryId(handler))
+        }
+
+        @Test
+        fun `with multiple call stack entries returns the innermost (last-pushed) library id`() {
+            // lastPausedCallStack is stored outermost-first (push order), so the currently-executing
+            // frame is the LAST entry, not the first.
+            val outer = StreamingBreakpointHandler.CallStackEntry(def = mock(), callSite = null, libraryId = "OuterLib")
+            val inner = StreamingBreakpointHandler.CallStackEntry(def = mock(), callSite = null, libraryId = "InnerLib")
+            val handler =
+                mock(StreamingBreakpointHandler::class.java).also {
+                    `when`(it.lastPausedCallStack).thenReturn(listOf(outer, inner))
+                }
+            assertEquals("InnerLib", manager.resolveFrameLibraryId(handler))
         }
 
         @Test

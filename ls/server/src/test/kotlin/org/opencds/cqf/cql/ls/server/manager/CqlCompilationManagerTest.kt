@@ -196,6 +196,37 @@ class CqlCompilationManagerTest {
     }
 
     // -----------------------------------------------------------------------
+    // Staleness — npm/IG context changes invalidate the cache without an
+    // explicit invalidate(uri) call (e.g. an ig.ini edit with no .cql file touched)
+    // -----------------------------------------------------------------------
+
+    private class ExposedIgContextManager(cs: ContentService) : IgContextManager(cs) {
+        fun clearContextForTest(uri: URI) = clearContext(uri)
+    }
+
+    @Test
+    fun compile_staysCache_whenIgContextGenerationUnchanged() {
+        val igContextManager = ExposedIgContextManager(cs)
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), igContextManager, LibraryResolutionManager(emptyList()))
+        val first = localManager.compile(ONE_URI)
+        val second = localManager.compile(ONE_URI)
+        assertSame(first, second, "Expected cache hit when npm/IG context hasn't changed")
+    }
+
+    @Test
+    fun compile_recompiles_whenIgContextGenerationChanges() {
+        val igContextManager = ExposedIgContextManager(cs)
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), igContextManager, LibraryResolutionManager(emptyList()))
+        val first = localManager.compile(ONE_URI)
+
+        // Simulate an ig.ini change / npm reinstall for ONE_URI's root — no invalidate(uri) call.
+        igContextManager.clearContextForTest(ONE_URI)
+
+        val second = localManager.compile(ONE_URI)
+        assertNotSame(first, second, "Expected recompile after npm/IG context generation changed, even with no explicit invalidate(uri)")
+    }
+
+    // -----------------------------------------------------------------------
     // getParseTree — ANTLR parse tree accessible post-compilation
     // -----------------------------------------------------------------------
 
@@ -227,5 +258,42 @@ class CqlCompilationManagerTest {
 
         assertTrue(FUNCTION_CALLER_URI in deps, "FunctionCaller should be listed as a dependent of FunctionLib")
         assertFalse(ONE_URI in deps, "One.cql should not appear as a dependent of FunctionLib")
+    }
+
+    // -----------------------------------------------------------------------
+    // getSourceText — raw CQL text retained alongside a compile(uri, stream) result,
+    // used by VirtualSourceCommandContribution to serve `cql-virtual:` content.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun getSourceText_returnsRawTextUsedToCompile() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+        val stream = cs.read(ONE_URI)!!
+        localManager.compile(ONE_URI, stream)
+
+        val text = localManager.getSourceText(ONE_URI)
+
+        assertNotNull(text)
+        assertTrue(text!!.contains("library"), "Expected raw CQL text to contain a library declaration")
+    }
+
+    @Test
+    fun getSourceText_returnsNull_whenUriWasNeverCompiled() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+        val text = localManager.getSourceText(URI.create("cql-virtual:///Unknown-1.0.0.cql"))
+        assertNull(text)
+    }
+
+    @Test
+    fun compile_streamWithVirtualUri_compilesAndCaches() {
+        val localManager = CqlCompilationManager(cs, CompilerOptionsManager(cs), IgContextManager(cs), LibraryResolutionManager(emptyList()))
+        val cqlText = cs.read(ONE_URI)!!.bufferedReader().readText()
+        val virtualUri = URI.create("cql-virtual:///One-1.0.0.cql")
+
+        val result = localManager.compile(virtualUri, cqlText.byteInputStream())
+
+        assertNotNull(result.compiler)
+        assertSame(result.compiler, localManager.compile(virtualUri), "compile(uri) should hit the cache populated by compile(uri, stream) for a virtual URI")
+        assertTrue(result.compiler.exceptions.none { it.severity == CqlCompilerException.ErrorSeverity.Error }, "Expected no errors compiling One.cql's text under a virtual URI")
     }
 }

@@ -6,7 +6,6 @@ import org.cqframework.cql.cql2elm.CqlCompiler
 import org.cqframework.cql.cql2elm.LibraryManager
 import org.cqframework.cql.cql2elm.ModelManager
 import org.cqframework.cql.cql2elm.model.Model
-import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider
 import org.cqframework.cql.gen.cqlLexer
 import org.cqframework.cql.gen.cqlParser
 import org.fhir.ucum.UcumEssenceService
@@ -27,6 +26,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 data class CompilationResult(
     val compiler: CqlCompiler,
     val parseTree: cqlParser.LibraryContext,
+    // IgContextManager.generation(uri) at the time this was compiled — lets compile(uri) detect
+    // "npm/IG state changed since this was cached" (e.g. an ig.ini edit or npm reinstall) even
+    // though no .cql file was edited, without living forever like a plain URI-keyed cache would.
+    val generation: Int = 0,
+    // Raw CQL text this was compiled from. Lets callers (e.g. VirtualSourceCommandContribution)
+    // serve the original source text for a `cql-virtual:` URI without needing to re-resolve it
+    // (and without needing to know which project/LibraryManager it came from).
+    val cqlText: String = "",
 )
 
 class CqlCompilationManager(
@@ -67,8 +74,11 @@ class CqlCompilationManager(
 
     fun compile(uri: URI): CqlCompiler? {
         compilationCache[uri]?.let {
-            log.debug("compile: cache hit for {}", uri)
-            return it.compiler
+            if (it.generation == igContextManager.generation(uri)) {
+                log.debug("compile: cache hit for {}", uri)
+                return it.compiler
+            }
+            log.debug("compile: cache stale (npm/IG context changed) for {}, recompiling", uri)
         }
         val input = contentService.read(uri)
         if (input == null) {
@@ -99,7 +109,7 @@ class CqlCompilationManager(
             compiler.library?.identifier?.id,
             compiler.exceptions?.size,
         )
-        val result = CompilationResult(compiler, parseTree)
+        val result = CompilationResult(compiler, parseTree, igContextManager.generation(uri), cqlText)
         compilationCache[uri] = result
         updateIndex(uri, compiler)
         return result
@@ -108,6 +118,9 @@ class CqlCompilationManager(
     fun getParseTree(uri: URI): cqlParser.LibraryContext? {
         return compilationCache[uri]?.parseTree ?: compile(uri)?.let { getParseTree(uri) }
     }
+
+    /** Raw CQL text for a previously-compiled URI (real or virtual), or `null` if not cached. */
+    fun getSourceText(uri: URI): String? = compilationCache[uri]?.cqlText
 
     private fun parseCql(cqlText: String): cqlParser.LibraryContext {
         val lexer = cqlLexer(CharStreams.fromString(cqlText))
@@ -177,10 +190,9 @@ class CqlCompilationManager(
             FederatedLibrarySourceProvider(root, contentService, igContextManager.getContext(root)),
         )
         igContextManager.setupLibraryManager(root, libraryManager) // registers npm (2)
-        // Register other workspace projects' namespaces AFTER npm so ensureNamespaceRegistered
-        // is a safe no-op if npm already registered the same namespace.
-        libraryResolutionManager.registerWorkspaceNamespaces(libraryManager)
-        libraryManager.librarySourceLoader.registerProvider(FhirLibrarySourceProvider()) // (3)
+        // Namespaces (workspace projects) + bundled FHIRHelpers (3) — shared with
+        // CqlEvaluator.evaluateBatch(), see registerCommonLibraryProviders.
+        registerCommonLibraryProviders(libraryManager, libraryResolutionManager)
         return libraryManager
     }
 }

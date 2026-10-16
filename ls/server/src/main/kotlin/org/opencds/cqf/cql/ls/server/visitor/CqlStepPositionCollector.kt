@@ -101,14 +101,39 @@ object CqlStepPositionCollector {
         exprCtx: cqlParser.ExpressionContext,
         lines: MutableSet<Int>,
     ) {
+        collectBinaryExpressionOperandLines(exprCtx, lines)
         collectFromContext(exprCtx, lines)
+    }
+
+    private fun collectBinaryExpressionOperandLines(
+        exprCtx: cqlParser.ExpressionContext,
+        lines: MutableSet<Int>,
+    ) {
+        val operands = (0 until exprCtx.childCount).mapNotNull { exprCtx.getChild(it) as? cqlParser.ExpressionContext }
+        if (operands.size < 2) return
+        for (operand in operands) {
+            operand.start?.line?.let { lines.add(it) }
+        }
     }
 
     private fun collectExpressionTerm(
         termCtx: cqlParser.ExpressionTermContext,
         lines: MutableSet<Int>,
     ) {
+        collectBinaryExpressionTermOperandLines(termCtx, lines)
         collectFromContext(termCtx, lines)
+    }
+
+    private fun collectBinaryExpressionTermOperandLines(
+        termCtx: cqlParser.ExpressionTermContext,
+        lines: MutableSet<Int>,
+    ) {
+        val operands =
+            (0 until termCtx.childCount).mapNotNull { termCtx.getChild(it) as? cqlParser.ExpressionTermContext }
+        if (operands.size < 2) return
+        for (operand in operands) {
+            operand.start?.line?.let { lines.add(it) }
+        }
     }
 
     private fun collectQuery(

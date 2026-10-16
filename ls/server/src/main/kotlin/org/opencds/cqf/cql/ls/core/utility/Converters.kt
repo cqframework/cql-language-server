@@ -2,6 +2,7 @@ package org.opencds.cqf.cql.ls.core.utility
 
 import kotlinx.io.Buffer
 import kotlinx.io.Source
+import kotlinx.io.readString
 import java.io.IOException
 import java.io.InputStream
 
@@ -17,4 +18,6 @@ object Converters {
 
     @Throws(IOException::class)
     fun inputStreamToSource(inputStream: InputStream): Source = stringToSource(inputStreamToString(inputStream))
+
+    fun sourceToString(source: Source): String = source.use { it.readString() }
 }

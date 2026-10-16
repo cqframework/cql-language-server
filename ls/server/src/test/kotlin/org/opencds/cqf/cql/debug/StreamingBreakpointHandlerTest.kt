@@ -3,6 +3,7 @@ package org.opencds.cqf.cql.debug
 import org.hl7.elm.r1.Element
 import org.hl7.elm.r1.ExpressionDef
 import org.hl7.elm.r1.ExpressionRef
+import org.hl7.elm.r1.FunctionDef
 import org.hl7.elm.r1.Library
 import org.hl7.elm.r1.Literal
 import org.hl7.elm.r1.VersionedIdentifier
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -17,6 +19,7 @@ import org.opencds.cqf.cql.engine.debug.BreakpointAction
 import org.opencds.cqf.cql.engine.execution.Environment
 import org.opencds.cqf.cql.engine.execution.State
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.TimeUnit
 
 class StreamingBreakpointHandlerTest {
@@ -513,6 +516,49 @@ class StreamingBreakpointHandlerTest {
 
         val elm = makeElement("10:1-10:20")
         assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+    }
+
+    @Test
+    fun `pause at same line number in a different library is not suppressed by cross-library dedup`() {
+        // The CQL-granularity dedup used to compare only raw line numbers (`line != lastPausedLine`),
+        // so a coincidental line-number match between two DIFFERENT libraries' code would look like
+        // "already paused here" and get skipped. It must also require the library to match.
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.stepIn()
+
+        val primaryLib = Library().also { it.identifier = VersionedIdentifier().also { vi -> vi.id = "MyPrimaryLib" } }
+        val primaryState = State(Environment(null)).also { it.init(primaryLib) }
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("43:1-43:10"), primaryState))
+
+        val calleeLib = Library().also { it.identifier = VersionedIdentifier().also { vi -> vi.id = "CQMCommon" } }
+        val calleeState = State(Environment(null)).also { it.init(calleeLib) }
+        calleeState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        assertEquals(
+            BreakpointAction.PAUSE,
+            handler.onBeforeExpression(makeElement("43:1-43:30"), calleeState),
+            "a different library at the same line number must not be treated as the same pause location",
+        )
+    }
+
+    @Test
+    fun `included library step-in is not filtered by the primary library's unrelated step lines`() {
+        // cqlStepLinesByLibrary["CQMCommon"] is unset here (simulating "not loaded yet"); the
+        // fallback to the PRIMARY library's line set is wrong because it's a different file with
+        // unrelated line numbers, and would silently filter out every real line in CQMCommon.
+        val handler = StreamingBreakpointHandler()
+        handler.primaryLibraryId = "MyPrimaryLib"
+        handler.cqlStepLinesByLibrary["MyPrimaryLib"] = setOf(1, 2, 3)
+        handler.stepIn()
+
+        val calleeLib = Library().also { it.identifier = VersionedIdentifier().also { vi -> vi.id = "CQMCommon" } }
+        val calleeState = State(Environment(null)).also { it.init(calleeLib) }
+        calleeState.stack.addFirst(State.ActivationFrame(null, null, null, 0L))
+
+        // Line 43 is not in the primary library's step-line set, but CQMCommon has no set of its
+        // own registered — it must not borrow the primary's set and incorrectly filter this out.
+        assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(makeElement("43:1-43:30"), calleeState))
     }
 
     @Test
@@ -1045,6 +1091,175 @@ class StreamingBreakpointHandlerTest {
         @Test
         fun `on end line after end char returns false`() {
             assertFalse(10 to 25 in range)
+        }
+    }
+
+    // -- Ad-hoc evaluation hand-off -------------------------------------------
+
+    @Nested
+    inner class AdHocEval {
+        /** Builds a `__debugEval__` function whose body is the given [body] (or a bare 42 literal). */
+        private fun makeFn(body: org.hl7.elm.r1.Expression? = null): FunctionDef {
+            val literal =
+                (
+                    body ?: Literal().also {
+                        it.valueType = org.cqframework.cql.shared.QName("urn:hl7-org:elm-types:r1", "Integer")
+                        it.value = "42"
+                    }
+                )
+            return FunctionDef().also {
+                it.context = "Patient"
+                it.expression = literal
+            }
+        }
+
+        @Test
+        fun `submitAdHocEval runs on parked thread and completes before resume`() {
+            val handler = StreamingBreakpointHandler()
+            handler.stepIn()
+            val state = makeState(1)
+            val elm = makeElement("5:1-5:10")
+            assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+            val completed = CountDownLatch(1)
+            val engineReady = CyclicBarrier(2)
+
+            // Park the engine thread
+            val engineThread =
+                Thread {
+                    engineReady.await()
+                    handler.waitForResume()
+                }
+            engineThread.start()
+            engineReady.await() // both threads at barrier
+            Thread.sleep(50) // let the engine thread enter waitForResume
+
+            // Submit an ad-hoc eval of a function that returns 42
+            val future = handler.submitAdHocEval(makeFn(), emptyList())
+            future.whenComplete { _, _ -> completed.countDown() }
+
+            assertTrue(completed.await(5, TimeUnit.SECONDS), "ad-hoc eval should complete")
+            assertTrue(future.isDone)
+            assertEquals(42, (future.get(5, TimeUnit.SECONDS) as org.opencds.cqf.cql.engine.runtime.Integer).value)
+
+            // Resume should still work
+            handler.stepIn()
+            engineThread.join(2000)
+            assertFalse(engineThread.isAlive)
+        }
+
+        @Test
+        fun `submitAdHocEval returns exceptional future when lastPausedState is null`() {
+            val handler = StreamingBreakpointHandler()
+            handler.stepIn()
+            val state = makeState(1)
+            val elm = makeElement("5:1-5:10")
+            assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+            // Simulate the session ending mid-pause: state nulled out but latch still armed.
+            handler.lastPausedState = null
+
+            val engineReady = CyclicBarrier(2)
+            val engineThread =
+                Thread {
+                    engineReady.await()
+                    handler.waitForResume()
+                }
+            engineThread.isDaemon = true
+            engineThread.start()
+            engineReady.await()
+            Thread.sleep(50)
+
+            val future = handler.submitAdHocEval(makeFn(), emptyList())
+
+            val ex =
+                assertThrows(java.util.concurrent.ExecutionException::class.java) {
+                    future.get(5, TimeUnit.SECONDS)
+                }
+            assertTrue(ex.cause is IllegalStateException)
+
+            handler.release()
+            engineThread.join(2000)
+        }
+
+        @Test
+        fun `ad-hoc eval does not trigger breakpoints on the original handler`() {
+            val handler = StreamingBreakpointHandler()
+            handler.stepIn()
+            // Set a breakpoint at line 5
+            handler.setBreakpoints(setOf(5))
+            val state = makeState(1)
+            val elm = makeElement("5:1-5:10")
+            assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+            val completed = CountDownLatch(1)
+            val engineReady = CyclicBarrier(2)
+
+            val engineThread =
+                Thread {
+                    engineReady.await()
+                    handler.waitForResume()
+                }
+            engineThread.start()
+            engineReady.await()
+            Thread.sleep(50)
+
+            // Submit an expression that would hit the breakpoint line if breakpoints weren't disabled
+            val literalFn =
+                makeFn(
+                    Literal().also {
+                        it.locator = "5:1-5:10"
+                        it.valueType = org.cqframework.cql.shared.QName("urn:hl7-org:elm-types:r1", "Integer")
+                        it.value = "1"
+                    },
+                )
+            val future = handler.submitAdHocEval(literalFn, emptyList())
+            future.whenComplete { _, _ -> completed.countDown() }
+
+            assertTrue(completed.await(5, TimeUnit.SECONDS))
+            // Step mode should still be STEP_IN (not corrupted by re-entrant pause)
+            assertEquals(StreamingBreakpointHandler.StepMode.STEP_IN, handler.getStepMode())
+
+            handler.stepIn()
+            engineThread.join(2000)
+        }
+
+        @Test
+        fun `stack depth is restored after ad-hoc eval throws`() {
+            val handler = StreamingBreakpointHandler()
+            handler.stepIn()
+            val state = makeState(2) // depth = 2
+            val elm = makeElement("5:1-5:10")
+            assertEquals(BreakpointAction.PAUSE, handler.onBeforeExpression(elm, state))
+
+            val completed = CountDownLatch(1)
+            val engineReady = CyclicBarrier(2)
+
+            val engineThread =
+                Thread {
+                    engineReady.await()
+                    handler.waitForResume()
+                }
+            engineThread.start()
+            engineReady.await()
+            Thread.sleep(50)
+
+            // A FunctionDef whose body references a nonexistent define throws during evaluation.
+            val badRefFn =
+                makeFn(
+                    ExpressionRef().also {
+                        it.name = "NonexistentDefine"
+                        it.libraryName = "FakeLib"
+                    },
+                )
+            val future = handler.submitAdHocEval(badRefFn, emptyList())
+            future.whenComplete { _, _ -> completed.countDown() }
+
+            assertTrue(completed.await(5, TimeUnit.SECONDS))
+            // Stack depth should still be 2 (restored by the finally block in runAdHocEval)
+            assertEquals(2, state.stack.size)
+
+            handler.stepIn()
+            engineThread.join(2000)
         }
     }
 }
