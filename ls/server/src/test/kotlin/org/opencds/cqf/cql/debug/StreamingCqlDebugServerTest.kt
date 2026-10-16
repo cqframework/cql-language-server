@@ -519,7 +519,6 @@ class StreamingCqlDebugServerTest {
         }
     }
 
-
     @Test
     fun `evaluate reports doesn't exist when state is null`() {
         val server = setupServer()
