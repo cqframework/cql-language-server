@@ -1175,7 +1175,7 @@ open class CqlDebugServer(
                     // quotes are delimiters, not part of the name, so look up the inner name exactly.
                     val quotedRootResult =
                         varResolver.parseIdentifier(args.expression)
-                            ?.takeIf { it.rootDelimiter != null && it.propertySegments.isEmpty() }
+                            ?.takeIf { it.rootDelimiter != null && it.rootIndex == null && it.propertySegments.isEmpty() }
                             ?.let { parsed -> registry.find(parsed.rootName) }
                     if (quotedRootResult != null) {
                         log.debug(

@@ -843,6 +843,145 @@ class VariableResolverTest {
         }
     }
 
+    // -- parseIdentifier -----------------------------------------------------
+
+    @Nested
+    inner class ParseIdentifier {
+        @Test
+        fun `simple root`() {
+            val parsed = resolver.parseIdentifier("A")!!
+            assertEquals("A", parsed.rootName)
+            assertNull(parsed.rootDelimiter)
+            assertTrue(parsed.propertySegments.isEmpty())
+        }
+
+        @Test
+        fun `quoted root`() {
+            val parsed = resolver.parseIdentifier("\"A\"")!!
+            assertEquals("A", parsed.rootName)
+            assertEquals("\"", parsed.rootDelimiter)
+            assertTrue(parsed.propertySegments.isEmpty())
+        }
+
+        @Test
+        fun `backtick root`() {
+            val parsed = resolver.parseIdentifier("`A B`")!!
+            assertEquals("A B", parsed.rootName)
+            assertEquals("`", parsed.rootDelimiter)
+        }
+
+        @Test
+        fun `quoted root with index`() {
+            val parsed = resolver.parseIdentifier("\"A\"[0]")!!
+            assertEquals("A", parsed.rootName)
+            assertEquals(0, parsed.rootIndex)
+            assertTrue(parsed.propertySegments.isEmpty())
+        }
+
+        @Test
+        fun `quoted root with index and property`() {
+            val parsed = resolver.parseIdentifier("\"A\"[1].x")!!
+            assertEquals(1, parsed.rootIndex)
+            assertEquals(listOf("x"), parsed.propertySegments)
+        }
+
+        @Test
+        fun `quoted root with non-numeric index is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\"[x]"))
+        }
+
+        @Test
+        fun `quoted root with property`() {
+            assertEquals(listOf("x"), resolver.parseIdentifier("\"A\".x")!!.propertySegments)
+        }
+
+        @Test
+        fun `quoted root with nested properties`() {
+            assertEquals(listOf("x", "y"), resolver.parseIdentifier("\"A\".x.y")!!.propertySegments)
+        }
+
+        @Test
+        fun `quoted root with indexed property`() {
+            assertEquals(listOf("x[1]"), resolver.parseIdentifier("\"A\".x[1]")!!.propertySegments)
+        }
+
+        @Test
+        fun `quoted root with quoted property`() {
+            val parsed = resolver.parseIdentifier("\"A\".\"quoted prop\"")!!
+            assertEquals(listOf("quoted prop"), parsed.propertySegments)
+        }
+
+        @Test
+        fun `quoted property containing a dot is not split`() {
+            val parsed = resolver.parseIdentifier("\"A\".\"p.q\".r")!!
+            assertEquals(listOf("p.q", "r"), parsed.propertySegments)
+        }
+
+        @Test
+        fun `quoted root containing a dot is not split`() {
+            val parsed = resolver.parseIdentifier("\"A.B\".period")!!
+            assertEquals("A.B", parsed.rootName)
+            assertEquals(listOf("period"), parsed.propertySegments)
+        }
+
+        @Test
+        fun `partial member access on quoted root keeps empty path`() {
+            val parsed = resolver.parseIdentifier("\"A\".")!!
+            assertEquals("A", parsed.rootName)
+            assertTrue(parsed.propertySegments.isEmpty())
+        }
+
+        @Test
+        fun `simple dotted path`() {
+            assertEquals(listOf("x", "y"), resolver.parseIdentifier("A.x.y")!!.propertySegments)
+        }
+
+        @Test
+        fun `binary expression of simple identifiers is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("A + B"))
+        }
+
+        @Test
+        fun `binary expression of quoted identifiers is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\" + \"B\""))
+        }
+
+        @Test
+        fun `binary expression without spaces is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\"+\"B\""))
+        }
+
+        @Test
+        fun `quoted root multiplied by literal is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\" * 10"))
+        }
+
+        @Test
+        fun `quoted root plus dotted simple identifier is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\" + B.x"))
+        }
+
+        @Test
+        fun `quoted property path followed by operator is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\".x + 1"))
+        }
+
+        @Test
+        fun `quoted root with trailing garbage is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\" x"))
+        }
+
+        @Test
+        fun `quoted root with unterminated quoted property is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A\".\"x"))
+        }
+
+        @Test
+        fun `unterminated quoted root is not identifier-shaped`() {
+            assertNull(resolver.parseIdentifier("\"A"))
+        }
+    }
+
     // -- notAvailable --------------------------------------------------------
 
     @Test

@@ -6,6 +6,8 @@ import org.eclipse.lsp4j.Range
 import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.Period
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -473,6 +475,55 @@ class EvaluateHelperTest {
                     emptyMap(),
                 )
             assertEquals("42", result.result)
+        }
+
+        @Test
+        fun `quoted binary expression is not short-circuited to the first identifier`() {
+            handler.runtimeRegistry.putDefine("A", 1, "System.Integer", null)
+            handler.runtimeRegistry.putDefine("B", 2, "System.Integer", null)
+            val result =
+                helper.evaluateStreaming(
+                    "\"A\" + \"B\"",
+                    state,
+                    handler,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertNotEquals("1", result.result)
+        }
+
+        @Test
+        fun `quoted root times literal is not short-circuited to the identifier value`() {
+            handler.runtimeRegistry.putDefine("A", 1, "System.Integer", null)
+            val result =
+                helper.evaluateStreaming(
+                    "\"A\" * 10",
+                    state,
+                    handler,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertNotEquals("1", result.result)
+        }
+
+        @Test
+        fun `quoted root property followed by operator is not treated as a property path`() {
+            handler.runtimeRegistry.putDefine("A", Encounter().also { it.id = "enc-1" }, "FHIR.Encounter", null)
+            val result =
+                helper.evaluateStreaming(
+                    "\"A\".id + 1",
+                    state,
+                    handler,
+                    null,
+                    emptyMap(),
+                    null,
+                    emptyMap(),
+                )
+            assertFalse(result.result.contains("enc-1"), result.result)
         }
 
         @Test

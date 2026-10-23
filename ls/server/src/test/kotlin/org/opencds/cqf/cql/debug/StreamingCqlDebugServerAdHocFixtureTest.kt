@@ -310,6 +310,22 @@ class StreamingCqlDebugServerAdHocFixtureTest {
     }
 
     @Test
+    fun `G2 expression starting with a quoted define evaluates fully, not as the define alone`() {
+        val (server, uri) = fixtureServer("AdHocQueryBasics")
+        val register = { h: StreamingBreakpointHandler ->
+            registerStackVar(h, "Interval Example", Interval(CqlInteger(1), true, CqlInteger(10), true))
+        }
+
+        val typeMap = mapOf("Interval Example" to "interval<System.Integer>")
+
+        // The quoted root resolves in the registry; it must not short-circuit the operator.
+        assertEquals("[1, 10]", evaluateInFixture(server, uri, "\"Interval Example\"", register = register))
+        assertEquals("true", evaluateInFixture(server, uri, "\"Interval Example\" contains 5", typeMap = typeMap, register = register))
+        assertEquals("false", evaluateInFixture(server, uri, "\"Interval Example\" contains 50", typeMap = typeMap, register = register))
+        assertEquals("true", evaluateInFixture(server, uri, "\"Interval Example\" = Interval[1, 10]", typeMap = typeMap, register = register))
+    }
+
+    @Test
     fun `G2 terminology literals evaluate against the compiled fixture library`() {
         // AdHocTerminology carries valueset/Code/Concept/Quantity/Ratio literals and a nested
         // List<Tuple> define, evaluated as ad-hoc expressions in bare System scope (no `using FHIR`).

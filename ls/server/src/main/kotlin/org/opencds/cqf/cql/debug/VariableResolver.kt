@@ -453,6 +453,8 @@ class VariableResolver(
         val renderRest: String,
     )
 
+    private val quotedRootIndexPattern = Regex("^\\[(\\d+)]")
+
     /**
      * Parses an identifier-shaped expression into its root identifier and property segments.
      *
@@ -468,22 +470,33 @@ class VariableResolver(
         var propertyStart = -1
         var delimiter: String? = null
         var rootEnd = trimmed.length
+        var quotedRootIndex: Int? = null
         if (trimmed.startsWith("\"") || trimmed.startsWith("`")) {
             val d = trimmed[0].toString()
             val closeIndex = trimmed.indexOf(d, 1)
             if (closeIndex < 0) return null
+            // Anything after the closing delimiter must be an optional `[n]` index and/or a
+            // `.`-qualified path; otherwise this is a larger expression (`"A" + "B"`) that only
+            // starts with a quoted identifier.
+            var tail = trimmed.substring(closeIndex + 1)
+            val indexMatch = quotedRootIndexPattern.find(tail)
+            if (indexMatch != null) {
+                quotedRootIndex = indexMatch.groupValues[1].toIntOrNull()
+                tail = tail.substring(indexMatch.value.length)
+            }
+            if (tail.isNotEmpty() && !tail.startsWith(".")) return null
             delimiter = d
             rootStart = 1
             rootEnd = closeIndex
-            propertyStart = trimmed.indexOf('.', closeIndex + 1)
-            if (propertyStart < 0) propertyStart = trimmed.length
+            propertyStart = if (tail.isEmpty()) trimmed.length else trimmed.length - tail.length
         } else {
             propertyStart = trimmed.indexOf('.')
             if (propertyStart < 0) propertyStart = trimmed.length
             rootEnd = propertyStart
         }
 
-        val (baseName, rootIndex) = parseSegment(trimmed.substring(rootStart, rootEnd))
+        val (baseName, parsedRootIndex) = parseSegment(trimmed.substring(rootStart, rootEnd))
+        val rootIndex = quotedRootIndex ?: parsedRootIndex
 
         if (delimiter == null) {
             val rawRoot = trimmed.substring(rootStart, rootEnd)
@@ -503,11 +516,19 @@ class VariableResolver(
             if (!shapeOk || restRaw.none { it.isLetterOrDigit() }) return null
         }
 
+        val restSegments =
+            when {
+                restRaw.isEmpty() -> emptyList()
+                delimiter == null -> restRaw.split('.')
+                else -> splitQualifiedPath(restRaw) ?: return null
+            }
+        if (delimiter != null && restRaw.isNotEmpty() && restSegments.none { it.isNotEmpty() }) return null
+
         val propertySegments =
             if (restRaw.isEmpty()) {
                 emptyList()
             } else {
-                restRaw.split('.').filter { it.isNotEmpty() }.map { segment ->
+                restSegments.filter { it.isNotEmpty() }.map { segment ->
                     when {
                         segment.startsWith("\"") && segment.endsWith("\"") && segment.length > 1 ->
                             segment.substring(1, segment.length - 1)
@@ -527,6 +548,39 @@ class VariableResolver(
             renderRoot = renderRoot,
             renderRest = restRaw,
         )
+    }
+
+    /**
+     * Splits the part of a path after a quoted root on `.` characters outside delimiters, so
+     * `"quoted.prop"` stays one segment. Returns null if a delimiter is unterminated or an
+     * undelimited character cannot appear in an identifier path (spaces, operators, ...), meaning
+     * the text is a larger expression rather than a property path.
+     */
+    private fun splitQualifiedPath(rest: String): List<String>? {
+        val segments = mutableListOf<String>()
+        val current = StringBuilder()
+        var open: Char? = null
+        for (c in rest) {
+            when {
+                open != null -> {
+                    current.append(c)
+                    if (c == open) open = null
+                }
+                c == '"' || c == '`' -> {
+                    open = c
+                    current.append(c)
+                }
+                c == '.' -> {
+                    segments.add(current.toString())
+                    current.clear()
+                }
+                c.isLetterOrDigit() || c == '_' || c == '[' || c == ']' -> current.append(c)
+                else -> return null
+            }
+        }
+        if (open != null) return null
+        segments.add(current.toString())
+        return segments
     }
 
     /**
