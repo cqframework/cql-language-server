@@ -55,6 +55,10 @@ class HoverProvider(
                 hoverAlias(category.name, category.range, compiler, uri, library, params.position, parseTree)
             is CursorCategory.AliasReference ->
                 hoverAlias(category.name, category.range, compiler, uri, library, params.position, parseTree)
+            is CursorCategory.LetDeclaration ->
+                hoverLetBinding(category.name, category.range, compiler, uri, library, params.position)
+            is CursorCategory.LetReference ->
+                hoverLetBinding(category.name, category.range, compiler, uri, library, params.position)
             is CursorCategory.LibraryAlias ->
                 markupForLibraryAlias(category.name, library)?.let { Hover(it, category.range) }
             is CursorCategory.PropertyName ->
@@ -136,6 +140,28 @@ class HoverProvider(
         // ELM fallback for cases ANTLR can't reach
         // (let clauses, aliases inside aggregates like exists/Last).
         return markupForAlias(name, compiler, uri, library, position)?.let { Hover(it, range) }
+    }
+
+    /**
+     * Resolves the hover for a let-clause binding -- either the declaration
+     * (e.g. `let MedicationStrength: ...`) or a reference to it (e.g. `MedicationStrength.unit`).
+     *
+     * A let binding is a local alias rather than a query source alias, so it is labelled
+     * `(let)` to distinguish it from the `(alias)` label used for query sources. Its declared
+     * type comes from the ELM [LetClause] that declares it.
+     */
+    private fun hoverLetBinding(
+        name: String,
+        range: Range,
+        compiler: CqlCompiler,
+        uri: URI,
+        library: Library,
+        position: Position,
+    ): Hover? {
+        val markup =
+            markupForAlias(name, compiler, uri, library, position, label = "(let)")
+                ?: return null
+        return Hover(markup, range)
     }
 
     private fun hoverFunctionCall(
@@ -359,8 +385,15 @@ class HoverProvider(
         val defs = library.statements?.def ?: return null
         val searchDefs = defs.filter { Elements.containsPosition(it, position) }.ifEmpty { defs }
         for (def in searchDefs) {
-            val aqs = findAliasSource(def, aliasName) as? AliasedQuerySource ?: continue
-            val sourceType = aqs.expression?.resultType ?: continue
+            val source = findAliasSource(def, aliasName) ?: continue
+            // A let binding declares its type on the LetClause itself; a query source alias
+            // takes the type of the expression it wraps.
+            val sourceType =
+                when (source) {
+                    is AliasedQuerySource -> source.expression?.resultType
+                    is LetClause -> source.resultType
+                    else -> null
+                } ?: continue
             val elementType = if (sourceType is ListType) sourceType.elementType else sourceType
             val propType = resolvePropertyType(elementType, category.name) ?: continue
             return Hover(
@@ -546,6 +579,7 @@ class HoverProvider(
         uri: URI,
         library: Library,
         position: Position? = null,
+        label: String = "(alias)",
     ): MarkupContent? {
         val defs = library.statements?.def ?: return null
         val searchDefs =
@@ -558,7 +592,7 @@ class HoverProvider(
             val found = findAliasSource(def, alias)
             if (found != null) {
                 val rt = found.resultType ?: continue
-                return cqlBlock("""(alias) $alias: ${formatCqlType(rt.toString())}""", localLibraryLabel(library))
+                return cqlBlock("""$label $alias: ${formatCqlType(rt.toString())}""", localLibraryLabel(library))
             }
         }
         return null
@@ -572,6 +606,8 @@ class HoverProvider(
      * Recurses through structural wrappers ([Query], [ExpressionDef]) and through
      * operator expressions ([OperatorExpression]) so queries nested inside
      * aggregates like `Last(...)` or wrappers like `exists(...)` are reachable.
+     * Within a [Query] it also descends into the where, return and aggregate clauses so
+     * that a subquery declaring its own let clauses is reachable.
      */
     private fun findAliasSource(
         elm: Element?,
@@ -585,6 +621,9 @@ class HoverProvider(
                 elm.source.firstNotNullOfOrNull { findAliasSource(it, alias) }
                     ?: elm.relationship.firstNotNullOfOrNull { findAliasSource(it, alias) }
                     ?: elm.let?.firstNotNullOfOrNull { findAliasSource(it, alias) }
+                    ?: findAliasSource(elm.`where`, alias)
+                    ?: findAliasSource(elm.`return`?.expression, alias)
+                    ?: findAliasSource(elm.aggregate?.expression, alias)
             is ExpressionDef -> findAliasSource(elm.expression, alias)
             is org.hl7.elm.r1.UnaryExpression -> findAliasSource(elm.operand, alias)
             is org.hl7.elm.r1.BinaryExpression -> elm.operand.firstNotNullOfOrNull { findAliasSource(it, alias) }

@@ -11,6 +11,18 @@ sealed interface CursorCategory {
 
     data class AliasReference(val name: String, val range: Range) : CursorCategory
 
+    /**
+     * A local binding declared by a `let` clause (e.g. `let X: N + 1`) or by an aggregate
+     * clause (e.g. `aggregate Total: ...`). Both compile to an ELM [org.hl7.elm.r1.LetClause]
+     * and are local to the query that declares them.
+     */
+    data class LetDeclaration(val name: String, val range: Range) : CursorCategory
+
+    /**
+     * A reference to a `let`-clause binding (e.g. `X` in `return X` or `X.unit`).
+     */
+    data class LetReference(val name: String, val range: Range) : CursorCategory
+
     data class LibraryAlias(val name: String, val range: Range) : CursorCategory
 
     data class PropertyName(val name: String, val aliasName: String?, val range: Range, val `implicit`: Boolean = false) : CursorCategory
@@ -64,16 +76,38 @@ object CursorClassifier {
                     range = antlrTokenRange(deepest),
                 )
             }
-            // Let-clause identifier (e.g. `let X: N + 1`) is a local declaration.
+            // Let-clause identifier (e.g. `let X: N + 1`) is a local binding.
             walkUpTo<cqlParser.LetClauseItemContext>(deepest)?.let { letCtx ->
                 if (letCtx.identifier() === deepest) {
-                    return CursorCategory.AliasDeclaration(
+                    return CursorCategory.LetDeclaration(
+                        name = stripQuotes(deepest.text),
+                        range = antlrTokenRange(deepest),
+                    )
+                }
+            }
+            // Aggregate-clause identifier (e.g. `aggregate Total: ...`) also binds a local
+            // value; the compiler emits it as a LetClause as well.
+            walkUpTo<cqlParser.AggregateClauseContext>(deepest)?.let { aggCtx ->
+                if (aggCtx.identifier() === deepest) {
+                    return CursorCategory.LetDeclaration(
                         name = stripQuotes(deepest.text),
                         range = antlrTokenRange(deepest),
                     )
                 }
             }
             val rawName = deepest.text
+
+            // Let-clause references (e.g. `X` in `return X` or `X.unit`): a let binding is a
+            // local alias, distinct from a query source alias. Checked before the sort-by
+            // implicit-scope branch so that a let name is not mistaken for a property on the
+            // query source, and before the query-alias check so that a let binding shadows an
+            // enclosing query alias.
+            if (isLetReferencePosition(deepest) && matchLetClauseName(deepest, stripQuotes(rawName))) {
+                return CursorCategory.LetReference(
+                    name = stripQuotes(rawName),
+                    range = antlrTokenRange(deepest),
+                )
+            }
 
             // Sort-by implicit scope: identifiers in sort-by items reference
             // properties on the source element, not standalone expression refs.
@@ -204,6 +238,11 @@ object CursorClassifier {
                     ?: return CursorCategory.Unknown
             val name = stripQuotes(rawName)
             return when {
+                matchLetClauseName(miCtx, name) ->
+                    CursorCategory.LetReference(
+                        name = name,
+                        range = antlrTokenRange(miCtx),
+                    )
                 matchQueryAlias(miCtx, name) ->
                     CursorCategory.AliasReference(
                         name = name,
@@ -404,6 +443,54 @@ object CursorClassifier {
         name: String,
     ): Boolean {
         return name in collectQueryAliases(ctx)
+    }
+
+    /**
+     * Collects the identifiers bound by `let` clauses that are in scope at [ctx].
+     *
+     * Walks outward through the enclosing queries, collecting each query's let-clause item
+     * identifiers plus its aggregate-clause identifier (the compiler emits the aggregate
+     * identifier as a LetClause as well). A let binding is scoped to the query that declares
+     * it, and a nested query can see the lets of the queries that enclose it.
+     *
+     * Names are unquoted to match both the ANTLR token text and the ELM identifier, which the
+     * compiler stores without the surrounding quotes of a delimited identifier.
+     */
+    private fun collectLetClauseNames(ctx: ParserRuleContext): Set<String> {
+        val names = mutableSetOf<String>()
+        var current: ParserRuleContext? = ctx
+        while (current != null) {
+            val queryCtx = walkUpTo<cqlParser.QueryContext>(current) ?: break
+            val letClause = queryCtx.letClause()
+            if (letClause != null) {
+                for (item in letClause.letClauseItem()) {
+                    names.add(stripQuotes(item.identifier().text))
+                }
+            }
+            queryCtx.aggregateClause()?.identifier()?.let { names.add(stripQuotes(it.text)) }
+            current = queryCtx.getParent() as? ParserRuleContext
+        }
+        return names
+    }
+
+    private fun matchLetClauseName(
+        ctx: ParserRuleContext,
+        name: String,
+    ): Boolean {
+        return name in collectLetClauseNames(ctx)
+    }
+
+    /**
+     * True when the identifier at [deepest] is used as an expression (the target of a member
+     * invocation) rather than as the property part of a qualified member invocation -- e.g. the
+     * `MedicationStrength` in `MedicationStrength.unit` is a reference, while the `unit` in the
+     * same expression is a property name.
+     */
+    private fun isLetReferencePosition(deepest: ParserRuleContext): Boolean {
+        if (walkUpTo<cqlParser.MemberInvocationContext>(deepest) == null) return false
+        val qmiCtx = walkUpTo<cqlParser.QualifiedMemberInvocationContext>(deepest)
+        if (qmiCtx != null && encloses(qmiCtx.referentialIdentifier(), deepest)) return false
+        return true
     }
 
     /**

@@ -302,6 +302,31 @@ class EvaluateHelperTest {
         }
 
         @Test
+        fun `LetReference found returns evaluate response`() {
+            // A let clause is registered as a stack variable when the query pauses.
+            handler.runtimeRegistry.putStackVariable("MedicationStrength", 42, null)
+            val category = CursorCategory.LetReference("MedicationStrength", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
+            assertNotNull(result)
+            assertEquals("42", result!!.result)
+        }
+
+        @Test
+        fun `LetReference not found returns null`() {
+            val category = CursorCategory.LetReference("UnknownLet", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
+            assertNull(result)
+        }
+
+        @Test
+        fun `LetDeclaration returns null`() {
+            handler.runtimeRegistry.putStackVariable("MedicationStrength", 42, null)
+            val category = CursorCategory.LetDeclaration("MedicationStrength", testRange)
+            val result = helper.resolveFromCursorCategory(category, state, handler)
+            assertNull(result)
+        }
+
+        @Test
         fun `OperandRef found returns evaluate response`() {
             handler.runtimeRegistry.putStackVariable("Operand1", 42, null)
             val category = CursorCategory.OperandRef("Operand1", testRange)
@@ -674,6 +699,15 @@ class EvaluateHelperTest {
             assertTrue(result!!.first.startsWith("["))
             assertTrue(result.first.contains("p1"))
             assertTrue(result.first.contains("p2"))
+        }
+
+        @Test
+        fun `let binding with structured value resolves property`() {
+            val quantity = org.opencds.cqf.cql.engine.runtime.Quantity().withUnit("mg")
+            handler.runtimeRegistry.putStackVariable("MedicationStrength", quantity, null)
+            val result = helper.resolvePropertyFromAlias("MedicationStrength", "unit", handler)
+            assertNotNull(result)
+            assertTrue(result!!.first.contains("mg"), "Expected the unit of the quantity, got: ${result.first}")
         }
 
         @Test

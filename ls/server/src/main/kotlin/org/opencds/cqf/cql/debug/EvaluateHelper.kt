@@ -157,6 +157,20 @@ class EvaluateHelper(
                     null
                 }
             }
+            is CursorCategory.LetReference -> {
+                // A let clause is registered as a stack variable when the query pauses, so the
+                // live value of the binding is available under its own name.
+                val rv = handler.runtimeRegistry.find(category.name)
+                if (rv != null) {
+                    EvaluateResponse().also {
+                        it.result = variableResolver.formatVariableValue(rv.value)
+                        it.variablesReference = variableResolver.registerIfExpandable(rv.value)
+                    }
+                } else {
+                    null
+                }
+            }
+            is CursorCategory.LetDeclaration -> null
             is CursorCategory.OperandRef -> {
                 val rv = handler.runtimeRegistry.find(category.name)
                 if (rv != null) {
@@ -529,7 +543,12 @@ class EvaluateHelper(
                         ?: return null
                 Pair(variableResolver.formatPropertyValue(pv), pv)
             }
-            else -> null
+            else -> {
+                // Structured values (tuples, choices), intervals and engine-backed FHIR
+                // values are all readable through the generic property reader.
+                val pv = variableResolver.readProperty(sourceValue, propertyName) ?: return null
+                Pair(variableResolver.formatPropertyValue(pv), pv)
+            }
         }
     }
 

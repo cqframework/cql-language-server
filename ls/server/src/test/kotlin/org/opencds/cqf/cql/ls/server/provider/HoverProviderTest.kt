@@ -1256,6 +1256,84 @@ class HoverProviderTest {
     }
 
     @Test
+    fun hover_onLetClauseDeclaration_showsLetLabel() {
+        // LetClauseHover.cql line 10: `    let EncounterPeriod: E.period`
+        // A let binding is a local alias, so it is labelled `(let)` rather than `(alias)`.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(9, 10)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on let-clause declaration, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(let) EncounterPeriod:"), "Expected '(let)' label on let declaration: $value")
+        assertTrue(value.contains("Period"), "Expected declared type on let declaration: $value")
+    }
+
+    @Test
+    fun hover_onLetClauseReference_showsLetLabel() {
+        // LetClauseHover.cql line 16: `    return MedicationStrength.unit`
+        // Hovering over the let reference (the base of the qualified member invocation) shows
+        // the `(let)` label and the type the binding was declared with.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(15, 15)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on let-clause reference, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(let) MedicationStrength:"), "Expected '(let)' label on let reference: $value")
+        assertTrue(value.contains("System.Quantity"), "Expected declared type on let reference: $value")
+    }
+
+    @Test
+    fun hover_onLetClauseProperty_showsElementType() {
+        // LetClauseHover.cql line 16: `    return MedicationStrength.unit`
+        // Hovering over the property of a let binding resolves the element type of the
+        // binding's type (System.Quantity.unit is a System.String).
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(15, 31)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on let-clause property, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) MedicationStrength.unit:"), "Expected element hover on let property: $value")
+        assertTrue(value.contains("System.String"), "Expected element type on let property: $value")
+    }
+
+    @Test
+    fun hover_onQuerySourceAlias_stillShowsAliasLabel() {
+        // LetClauseHover.cql line 9: `  [Encounter] E` — a query source alias is still an
+        // `(alias)`, not a `(let)`.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(8, 14)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on query source alias, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias)' label on query source alias: $value")
+        assertFalse(value.contains("(let)"), "Query source alias must not be labelled '(let)': $value")
+    }
+
+    @Test
     fun hover_onSortKeyword_returnsNull() {
         // AllClausesQuery.cql line 15: `define "Sort Clause Test": from "Numbers" N sort by N`
         // Cursor on the "sort" keyword at column 44 should return null.
