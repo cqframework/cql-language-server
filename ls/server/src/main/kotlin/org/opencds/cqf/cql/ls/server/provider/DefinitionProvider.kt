@@ -171,11 +171,11 @@ class DefinitionProvider(
                 val funcDef =
                     library.statements?.def
                         ?.filterIsInstance<FunctionDef>()
-                        ?.firstOrNull { it.operand?.any { od -> od.name == name } == true } ?: return emptyList()
-                val def = funcDef.operand?.first { it.name == name }
+                        ?.firstOrNull { it.operand.any { od -> od.name == name } } ?: return emptyList()
+                val def = funcDef.operand.first { it.name == name }
                 // OperandDef may not have a locator from the compiler; fall back to the
                 // FunctionDef locator so the user navigates to the function signature.
-                val target = if (def?.locator != null) def else funcDef
+                val target = if (def.locator != null) def else funcDef
                 listOfNotNull(locationLinkFromElements(refElm, target, uri))
             }
             is Literal -> {

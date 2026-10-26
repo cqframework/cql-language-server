@@ -593,12 +593,7 @@ class StreamingBreakpointHandler(
         // parameterMetadata for type info). Nothing to do here.
 
         // Capture context values — prefer full resource from contextResourcesByName (if pre-populated
-        // externally or from a previous capture), fall back to the raw state context value.
-        state.contextValues.forEach { (key, value) ->
-            if (value is org.hl7.fhir.instance.model.api.IBase) {
-                contextResourcesByName[key] = value
-            }
-        }
+        // externally), fall back to the raw state context value.
         state.contextValues.forEach { (key, value) ->
             val displayValue = contextResourcesByName[key] ?: value
             runtimeRegistry.loadContextResource(key, displayValue, null)

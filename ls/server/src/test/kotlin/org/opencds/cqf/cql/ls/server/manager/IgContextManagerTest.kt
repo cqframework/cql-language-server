@@ -76,7 +76,7 @@ class IgContextManagerTest {
             object : ContentService {
                 override fun locate(
                     root: URI,
-                    libraryIdentifier: VersionedIdentifier,
+                    identifier: VersionedIdentifier,
                 ): Set<URI> = emptySet()
 
                 override fun read(uri: URI): InputStream? {
@@ -104,7 +104,7 @@ class IgContextManagerTest {
             object : ContentService {
                 override fun locate(
                     root: URI,
-                    libraryIdentifier: VersionedIdentifier,
+                    identifier: VersionedIdentifier,
                 ): Set<URI> = emptySet()
 
                 override fun read(uri: URI): InputStream? {
@@ -135,7 +135,7 @@ class IgContextManagerTest {
             object : ContentService {
                 override fun locate(
                     root: URI,
-                    libraryIdentifier: VersionedIdentifier,
+                    identifier: VersionedIdentifier,
                 ): Set<URI> = emptySet()
 
                 override fun read(uri: URI): InputStream? {
@@ -678,7 +678,7 @@ class IgContextManagerTest {
         )
         assertEquals(
             "USCore",
-            modelInfo!!.name,
+            modelInfo.name,
             "Model info name should match the requested model id",
         )
     }

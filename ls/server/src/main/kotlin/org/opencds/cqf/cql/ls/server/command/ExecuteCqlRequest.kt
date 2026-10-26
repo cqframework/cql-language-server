@@ -21,7 +21,7 @@ data class ModelRequest(val modelName: String, val modelUri: String)
 
 data class ContextRequest(val contextName: String, val contextValue: String)
 
-data class ParameterRequest(val parameterName: String, val parameterType: String, val parameterValue: String)
+data class ParameterRequest(val parameterName: String, val parameterType: String? = null, val parameterValue: String)
 
 data class ExecuteCqlResponse(
     val results: List<LibraryResult>,

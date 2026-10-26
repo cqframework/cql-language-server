@@ -58,7 +58,7 @@ class DirectoryTest {
 
     @Test
     fun searchLibrary() {
-        val libs = repository.search(Bundle::class.java, Library::class.java, Searches.ALL)
+        val libs = repository.search(Bundle::class.java, Library::class.java, Searches.builder().build())
 
         assertNotNull(libs)
         assertEquals(2, libs.entry.size)
@@ -183,7 +183,7 @@ class DirectoryTest {
 
     @Test
     fun searchNonExistentType() {
-        val results = repository.search(Bundle::class.java, Encounter::class.java, Searches.ALL)
+        val results = repository.search(Bundle::class.java, Encounter::class.java, Searches.builder().build())
         assertNotNull(results)
         assertEquals(0, results.entry.size)
     }

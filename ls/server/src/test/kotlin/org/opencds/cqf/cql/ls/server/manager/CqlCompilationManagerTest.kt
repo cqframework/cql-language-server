@@ -45,7 +45,7 @@ class CqlCompilationManagerTest {
             object : ContentService {
                 override fun locate(
                     root: URI,
-                    libraryIdentifier: VersionedIdentifier,
+                    identifier: VersionedIdentifier,
                 ): Set<URI> = emptySet()
 
                 override fun read(uri: URI): InputStream? = null

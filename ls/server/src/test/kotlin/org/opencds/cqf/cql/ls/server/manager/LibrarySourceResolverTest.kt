@@ -18,11 +18,11 @@ import org.mockito.Mockito.`when`
 private class StubLibrarySourceLoader(
     private val idToText: Map<String, String>,
 ) : LibrarySourceLoader {
-    override fun getLibrarySource(identifier: VersionedIdentifier): Source? =
-        idToText[identifier.id]?.let { text -> Buffer().also { it.writeString(text) } }
+    override fun getLibrarySource(libraryIdentifier: VersionedIdentifier): Source? =
+        idToText[libraryIdentifier.id]?.let { text -> Buffer().also { it.writeString(text) } }
 
     override fun getLibraryContent(
-        identifier: VersionedIdentifier,
+        libraryIdentifier: VersionedIdentifier,
         type: LibraryContentType,
     ): Source? = null
 

@@ -2,8 +2,6 @@ package org.opencds.cqf.cql.debug
 
 import ca.uhn.fhir.context.BaseRuntimeChildDefinition
 import ca.uhn.fhir.context.BaseRuntimeElementDefinition
-import org.cqframework.cql.cql2elm.CqlCompiler
-import org.cqframework.cql.cql2elm.LibraryManager
 import org.hl7.fhir.r4.model.Encounter
 import org.hl7.fhir.r4.model.HumanName
 import org.hl7.fhir.r4.model.MedicationAdministration
@@ -1192,34 +1190,6 @@ class VariableResolverTest {
             val elementDef = mockElementDef(children)
 
             val result = resolver.profileChildrenOf("SomeType", elementDef, null)
-
-            assertEquals(children, result)
-        }
-
-        @Test
-        fun `null libraryManager returns elementDef children`() {
-            val children = listOf(mockChild("field1"), mockChild("field2"))
-            val elementDef = mockElementDef(children)
-
-            val compiler = mock(CqlCompiler::class.java)
-            whenever(compiler.libraryManager).thenReturn(null)
-
-            val result = resolver.profileChildrenOf("SomeType", elementDef, compiler)
-
-            assertEquals(children, result)
-        }
-
-        @Test
-        fun `null modelManager returns elementDef children`() {
-            val children = listOf(mockChild("field1"), mockChild("field2"))
-            val elementDef = mockElementDef(children)
-
-            val compiler = mock(CqlCompiler::class.java)
-            val libMgr = mock(LibraryManager::class.java)
-            whenever(compiler.libraryManager).thenReturn(libMgr)
-            whenever(libMgr.modelManager).thenReturn(null)
-
-            val result = resolver.profileChildrenOf("SomeType", elementDef, compiler)
 
             assertEquals(children, result)
         }

@@ -69,8 +69,8 @@ class ViewElmCommandContribution(private val cqlCompilationManager: CqlCompilati
                 log.debug(
                     "viewElm: compiler.library is null for {}; exceptions ({}): {}",
                     uri,
-                    compiler.exceptions?.size,
-                    compiler.exceptions?.joinToString("; ") { "${it.severity}: ${it.message}" },
+                    compiler.exceptions.size,
+                    compiler.exceptions.joinToString("; ") { "${it.severity}: ${it.message}" },
                 )
                 return CompletableFuture.completedFuture(null)
             }

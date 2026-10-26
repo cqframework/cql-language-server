@@ -711,8 +711,8 @@ class StreamingBreakpointHandlerTest {
 
         val snapshot = handler.lastPausedCallStack
         assertEquals(2, snapshot.size)
-        assertEquals("A", snapshot[0]?.def?.name)
-        assertEquals("B", snapshot[1]?.def?.name)
+        assertEquals("A", snapshot[0].def.name)
+        assertEquals("B", snapshot[1].def.name)
     }
 
     @Test

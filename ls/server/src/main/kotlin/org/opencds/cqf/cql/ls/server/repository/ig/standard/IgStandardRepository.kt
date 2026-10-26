@@ -488,7 +488,7 @@ open class IgStandardRepository : IRepository {
     override fun <B : IBaseBundle, T : IBaseResource> search(
         bundleType: Class<B>,
         resourceType: Class<T>,
-        searchParameters: Multimap<String, List<IQueryParameterType>>,
+        searchParameters: Multimap<String, List<IQueryParameterType>>?,
         headers: Map<String, String>?,
     ): B {
         val builder = BundleBuilder(fhirContext)
@@ -497,7 +497,7 @@ open class IgStandardRepository : IRepository {
         val compartment = compartmentFrom(headers)
         val resourceIdMap = readDirectoryForResourceType(resourceType, compartment)
 
-        if (searchParameters.isEmpty) {
+        if (searchParameters == null || searchParameters.isEmpty) {
             resourceIdMap.values.forEach { builder.addCollectionEntry(it) }
             return builder.bundle as B
         }

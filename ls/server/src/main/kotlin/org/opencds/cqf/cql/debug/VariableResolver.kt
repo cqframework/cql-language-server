@@ -218,8 +218,7 @@ class VariableResolver(
                 if (value is IPrimitiveType<*>) {
                     return emptyList()
                 }
-                val elementDef =
-                    fhirContext.getElementDefinition(value.javaClass) as? BaseRuntimeElementDefinition<*>
+                val elementDef = fhirContext.getElementDefinition(value.javaClass)
                 if (elementDef != null) {
                     val children: List<BaseRuntimeChildDefinition> =
                         if (typeName != null) {
@@ -231,8 +230,7 @@ class VariableResolver(
                         val accessor = child.getAccessor()
                         val childValues: List<IBase> =
                             try {
-                                @Suppress("UNCHECKED_CAST")
-                                accessor.getValues(value) as? List<IBase> ?: emptyList()
+                                accessor.getValues(value)
                             } catch (_: Exception) {
                                 emptyList()
                             }
@@ -594,7 +592,7 @@ class VariableResolver(
                 if (value is IPrimitiveType<*>) {
                     emptyList()
                 } else {
-                    (fhirContext.getElementDefinition(value.javaClass) as? BaseRuntimeElementDefinition<*>)
+                    fhirContext.getElementDefinition(value.javaClass)
                         ?.children
                         ?.map { it.elementName }
                         ?: emptyList()
@@ -654,7 +652,7 @@ class VariableResolver(
         launchCompiler: CqlCompiler? = null,
     ): List<BaseRuntimeChildDefinition> {
         val compiler = launchCompiler ?: return elementDef.children ?: emptyList()
-        val modelManager = compiler.libraryManager?.modelManager ?: return elementDef.children ?: emptyList()
+        val modelManager = compiler.libraryManager.modelManager
         val profileName = unwrapListType(typeName)
         val model =
             modelManager.globalCache.values.firstOrNull { it.resolveTypeName(profileName) != null }
@@ -723,7 +721,7 @@ class VariableResolver(
             is Query -> {
                 elm.source.forEach { collectAliasTypes(it, map) }
                 elm.relationship.forEach { collectAliasTypes(it, map) }
-                elm.let?.forEach { collectAliasTypes(it, map) }
+                elm.let.forEach { collectAliasTypes(it, map) }
             }
             is UnaryExpression -> collectAliasTypes(elm.operand, map)
             is BinaryExpression -> elm.operand.forEach { collectAliasTypes(it, map) }
@@ -742,7 +740,7 @@ class VariableResolver(
             is Slice -> collectAliasTypes(elm.source, map)
             is Case -> {
                 collectAliasTypes(elm.comparand, map)
-                elm.caseItem?.forEach { item ->
+                elm.caseItem.forEach { item ->
                     collectAliasTypes(item.then, map)
                     collectAliasTypes(item.`when`, map)
                 }

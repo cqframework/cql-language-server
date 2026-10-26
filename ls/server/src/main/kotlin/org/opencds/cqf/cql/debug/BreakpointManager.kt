@@ -94,7 +94,7 @@ class BreakpointManager(
                 } else if (compilationManager != null) {
                     // No workspace file (bundled / npm library): map it to the same cql-virtual
                     // URI go-to-definition uses, so breakpoints set in that tab resolve.
-                    VirtualLibraryUris.ensureCompiled(compilationManager, compiler?.libraryManager, identifier)
+                    VirtualLibraryUris.ensureCompiled(compilationManager, compiler.libraryManager, identifier)
                         ?.let { librarySourceMap[libId] = it }
                 }
             } catch (_: Exception) {

@@ -44,6 +44,6 @@ data class DebugLaunchArgs(
 
 data class ParameterRequestData(
     val parameterName: String,
-    val parameterType: String,
+    val parameterType: String? = null,
     val parameterValue: String,
 )

@@ -73,7 +73,7 @@ class CqlEvaluatorTest {
 
     private fun coerceDateLiterals(
         value: String,
-        parameterType: String,
+        parameterType: String?,
     ): String {
         val method =
             CqlEvaluator::class.java.getDeclaredMethod("coerceDateLiterals", String::class.java, String::class.java)
@@ -272,6 +272,15 @@ class CqlEvaluatorTest {
         assertEquals(input, coerceDateLiterals(input, "Interval<Date>"))
         assertEquals(input, coerceDateLiterals(input, "Integer"))
         assertEquals(input, coerceDateLiterals(input, "String"))
+        assertEquals(input, coerceDateLiterals(input, null))
+    }
+
+    @Test
+    fun `coerceDateLiterals matches DateTime case-insensitively`() {
+        assertEquals(
+            "Interval[@2024-01-01T, @2024-12-31T)",
+            coerceDateLiterals("Interval[@2024-01-01, @2024-12-31)", "interval<datetime>"),
+        )
     }
 
     @Test
@@ -797,6 +806,21 @@ class CqlEvaluatorTest {
     @Test
     fun `coerceParameters passes through String type`() {
         val result = coerceParameters(listOf(ParameterRequest("S", "String", "hello")))
+        assertEquals("hello", result["S"])
+    }
+
+    @Test
+    fun `coerceParameters passes through null parameterType as String`() {
+        val result = coerceParameters(listOf(ParameterRequest("S", null, "hello")))
+        assertEquals("hello", result["S"])
+    }
+
+    @Test
+    fun `coerceParameters handles ParameterRequest deserialized via Gson without parameterType`() {
+        val json = """{"parameterName":"S","parameterValue":"hello"}"""
+        val param = com.google.gson.Gson().fromJson(json, ParameterRequest::class.java)
+        assertNull(param.parameterType)
+        val result = coerceParameters(listOf(param))
         assertEquals("hello", result["S"])
     }
 

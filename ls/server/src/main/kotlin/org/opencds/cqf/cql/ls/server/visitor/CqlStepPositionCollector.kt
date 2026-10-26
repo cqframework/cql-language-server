@@ -48,10 +48,8 @@ object CqlStepPositionCollector {
         val exprDef = stmt.expressionDefinition()
         if (exprDef != null) {
             val body = exprDef.expression()
-            if (body != null) {
-                body.start?.line?.let { lines.add(it) }
-                collectExpression(body, lines)
-            }
+            body.start?.line?.let { lines.add(it) }
+            collectExpression(body, lines)
         }
         val funcDef = stmt.functionDefinition()
         if (funcDef != null) {
@@ -65,10 +63,8 @@ object CqlStepPositionCollector {
         lines: MutableSet<Int>,
     ) {
         val body = exprDef.expression()
-        if (body != null) {
-            body.start?.line?.let { lines.add(it) }
-            collectExpression(body, lines)
-        }
+        body.start?.line?.let { lines.add(it) }
+        collectExpression(body, lines)
     }
 
     private fun collectFunctionDef(
@@ -141,12 +137,10 @@ object CqlStepPositionCollector {
         lines: MutableSet<Int>,
     ) {
         val sourceClause = queryCtx.sourceClause()
-        if (sourceClause != null) {
-            for (i in 0 until sourceClause.childCount) {
-                val child = sourceClause.getChild(i)
-                if (child is AliasedQuerySourceContext) {
-                    child.start?.line?.let { lines.add(it) }
-                }
+        for (i in 0 until sourceClause.childCount) {
+            val child = sourceClause.getChild(i)
+            if (child is AliasedQuerySourceContext) {
+                child.start?.line?.let { lines.add(it) }
             }
         }
 
@@ -158,7 +152,7 @@ object CqlStepPositionCollector {
             for (i in 0 until letClause.childCount) {
                 val child = letClause.getChild(i)
                 if (child is LetClauseItemContext) {
-                    child.expression()?.start?.line?.let { lines.add(it) }
+                    child.expression().start?.line?.let { lines.add(it) }
                 }
             }
         }
@@ -167,7 +161,7 @@ object CqlStepPositionCollector {
 
         queryCtx.sortClause()?.let { sort ->
             for (item in sort.sortByItem()) {
-                item.expressionTerm()?.start?.line?.let { lines.add(it) }
+                item.expressionTerm().start?.line?.let { lines.add(it) }
             }
         }
 

@@ -33,7 +33,7 @@ class VirtualSourceIdentityTest {
 
         override fun locate(
             root: URI,
-            libraryIdentifier: VersionedIdentifier,
+            identifier: VersionedIdentifier,
         ): Set<URI> = emptySet()
 
         override fun read(uri: URI): InputStream? = delegate.read(uri)

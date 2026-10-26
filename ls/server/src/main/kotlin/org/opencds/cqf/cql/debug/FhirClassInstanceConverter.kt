@@ -78,7 +78,7 @@ class FhirClassInstanceConverter(
         // no HAPI object model to convert to, so they pass through and render as structured values.
         if (value.type.namespaceURI != fhirModelNamespaceUri) return null
         return try {
-            toFhirValue(value, parentName = null, rootName = value.type.localPart) as IBase
+            toFhirValue(value, parentName = null, rootName = value.type.localPart)
         } catch (e: Exception) {
             log.debug("Could not convert {} to FHIR: {}", value.type.localPart, e.message)
             null
@@ -199,6 +199,7 @@ class FhirClassInstanceConverter(
         return null
     }
 
+    @Suppress("UNCHECKED_CAST")
     private fun compositeDefinition(
         clazz: Class<*>,
     ): BaseRuntimeElementCompositeDefinition<*> =

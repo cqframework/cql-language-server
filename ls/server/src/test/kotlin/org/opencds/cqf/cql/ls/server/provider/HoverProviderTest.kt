@@ -18,7 +18,6 @@ import org.hl7.elm.r1.Or
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Query
 import org.hl7.elm.r1.Retrieve
-import org.hl7.elm.r1.ReturnClause
 import org.hl7.elm.r1.UnaryExpression
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
@@ -358,7 +357,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Alias Property Scope Test" }
         val query = def.expression as Query
-        val property = (query.`return`!! as ReturnClause).expression as Property
+        val property = query.`return`!!.expression as Property
         val range = TrackBacks.toRange(property.locator!!)!!
         // Cursor at the very start of the Property range = on the alias "T"
         val posOnAlias = Position(range.start.line, range.start.character)
@@ -381,7 +380,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Alias Property Scope Test" }
         val query = def.expression as Query
-        val property = (query.`return`!! as ReturnClause).expression as Property
+        val property = query.`return`!!.expression as Property
         val range = TrackBacks.toRange(property.locator!!)!!
         // "T.name" — "T" is 1 char, "." is 1 char, "name" starts at +2. Use end of range.
         val posOnPath = Position(range.end.line, range.end.character - 1)
@@ -474,7 +473,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Encounter Period Test" }
         val query = def.expression as Query
-        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val returnExpr = query.`return`!!.expression!!
         // Navigate to the inner Property (may be wrapped in a FunctionRef coercion)
         val property =
             when (returnExpr) {
@@ -542,7 +541,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Encounter Period Test" }
         val query = def.expression as Query
-        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val returnExpr = query.`return`!!.expression!!
         val property =
             when (returnExpr) {
                 is Property -> returnExpr
@@ -1209,7 +1208,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Return Clause Test" }
         val query = def.expression as Query
-        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val returnExpr = query.`return`!!.expression!!
         val exprRange = TrackBacks.toRange(returnExpr.locator!!)!!
         val pos = Position(exprRange.start.line, exprRange.start.character)
 
@@ -2209,7 +2208,7 @@ class HoverProviderTest {
         // OverloadedFunctions.cql: function "Add" is defined — cursor on its def name
         val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql")!!
         val library = compilationManager.compile(uri)!!.library!!
-        val def = library.statements!!.def.filterIsInstance<FunctionDef>().first { it.name == "Add" && (it.operand?.size ?: 0) == 1 }
+        val def = library.statements!!.def.filterIsInstance<FunctionDef>().first { it.name == "Add" && it.operand.size == 1 }
         val range = TrackBacks.toRange(def.locator!!)!!
         val pos = Position(range.start.line, range.start.character + 1)
 

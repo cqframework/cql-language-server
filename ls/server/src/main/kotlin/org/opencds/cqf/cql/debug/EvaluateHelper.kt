@@ -493,7 +493,7 @@ class EvaluateHelper(
                         pairs.joinToString(", ") { (id, pv) ->
                             "$id: ${variableResolver.formatPropertyValue(pv)}"
                         }
-                    Pair("[$display]", sourceValue as List<*>)
+                    Pair("[$display]", sourceValue)
                 }
             }
             is IBase -> {
@@ -534,7 +534,7 @@ class EvaluateHelper(
                         pairs.joinToString(", ") { (id, pv) ->
                             "$id: ${variableResolver.formatPropertyValue(pv)}"
                         }
-                    Pair("[$display]", sourceValue as List<*>)
+                    Pair("[$display]", sourceValue)
                 }
             }
             is IBase -> {

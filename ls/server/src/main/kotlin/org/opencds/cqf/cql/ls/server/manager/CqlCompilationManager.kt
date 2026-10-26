@@ -107,7 +107,7 @@ class CqlCompilationManager(
             "compile: finished for {}; library={}, exceptions={}",
             uri,
             compiler.library?.identifier?.id,
-            compiler.exceptions?.size,
+            compiler.exceptions.size,
         )
         val result = CompilationResult(compiler, parseTree, igContextManager.generation(uri), cqlText)
         compilationCache[uri] = result

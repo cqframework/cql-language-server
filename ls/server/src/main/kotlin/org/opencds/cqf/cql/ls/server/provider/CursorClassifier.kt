@@ -214,13 +214,9 @@ object CursorClassifier {
 
         val qmiCtx = walkUpTo<cqlParser.QualifiedMemberInvocationContext>(deepest)
         if (qmiCtx != null) {
-            val rawName =
-                qmiCtx.referentialIdentifier()?.text
-                    ?: return CursorCategory.Unknown
+            val rawName = qmiCtx.referentialIdentifier().text
             val name = stripQuotes(rawName)
-            val range =
-                qmiCtx.referentialIdentifier()?.let { antlrTokenRange(it) }
-                    ?: return CursorCategory.Unknown
+            val range = antlrTokenRange(qmiCtx.referentialIdentifier())
             // Classify qualified member invocations: if the left side matches a library alias,
             // treat it as an ExpressionRef with libraryName. Otherwise it's a property access.
             val libraryName = resolveLibraryNameForQualifiedInvocation(qmiCtx, parseTree)
@@ -233,9 +229,7 @@ object CursorClassifier {
 
         val miCtx = walkUpTo<cqlParser.MemberInvocationContext>(deepest)
         if (miCtx != null) {
-            val rawName =
-                miCtx.referentialIdentifier()?.text
-                    ?: return CursorCategory.Unknown
+            val rawName = miCtx.referentialIdentifier().text
             val name = stripQuotes(rawName)
             return when {
                 matchLetClauseName(miCtx, name) ->
@@ -307,28 +301,20 @@ object CursorClassifier {
 
         val qfiCtx = walkUpTo<cqlParser.QualifiedFunctionInvocationContext>(deepest)
         if (qfiCtx != null) {
-            val rawName =
-                qfiCtx.qualifiedFunction()
-                    ?.identifierOrFunctionIdentifier()?.text
-                    ?: return CursorCategory.Unknown
+            val rawName = qfiCtx.qualifiedFunction().identifierOrFunctionIdentifier().text
             val name = stripQuotes(rawName)
             val libraryName = resolveLibraryNameForQualifiedFunction(qfiCtx, parseTree)
-            val range =
-                qfiCtx.qualifiedFunction()
-                    ?.identifierOrFunctionIdentifier()
-                    ?.let { antlrTokenRange(it) }
-            val arity = countArity(qfiCtx.qualifiedFunction()?.paramList())
+            val range = antlrTokenRange(qfiCtx.qualifiedFunction().identifierOrFunctionIdentifier())
+            val arity = countArity(qfiCtx.qualifiedFunction().paramList())
             return CursorCategory.FunctionCall(name = name, libraryName = libraryName, arity = arity, range = range)
         }
 
         val fiCtx = walkUpTo<cqlParser.FunctionInvocationContext>(deepest)
         if (fiCtx != null) {
-            val rawName =
-                fiCtx.function()?.referentialIdentifier()?.text
-                    ?: return CursorCategory.Unknown
+            val rawName = fiCtx.function().referentialIdentifier().text
             val name = stripQuotes(rawName)
-            val range = fiCtx.function()?.referentialIdentifier()?.let { antlrTokenRange(it) }
-            val arity = countArity(fiCtx.function()?.paramList())
+            val range = antlrTokenRange(fiCtx.function().referentialIdentifier())
+            val arity = countArity(fiCtx.function().paramList())
             return CursorCategory.FunctionCall(name = name, libraryName = null, arity = arity, range = range)
         }
 
@@ -397,7 +383,7 @@ object CursorClassifier {
         var current: ParserRuleContext? = ctx
         while (current != null) {
             if (current is T) return current
-            current = current.getParent() as? ParserRuleContext
+            current = current.getParent()
         }
         return null
     }
@@ -411,8 +397,8 @@ object CursorClassifier {
             for (i in 0 until sourceClause.childCount) {
                 val child = sourceClause.getChild(i)
                 if (child is cqlParser.AliasedQuerySourceContext) {
-                    val alias = child.alias()?.identifier()?.text
-                    if (alias != null) aliases.add(alias)
+                    val alias = child.alias().identifier().text
+                    aliases.add(alias)
                 }
             }
             for (i in 0 until queryCtx.childCount) {
@@ -427,13 +413,13 @@ object CursorClassifier {
                                 else -> null
                             }
                         if (aqs != null) {
-                            val alias = aqs.alias()?.identifier()?.text
-                            if (alias != null) aliases.add(alias)
+                            val alias = aqs.alias().identifier().text
+                            aliases.add(alias)
                         }
                     }
                 }
             }
-            current = queryCtx.getParent() as? ParserRuleContext
+            current = queryCtx.getParent()
         }
         return aliases
     }
@@ -468,7 +454,7 @@ object CursorClassifier {
                 }
             }
             queryCtx.aggregateClause()?.identifier()?.let { names.add(stripQuotes(it.text)) }
-            current = queryCtx.getParent() as? ParserRuleContext
+            current = queryCtx.getParent()
         }
         return names
     }
@@ -519,7 +505,7 @@ object CursorClassifier {
             for (i in 0 until sourceClause.childCount) {
                 val child = sourceClause.getChild(i)
                 if (child is cqlParser.AliasedQuerySourceContext) {
-                    val alias = child.alias()?.identifier()?.text
+                    val alias = child.alias().identifier().text
                     if (alias == name) return child
                 }
             }
@@ -535,13 +521,13 @@ object CursorClassifier {
                                 else -> null
                             }
                         if (aqs != null) {
-                            val alias = aqs.alias()?.identifier()?.text
+                            val alias = aqs.alias().identifier().text
                             if (alias == name) return aqs
                         }
                     }
                 }
             }
-            current = queryCtx.getParent() as? ParserRuleContext
+            current = queryCtx.getParent()
         }
         return null
     }
@@ -568,12 +554,12 @@ object CursorClassifier {
      * Returns null for zero-source or multi-source queries.
      */
     private fun extractSingleSourceAlias(queryCtx: cqlParser.QueryContext): String? {
-        val sourceClause = queryCtx.sourceClause() ?: return null
+        val sourceClause = queryCtx.sourceClause()
         val sources =
             (0 until sourceClause.childCount)
                 .mapNotNull { sourceClause.getChild(it) as? cqlParser.AliasedQuerySourceContext }
         if (sources.size != 1) return null
-        return sources.first().alias()?.identifier()?.text
+        return sources.first().alias().identifier().text
     }
 
     /**
@@ -612,13 +598,13 @@ object CursorClassifier {
      * referentialIdentifier`. Returns null for any other expression structure.
      */
     private fun extractInvocationTargetIdentifier(ieCtx: cqlParser.InvocationExpressionTermContext): String? {
-        val leftExpr = ieCtx.expressionTerm() ?: return null
+        val leftExpr = ieCtx.expressionTerm()
         val termExpr = leftExpr as? cqlParser.TermExpressionTermContext ?: return null
-        val term = termExpr.term() ?: return null
+        val term = termExpr.term()
         val invocTerm = term as? cqlParser.InvocationTermContext ?: return null
-        val invocation = invocTerm.invocation() ?: return null
+        val invocation = invocTerm.invocation()
         val memberInvoc = invocation as? cqlParser.MemberInvocationContext ?: return null
-        return memberInvoc.referentialIdentifier()?.text
+        return memberInvoc.referentialIdentifier().text
     }
 
     private fun resolveAliasForProperty(miCtx: cqlParser.QualifiedMemberInvocationContext): String? {
@@ -641,11 +627,11 @@ object CursorClassifier {
      */
     private fun extractIdentifierFromTerm(term: ParserRuleContext): String? {
         val termExpr = term as? cqlParser.TermExpressionTermContext ?: return null
-        val termNode = termExpr.term() ?: return null
+        val termNode = termExpr.term()
         val invocTerm = termNode as? cqlParser.InvocationTermContext ?: return null
-        val invocation = invocTerm.invocation() ?: return null
+        val invocation = invocTerm.invocation()
         val memberInvoc = invocation as? cqlParser.MemberInvocationContext ?: return null
-        return memberInvoc.referentialIdentifier()?.text
+        return memberInvoc.referentialIdentifier().text
     }
 
     /**
@@ -697,7 +683,7 @@ object CursorClassifier {
                     if (deepest == current) return true
                 }
             }
-            current = current.getParent() as? ParserRuleContext
+            current = current.getParent()
         }
         return false
     }
@@ -749,7 +735,7 @@ object CursorClassifier {
     private fun classifyRetrieveType(deepest: ParserRuleContext): CursorCategory.Retrieve? {
         val ntsCtx = walkUpTo<cqlParser.NamedTypeSpecifierContext>(deepest) ?: return null
         val retrieveCtx = ntsCtx.getParent() as? cqlParser.RetrieveContext ?: return null
-        val typeName = ntsCtx.referentialOrTypeNameIdentifier()?.text ?: return null
+        val typeName = ntsCtx.referentialOrTypeNameIdentifier().text
         val qualifiers = ntsCtx.qualifier()
         val modelQualifier = if (qualifiers.isNotEmpty()) qualifiers.joinToString(".") { it.text } else null
         return CursorCategory.Retrieve(
@@ -767,7 +753,7 @@ object CursorClassifier {
         var c: ParserRuleContext? = inner
         while (c != null) {
             if (c === outer) return true
-            c = c.getParent() as? ParserRuleContext
+            c = c.getParent()
         }
         return false
     }

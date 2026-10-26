@@ -207,7 +207,7 @@ open class IgContextManager(private val contentService: ContentService) {
 
             val localIgContext = findLocalProject(workspaceRoot, depPackageId) ?: continue
             val canonical = localIgContext.canonicalBase ?: continue
-            val fhirVersion = localIgContext.fhirVersion ?: "4.0.1"
+            val fhirVersion = localIgContext.fhirVersion.ifBlank { "4.0.1" }
 
             log.info(
                 "Pre-warming cache for local package {} (FHIR {}) from {}",

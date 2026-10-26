@@ -3695,6 +3695,7 @@ class StreamingCqlDebugServerTest {
 
             // Manually set the onPauseCallback (mirrors executeLaunchStreaming setup)
             server.testHandler.onPauseCallback = { elm, state ->
+                @Suppress("UNCHECKED_CAST")
                 val paramTypes =
                     (paramMetaField.get(server) as Map<String, List<CqlDebugServer.ParameterMetadata>>).mapValues { (_, metadata) ->
                         metadata.associate { it.name to it.type }
@@ -3704,6 +3705,7 @@ class StreamingCqlDebugServerTest {
                 if (locator != null && StreamingBreakpointHandler.parseLine(locator) != null) {
                     val clientField = CqlDebugServer::class.java.getDeclaredField("client")
                     clientField.isAccessible = true
+                    @Suppress("UNCHECKED_CAST")
                     val clientFuture = clientField.get(server) as java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.services.IDebugProtocolClient>
                     val reason =
                         if (server.testHandler.getStepMode() == StreamingBreakpointHandler.StepMode.CONTINUE) "breakpoint" else "step"
@@ -3880,7 +3882,7 @@ class StreamingCqlDebugServerTest {
                 object : ContentService {
                     override fun locate(
                         root: URI,
-                        libraryIdentifier: VersionedIdentifier,
+                        identifier: VersionedIdentifier,
                     ): Set<URI> = setOf(sourceUri)
 
                     override fun read(uri: URI): InputStream? {

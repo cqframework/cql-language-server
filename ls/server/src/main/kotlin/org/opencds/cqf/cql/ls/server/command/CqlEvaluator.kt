@@ -89,9 +89,9 @@ object CqlEvaluator {
      */
     private fun coerceDateLiterals(
         value: String,
-        parameterType: String,
+        parameterType: String?,
     ): String {
-        if (!parameterType.contains("DateTime")) return value
+        if (parameterType?.contains("DateTime", ignoreCase = true) != true) return value
         // Append 'T' to any @YYYY-MM-DD literal not already followed by 'T'
         return value.replace(Regex("@(\\d{4}-\\d{2}-\\d{2})(?!T)")) { match -> "@${match.groupValues[1]}T" }
     }
@@ -327,8 +327,8 @@ object CqlEvaluator {
                             )
                             param.parameterValue
                         }
-                    "interval<datetime>" -> parseCqlIntervalValue(param.parameterName ?: "", param.parameterValue, "datetime")
-                    "interval<date>" -> parseCqlIntervalValue(param.parameterName ?: "", param.parameterValue, "date")
+                    "interval<datetime>" -> parseCqlIntervalValue(param.parameterName, param.parameterValue, "datetime")
+                    "interval<date>" -> parseCqlIntervalValue(param.parameterName, param.parameterValue, "date")
                     "string", null -> param.parameterValue
                     else -> {
                         log.warn(
@@ -397,8 +397,7 @@ object CqlEvaluator {
                 val value = fhir.valueAsString
                 if (value.isNullOrBlank()) fhir.fhirType() else "${fhir.fhirType()}#$value"
             }
-            fhir is IBase -> fhir.fhirType()
-            else -> fhir.toString()
+            else -> fhir.fhirType()
         }
     }
 

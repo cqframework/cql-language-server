@@ -38,7 +38,6 @@ private fun Any?.unwrapValue(): Any? =
                 // ever ran. Keep them as-is so the ad-hoc evaluate path binds them as real typed
                 // values (Date/year arithmetic, comparisons, etc.).
                 is BaseTemporal -> this
-                else -> this.toString()
             }
         else -> this
     }

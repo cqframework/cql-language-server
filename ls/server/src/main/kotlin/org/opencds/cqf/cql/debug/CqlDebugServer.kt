@@ -1226,7 +1226,7 @@ open class CqlDebugServer(
                             val col = parts[1].toIntOrNull()
                             if (line != null && col != null) {
                                 val parseTree = compilationManager.getParseTree(URI.create(streamingLaunchUri ?: ""))
-                                if (parseTree != null && state != null) {
+                                if (parseTree != null) {
                                     val hoverPos = Position(line, col)
                                     val category = CursorClassifier.classify(parseTree, hoverPos)
                                     val classifiedResult = resolveFromCursorCategory(category, state, handler)
@@ -1243,7 +1243,7 @@ open class CqlDebugServer(
                                 }
                                 // Check if paused on a Property element - try to resolve its value
                                 val pausedElm = handler.lastPausedElm
-                                if (pausedElm is Property && state != null) {
+                                if (pausedElm is Property) {
                                     val propertyResult = resolvePropertyValue(pausedElm, state)
                                     if (propertyResult != null) {
                                         return@supplyAsync EvaluateResponse().also {

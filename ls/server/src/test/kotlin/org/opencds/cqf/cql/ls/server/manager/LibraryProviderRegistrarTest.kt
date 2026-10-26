@@ -17,10 +17,10 @@ import org.mockito.Mockito.`when`
 private class RecordingLibrarySourceLoader : LibrarySourceLoader {
     val registered = mutableListOf<LibrarySourceProvider>()
 
-    override fun getLibrarySource(identifier: VersionedIdentifier): Source? = null
+    override fun getLibrarySource(libraryIdentifier: VersionedIdentifier): Source? = null
 
     override fun getLibraryContent(
-        identifier: VersionedIdentifier,
+        libraryIdentifier: VersionedIdentifier,
         type: LibraryContentType,
     ): Source? = null
 

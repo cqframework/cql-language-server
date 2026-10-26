@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.opencds.cqf.cql.engine.fhir.model.FhirModelResolver
 import org.opencds.cqf.cql.engine.runtime.Interval
-import org.opencds.cqf.cql.engine.runtime.Value
 import org.opencds.cqf.fhir.utility.model.FhirModelResolverCache
 import java.time.ZoneOffset
 import org.opencds.cqf.cql.engine.runtime.Date as CqlDate
@@ -24,7 +23,6 @@ class AdHocOperandValueTest {
     fun `raw FHIR Observation converts to a ClassInstance Value`() {
         val observation = Observation().apply { id = "obs-1" }
         val result = convertToAdHocOperandValue("PalliativeAssessment", observation, resolver)
-        assertTrue(result is Value)
         assertTrue(result is org.opencds.cqf.cql.engine.runtime.ClassInstance)
     }
 

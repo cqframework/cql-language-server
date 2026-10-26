@@ -682,8 +682,7 @@ class EvaluateHelperTest {
             patient1.id = "p1"
             val patient2 = org.hl7.fhir.r4.model.Patient()
             patient2.id = "p2"
-            @Suppress("UNCHECKED_CAST")
-            val list = listOf<Any>(patient1, patient2) as List<Any>
+            val list = listOf<Any>(patient1, patient2)
             handler.runtimeRegistry.putDefine("MyPatList", list, null, null)
             val prop =
                 org.hl7.elm.r1.Property().apply {
@@ -742,8 +741,7 @@ class EvaluateHelperTest {
             patient1.id = "p1"
             val patient2 = org.hl7.fhir.r4.model.Patient()
             patient2.id = "p2"
-            @Suppress("UNCHECKED_CAST")
-            val list = listOf<Any>(patient1, patient2) as List<Any>
+            val list = listOf<Any>(patient1, patient2)
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
             val result = helper.resolvePropertyFromAlias("Patients", "id", handler)
             assertNotNull(result)
@@ -767,8 +765,7 @@ class EvaluateHelperTest {
             patient1.id = "p1"
             val patient2 = org.hl7.fhir.r4.model.Patient()
             patient2.id = "p2"
-            @Suppress("UNCHECKED_CAST")
-            val list = listOf<Any>(patient1, patient2) as List<Any>
+            val list = listOf<Any>(patient1, patient2)
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
             val result = helper.resolvePropertyFromAlias("Patients", "nonexistentProperty", handler)
             assertNull(result)
@@ -821,8 +818,7 @@ class EvaluateHelperTest {
             p1.id = "p1"
             val p2 = org.hl7.fhir.r4.model.Patient()
             p2.id = "p2"
-            @Suppress("UNCHECKED_CAST")
-            val list = listOf<Any>(p1, p2) as List<Any>
+            val list = listOf<Any>(p1, p2)
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
             val result = helper.resolveDottedExpression("Patients.id", handler.runtimeRegistry)
             assertNotNull(result)
@@ -836,8 +832,7 @@ class EvaluateHelperTest {
             p1.id = "p1"
             val p2 = org.hl7.fhir.r4.model.Patient()
             p2.id = "p2"
-            @Suppress("UNCHECKED_CAST")
-            val list = listOf<Any>(p1, p2) as List<Any>
+            val list = listOf<Any>(p1, p2)
             handler.runtimeRegistry.putDefine("Patients", list, null, null)
             val result = helper.resolveDottedExpression("Patients[1].id", handler.runtimeRegistry)
             assertNotNull(result)
