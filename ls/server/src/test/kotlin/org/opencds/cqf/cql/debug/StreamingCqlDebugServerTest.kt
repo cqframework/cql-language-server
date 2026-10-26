@@ -3002,7 +3002,7 @@ class StreamingCqlDebugServerTest {
         // At this point resolveLibraryIdFromPath returns null so breakpoints are
         // stored in sourcePathBreakpoints (keyed by the file path), not under the
         // library ID in breakpointsByLibrary.
-        val fhirHelpersUri = URI.create("file:///libraries/FHIRHelpers.cql")
+        val fhirHelpersUri = Paths.get("/libraries/FHIRHelpers.cql").toUri()
         val fhirHelpersPath = Paths.get(fhirHelpersUri).toString()
         server.setBreakpoints(
             SetBreakpointsArguments().also {
@@ -3630,7 +3630,7 @@ class StreamingCqlDebugServerTest {
                 it.id = "LibC"
                 it.version = "1.0.0"
             }
-        val libCUri = URI.create("file:///libraries/LibC.cql")
+        val libCUri = Paths.get("/libraries/LibC.cql").toUri()
         val libCPath = Paths.get(libCUri).toString()
 
         // Stub contentService.locate to return a URI for the transitive library

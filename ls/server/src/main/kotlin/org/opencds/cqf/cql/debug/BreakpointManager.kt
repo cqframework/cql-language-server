@@ -48,7 +48,7 @@ class BreakpointManager(
             when {
                 VirtualLibraryUris.isVirtual(uri) -> VirtualLibraryUris.parse(path) == uri
                 "file" == uri.scheme && !VirtualLibraryUris.looksLikeUri(path) ->
-                    Paths.get(uri) == Paths.get(path).toAbsolutePath()
+                    Paths.get(uri).toAbsolutePath() == Paths.get(path).toAbsolutePath()
                 else -> false
             }
         } catch (_: Exception) {

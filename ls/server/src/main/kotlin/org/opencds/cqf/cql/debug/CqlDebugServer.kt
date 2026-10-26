@@ -528,16 +528,10 @@ open class CqlDebugServer(
         // on Windows (File.toURI() uppercases drive letters; VS Code sends lowercase).
         val primaryId = handler.primaryLibraryId
         if (primaryId != null) {
-            val primaryPath = Paths.get(libraryUri)
             val pendingPrimary =
                 sourcePathBreakpoints.entries
-                    .firstOrNull { (key, _) ->
-                        try {
-                            Paths.get(key) == primaryPath
-                        } catch (_: Exception) {
-                            false
-                        }
-                    }?.value
+                    .firstOrNull { (key, _) -> breakpointManager.sourcePathMatches(key, libraryUri) }
+                    ?.value
             if (pendingPrimary != null) {
                 breakpointsByLibrary[primaryId] = pendingPrimary
                 // Write directly to the handler — putAll already ran above, so the

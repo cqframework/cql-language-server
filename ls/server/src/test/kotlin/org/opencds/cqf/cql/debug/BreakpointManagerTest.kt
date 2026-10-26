@@ -139,6 +139,12 @@ class BreakpointManagerTest {
         }
 
         @Test
+        fun `drive-less file URI matches its Paths-derived path`() {
+            val uri = URI.create("file:///a/b/Lib.cql")
+            assertTrue(manager.sourcePathMatches(Paths.get(uri).toString(), uri))
+        }
+
+        @Test
         fun `windows backslash path never matches a virtual URI`() {
             assertFalse(manager.sourcePathMatches("C:\\a\\b\\Lib.cql", virtualUri))
         }
