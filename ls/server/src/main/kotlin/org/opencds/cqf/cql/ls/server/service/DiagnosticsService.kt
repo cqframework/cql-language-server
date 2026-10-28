@@ -91,7 +91,7 @@ class DiagnosticsService(
 
         val uniqueLibraries: List<VersionedIdentifier> =
             exceptions
-                .map { it?.locator?.library }
+                .map { it.locator?.library }
                 .distinct()
                 .filterNotNull()
                 .filter { it.id != null }

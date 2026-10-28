@@ -158,7 +158,7 @@ class ReferencesProviderTest {
 
         val csDef = library.statements!!.def.first { it.name == "UseCS" }
         val code = csDef.expression as org.hl7.elm.r1.Code
-        val csRef = code.system as? org.hl7.elm.r1.CodeSystemRef ?: return
+        val csRef = code.system ?: return
         val range = TrackBacks.toRange(csRef.locator!!)!!
         val pos = Position(range.start.line, range.start.character + 1)
 

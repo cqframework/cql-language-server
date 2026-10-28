@@ -58,13 +58,13 @@ class FileContentServiceTest {
 
     /** Manager with a hard-coded namespace mapping — avoids real ig.ini parsing. */
     private fun managerWithNamespace(
-        canonicalUrl: String,
+        expectedCanonicalUrl: String,
         inputCqlDir: File,
         vararg dirs: File,
     ): LibraryResolutionManager =
         object : LibraryResolutionManager(dirs.map { folder(it) }) {
-            override fun resolveCanonicalUrl(url: String): URI? =
-                if (url == canonicalUrl) inputCqlDir.toURI() else null
+            override fun resolveCanonicalUrl(canonicalUrl: String): URI? =
+                if (canonicalUrl == expectedCanonicalUrl) inputCqlDir.toURI() else null
 
             override fun igProjects(): List<WorkspaceFolder> = dirs.map { folder(it) }
         }

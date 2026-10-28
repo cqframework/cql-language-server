@@ -10,24 +10,34 @@ import org.cqframework.cql.cql2elm.DefaultLibrarySourceProvider
 import org.cqframework.cql.cql2elm.DefaultModelInfoProvider
 import org.cqframework.cql.cql2elm.LibrarySourceProvider
 import org.cqframework.cql.cql2elm.model.CompiledLibrary
-import org.cqframework.cql.cql2elm.quick.FhirLibrarySourceProvider
 import org.cqframework.fhir.npm.NpmProcessor
 import org.cqframework.fhir.utilities.IGContext
 import org.hl7.elm.r1.VersionedIdentifier
 import org.hl7.fhir.instance.model.api.IBase
 import org.hl7.fhir.instance.model.api.IBaseDatatype
 import org.hl7.fhir.instance.model.api.IBaseResource
+import org.hl7.fhir.instance.model.api.IPrimitiveType
 import org.hl7.fhir.r5.context.ILoggingService
+import org.opencds.cqf.cql.debug.FhirClassInstanceConverter
+import org.opencds.cqf.cql.debug.StreamingBreakpointHandler
 import org.opencds.cqf.cql.engine.debug.BreakpointHandler
 import org.opencds.cqf.cql.engine.execution.CqlEngine
 import org.opencds.cqf.cql.engine.execution.trace.ExpressionDefTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.SubExpressionTraceFrame
 import org.opencds.cqf.cql.engine.execution.trace.TraceFrame
+import org.opencds.cqf.cql.engine.runtime.ClassInstance
+import org.opencds.cqf.cql.engine.runtime.Interval
+import org.opencds.cqf.cql.engine.runtime.Quantity
+import org.opencds.cqf.cql.engine.runtime.Ratio
+import org.opencds.cqf.cql.engine.runtime.StructuredValue
+import org.opencds.cqf.cql.engine.runtime.Tuple
+import org.opencds.cqf.cql.engine.runtime.Value
 import org.opencds.cqf.cql.ls.core.ContentService
 import org.opencds.cqf.cql.ls.core.utility.Converters
 import org.opencds.cqf.cql.ls.core.utility.Uris
 import org.opencds.cqf.cql.ls.server.manager.IgContextManager
 import org.opencds.cqf.cql.ls.server.manager.LibraryResolutionManager
+import org.opencds.cqf.cql.ls.server.manager.registerCommonLibraryProviders
 import org.opencds.cqf.cql.ls.server.provider.ContentServiceModelInfoProvider
 import org.opencds.cqf.cql.ls.server.provider.FederatedLibrarySourceProvider
 import org.opencds.cqf.cql.ls.server.repository.ig.standard.FederatedTerminologyRepo
@@ -57,6 +67,8 @@ object CqlEvaluator {
 
     private const val PARAM_EVAL_LIBRARY_ID = "__ParamEval__"
 
+    private val fhirConverter = FhirClassInstanceConverter()
+
     /** In-memory [LibrarySourceProvider] that serves a single CQL source string by library id. */
     private class CqlSourceStringProvider(
         private val libraryId: String,
@@ -77,9 +89,9 @@ object CqlEvaluator {
      */
     private fun coerceDateLiterals(
         value: String,
-        parameterType: String,
+        parameterType: String?,
     ): String {
-        if (!parameterType.contains("DateTime")) return value
+        if (parameterType?.contains("DateTime", ignoreCase = true) != true) return value
         // Append 'T' to any @YYYY-MM-DD literal not already followed by 'T'
         return value.replace(Regex("@(\\d{4}-\\d{2}-\\d{2})(?!T)")) { match -> "@${match.groupValues[1]}T" }
     }
@@ -315,8 +327,8 @@ object CqlEvaluator {
                             )
                             param.parameterValue
                         }
-                    "interval<datetime>" -> parseCqlIntervalValue(param.parameterName ?: "", param.parameterValue, "datetime")
-                    "interval<date>" -> parseCqlIntervalValue(param.parameterName ?: "", param.parameterValue, "date")
+                    "interval<datetime>" -> parseCqlIntervalValue(param.parameterName, param.parameterValue, "datetime")
+                    "interval<date>" -> parseCqlIntervalValue(param.parameterName, param.parameterValue, "date")
                     "string", null -> param.parameterValue
                     else -> {
                         log.warn(
@@ -334,17 +346,67 @@ object CqlEvaluator {
         if (value == null) return "null"
 
         return when (value) {
-            is Iterable<*> -> {
-                val items = value.joinToString(", ") { formatValue(it) }
-                "[$items]"
-            }
+            is Iterable<*> -> value.joinToString(", ") { formatValue(it) }.let { "[$it]" }
             is IBaseResource ->
                 value.fhirType() +
                     if (value.idElement != null && value.idElement.hasIdPart()) "(id=${value.idElement.idPart})" else ""
+            is ClassInstance -> formatFhirClassInstance(value)
+            is StructuredValue ->
+                when (value) {
+                    is Quantity -> value.toString()
+                    is Ratio -> value.toString()
+                    else -> formatStructuredValue(value)
+                }
+            is Interval -> {
+                val low = if (value.start == null) "null" else formatValue(value.start)
+                val high = if (value.end == null) "null" else formatValue(value.end)
+                (if (value.lowClosed) "[" else "(") + low + ", " + high + (if (value.highClosed) "]" else ")")
+            }
+            is org.opencds.cqf.cql.engine.runtime.String -> value.value
+            is org.opencds.cqf.cql.engine.runtime.Boolean -> value.value.toString()
+            is org.opencds.cqf.cql.engine.runtime.Integer -> value.value.toString()
+            is org.opencds.cqf.cql.engine.runtime.Long -> value.value.toString()
+            is org.opencds.cqf.cql.engine.runtime.Decimal -> value.value.toString()
+            is org.opencds.cqf.cql.engine.runtime.DateTime -> value.toString().removePrefix("@")
+            is org.opencds.cqf.cql.engine.runtime.Date -> value.toString().removePrefix("@")
+            is org.opencds.cqf.cql.engine.runtime.Time -> value.toString().removePrefix("@")
             is IBaseDatatype -> value.fhirType()
             is IBase -> value.fhirType()
             else -> value.toString()
         }
+    }
+
+    /** Renders a compact one-line summary for a FHIR value (resource, datatype, or primitive). */
+    private fun formatFhirClassInstance(value: ClassInstance): String {
+        val fhir = fhirConverter.convert(value)
+        if (fhir == null) {
+            log.debug("Could not convert {} to FHIR", value.type.localPart)
+            return formatStructuredValue(value)
+        }
+        return when {
+            fhir is IBaseResource ->
+                fhir.fhirType() +
+                    if (fhir.idElement != null && fhir.idElement.hasIdPart()) "(id=${fhir.idElement.idPart})" else ""
+            fhir is org.hl7.fhir.r4.model.Coding -> "Coding#${fhir.getCode() ?: ""}"
+            fhir is org.hl7.fhir.r4.model.CodeableConcept ->
+                "CodeableConcept#${fhir.getCodingFirstRep()?.code ?: ""}"
+            fhir is org.hl7.fhir.r4.model.Reference -> "Reference#${fhir.getReference() ?: ""}"
+            fhir is org.hl7.fhir.r4.model.Identifier ->
+                "Identifier#${fhir.getValue() ?: fhir.idElement?.valueAsString ?: ""}"
+            fhir is IPrimitiveType<*> -> {
+                val value = fhir.valueAsString
+                if (value.isNullOrBlank()) fhir.fhirType() else "${fhir.fhirType()}#$value"
+            }
+            else -> fhir.fhirType()
+        }
+    }
+
+    /** Renders a compact (few-line) form for non-FHIR structured values, recursing into elements. */
+    private fun formatStructuredValue(value: StructuredValue): String {
+        val type = if (value is Tuple) "Tuple" else value.typeAsString
+        if (value.elements.isEmpty()) return "$type { }"
+        val entries = value.elements.map { (key, v) -> "  $key: ${formatValue(v)}" }.joinToString(",\n")
+        return "$type {\n$entries\n}"
     }
 
     private fun buildCqlOptions(optionsPath: String?): CqlOptions {
@@ -352,7 +414,7 @@ object CqlEvaluator {
         if (optionsPath != null) {
             val op = Path(Paths.get(Uris.parseOrNull(optionsPath)!!).toString())
             val translatorOptions = CqlTranslatorOptions.fromFile(op)
-            cqlOptions.setCqlCompilerOptions(translatorOptions.cqlCompilerOptions)
+            translatorOptions.cqlCompilerOptions?.let { cqlOptions.cqlCompilerOptions = it }
         }
         return cqlOptions
     }
@@ -376,11 +438,11 @@ object CqlEvaluator {
                 setProfileMode(PROFILE_MODE.DECLARED)
             }
 
-        return EvaluationSettings.getDefault().apply {
-            setCqlOptions(cqlOptions)
-            setTerminologySettings(terminologySettings)
-            setRetrieveSettings(retrieveSettings)
-            setNpmProcessor(npmProcessor)
+        return EvaluationSettings.default.apply {
+            this.cqlOptions = cqlOptions
+            this.terminologySettings = terminologySettings
+            this.retrieveSettings = retrieveSettings
+            this.npmProcessor = npmProcessor
         }
     }
 
@@ -430,9 +492,16 @@ object CqlEvaluator {
 
                 val repository = createRepository(fhirContext, terminologyRepo, modelPath)
                 if (detailedTracing) {
-                    evaluationSettings.cqlOptions.cqlEngineOptions.setDetailedTracingEnabled(true)
+                    evaluationSettings.cqlOptions.cqlEngineOptions.isDetailedTracingEnabled = true
                 }
                 val engine = Engines.forRepository(repository, evaluationSettings)
+
+                // Give the debug server a handle to THIS run's LibraryManager — the only one
+                // guaranteed to have successfully resolved every library actually used here
+                // (including npm-installed / bundled ones with no workspace file, e.g. FHIRHelpers).
+                // The LS's separately-cached CqlCompilationManager compiler is a different,
+                // potentially stale instance and must not be used for this.
+                (breakpointHandler as? StreamingBreakpointHandler)?.libraryManager = engine.environment.libraryManager
 
                 // Set up npm packages on the engine's LibraryManager when NpmProcessor was not set
                 // on evaluationSettings (i.e. no workspace-root ig.ini, as in multi-project
@@ -444,14 +513,9 @@ object CqlEvaluator {
                     igContextManager.setupLibraryManager(igSetupUri, engine.environment.libraryManager!!)
                 }
 
-                // Always register workspace project namespaces. Local projects declared with
-                // version "dev" are not in npm, but ARE in the LibraryResolutionManager index
-                // built from workspace ig.ini files. Must match what CqlCompilationManager does.
-                libraryResolutionManager.registerWorkspaceNamespaces(engine.environment.libraryManager!!)
-
-                // Register bundled FHIRHelpers last (lowest priority — fallback only).
-                engine.environment.libraryManager!!.librarySourceLoader
-                    .registerProvider(FhirLibrarySourceProvider())
+                // Workspace project namespaces + bundled FHIRHelpers (lowest priority) — shared
+                // with CqlCompilationManager.createLibraryManager(), see registerCommonLibraryProviders.
+                registerCommonLibraryProviders(engine.environment.libraryManager!!, libraryResolutionManager)
 
                 // Model info providers have no ordering concern; register after engine creation.
                 if (libraryUri != null) {
@@ -480,7 +544,8 @@ object CqlEvaluator {
                 }
                 val evaluationResults =
                     engine.evaluate {
-                        if (!parameters.isNullOrEmpty()) this.parameters = parameters
+                        @Suppress("UNCHECKED_CAST")
+                        if (!parameters.isNullOrEmpty()) this.parameters = parameters as Map<String, Value?>
                         if (libraryRequest.context != null) {
                             contextParameter =
                                 Pair(

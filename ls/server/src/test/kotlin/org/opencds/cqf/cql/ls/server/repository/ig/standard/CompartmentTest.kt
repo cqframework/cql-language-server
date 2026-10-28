@@ -61,7 +61,7 @@ class CompartmentTest {
 
     @Test
     fun searchLibrary() {
-        val libs = repository.search(Bundle::class.java, Library::class.java, Searches.ALL)
+        val libs = repository.search(Bundle::class.java, Library::class.java, Searches.builder().build())
 
         assertNotNull(libs)
         assertEquals(2, libs.entry.size)
@@ -91,7 +91,7 @@ class CompartmentTest {
 
     @Test
     fun searchEncounterNoCompartment() {
-        val encounters = repository.search(Bundle::class.java, Encounter::class.java, Searches.ALL)
+        val encounters = repository.search(Bundle::class.java, Encounter::class.java, Searches.builder().build())
         assertNotNull(encounters)
         assertEquals(0, encounters.entry.size)
     }
@@ -102,7 +102,7 @@ class CompartmentTest {
             repository.search(
                 Bundle::class.java,
                 Encounter::class.java,
-                Searches.ALL,
+                Searches.builder().build(),
                 mapOf(IgStandardRepository.FHIR_COMPARTMENT_HEADER to "Patient/123"),
             )
         assertNotNull(encounters)
@@ -208,7 +208,7 @@ class CompartmentTest {
 
     @Test
     fun searchNonExistentType() {
-        val results = repository.search(Bundle::class.java, Encounter::class.java, Searches.ALL)
+        val results = repository.search(Bundle::class.java, Encounter::class.java, Searches.builder().build())
         assertNotNull(results)
         assertEquals(0, results.entry.size)
     }

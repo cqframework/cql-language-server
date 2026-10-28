@@ -18,7 +18,6 @@ import org.hl7.elm.r1.Or
 import org.hl7.elm.r1.Property
 import org.hl7.elm.r1.Query
 import org.hl7.elm.r1.Retrieve
-import org.hl7.elm.r1.ReturnClause
 import org.hl7.elm.r1.UnaryExpression
 import org.hl7.elm.r1.ValueSetRef
 import org.hl7.elm.r1.With
@@ -358,7 +357,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Alias Property Scope Test" }
         val query = def.expression as Query
-        val property = (query.`return`!! as ReturnClause).expression as Property
+        val property = query.`return`!!.expression as Property
         val range = TrackBacks.toRange(property.locator!!)!!
         // Cursor at the very start of the Property range = on the alias "T"
         val posOnAlias = Position(range.start.line, range.start.character)
@@ -381,7 +380,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Alias Property Scope Test" }
         val query = def.expression as Query
-        val property = (query.`return`!! as ReturnClause).expression as Property
+        val property = query.`return`!!.expression as Property
         val range = TrackBacks.toRange(property.locator!!)!!
         // "T.name" — "T" is 1 char, "." is 1 char, "name" starts at +2. Use end of range.
         val posOnPath = Position(range.end.line, range.end.character - 1)
@@ -474,7 +473,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Encounter Period Test" }
         val query = def.expression as Query
-        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val returnExpr = query.`return`!!.expression!!
         // Navigate to the inner Property (may be wrapped in a FunctionRef coercion)
         val property =
             when (returnExpr) {
@@ -542,7 +541,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Encounter Period Test" }
         val query = def.expression as Query
-        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val returnExpr = query.`return`!!.expression!!
         val property =
             when (returnExpr) {
                 is Property -> returnExpr
@@ -1209,7 +1208,7 @@ class HoverProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "Return Clause Test" }
         val query = def.expression as Query
-        val returnExpr = (query.`return`!! as ReturnClause).expression!!
+        val returnExpr = query.`return`!!.expression!!
         val exprRange = TrackBacks.toRange(returnExpr.locator!!)!!
         val pos = Position(exprRange.start.line, exprRange.start.character)
 
@@ -1253,6 +1252,84 @@ class HoverProviderTest {
             )
 
         assertNotNull(hover, "Expected hover on let-clause identifier, got null")
+    }
+
+    @Test
+    fun hover_onLetClauseDeclaration_showsLetLabel() {
+        // LetClauseHover.cql line 10: `    let EncounterPeriod: E.period`
+        // A let binding is a local alias, so it is labelled `(let)` rather than `(alias)`.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(9, 10)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on let-clause declaration, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(let) EncounterPeriod:"), "Expected '(let)' label on let declaration: $value")
+        assertTrue(value.contains("Period"), "Expected declared type on let declaration: $value")
+    }
+
+    @Test
+    fun hover_onLetClauseReference_showsLetLabel() {
+        // LetClauseHover.cql line 16: `    return MedicationStrength.unit`
+        // Hovering over the let reference (the base of the qualified member invocation) shows
+        // the `(let)` label and the type the binding was declared with.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(15, 15)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on let-clause reference, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(let) MedicationStrength:"), "Expected '(let)' label on let reference: $value")
+        assertTrue(value.contains("System.Quantity"), "Expected declared type on let reference: $value")
+    }
+
+    @Test
+    fun hover_onLetClauseProperty_showsElementType() {
+        // LetClauseHover.cql line 16: `    return MedicationStrength.unit`
+        // Hovering over the property of a let binding resolves the element type of the
+        // binding's type (System.Quantity.unit is a System.String).
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(15, 31)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on let-clause property, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(element) MedicationStrength.unit:"), "Expected element hover on let property: $value")
+        assertTrue(value.contains("System.String"), "Expected element type on let property: $value")
+    }
+
+    @Test
+    fun hover_onQuerySourceAlias_stillShowsAliasLabel() {
+        // LetClauseHover.cql line 9: `  [Encounter] E` — a query source alias is still an
+        // `(alias)`, not a `(let)`.
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri) // ensure compilation
+        val pos = Position(8, 14)
+
+        val hover =
+            hoverProvider.hover(
+                HoverParams(TextDocumentIdentifier("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql"), pos),
+            )
+
+        assertNotNull(hover, "Expected hover on query source alias, got null")
+        val value = hover!!.contents.right.value
+        assertTrue(value.contains("(alias) E:"), "Expected '(alias)' label on query source alias: $value")
+        assertFalse(value.contains("(let)"), "Query source alias must not be labelled '(let)': $value")
     }
 
     @Test
@@ -2131,7 +2208,7 @@ class HoverProviderTest {
         // OverloadedFunctions.cql: function "Add" is defined — cursor on its def name
         val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/OverloadedFunctions.cql")!!
         val library = compilationManager.compile(uri)!!.library!!
-        val def = library.statements!!.def.filterIsInstance<FunctionDef>().first { it.name == "Add" && (it.operand?.size ?: 0) == 1 }
+        val def = library.statements!!.def.filterIsInstance<FunctionDef>().first { it.name == "Add" && it.operand.size == 1 }
         val range = TrackBacks.toRange(def.locator!!)!!
         val pos = Position(range.start.line, range.start.character + 1)
 

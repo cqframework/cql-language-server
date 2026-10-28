@@ -22,13 +22,9 @@ class TestCompile {
             }
 
         val exceptions = compiler.exceptions
-        if (exceptions != null) {
-            println("EXCEPTIONS: " + exceptions.size)
-            for (e in exceptions) {
-                println("  " + (e?.message ?: "null"))
-            }
-        } else {
-            println("NO EXCEPTIONS")
+        println("EXCEPTIONS: " + exceptions.size)
+        for (e in exceptions) {
+            println("  " + (e.message ?: "null"))
         }
 
         val lib =
@@ -51,7 +47,7 @@ class TestCompile {
                     println("  return.expr=" + (it.expression?.javaClass?.name ?: "null"))
                 }
                 println("  where=" + (q.where != null))
-                println("  let=" + (q.let?.size ?: -1))
+                println("  let=" + q.let.size)
                 println("  sort=" + (q.sort != null))
             }
         }

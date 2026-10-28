@@ -55,6 +55,10 @@ class HoverProvider(
                 hoverAlias(category.name, category.range, compiler, uri, library, params.position, parseTree)
             is CursorCategory.AliasReference ->
                 hoverAlias(category.name, category.range, compiler, uri, library, params.position, parseTree)
+            is CursorCategory.LetDeclaration ->
+                hoverLetBinding(category.name, category.range, compiler, uri, library, params.position)
+            is CursorCategory.LetReference ->
+                hoverLetBinding(category.name, category.range, compiler, uri, library, params.position)
             is CursorCategory.LibraryAlias ->
                 markupForLibraryAlias(category.name, library)?.let { Hover(it, category.range) }
             is CursorCategory.PropertyName ->
@@ -136,6 +140,28 @@ class HoverProvider(
         // ELM fallback for cases ANTLR can't reach
         // (let clauses, aliases inside aggregates like exists/Last).
         return markupForAlias(name, compiler, uri, library, position)?.let { Hover(it, range) }
+    }
+
+    /**
+     * Resolves the hover for a let-clause binding -- either the declaration
+     * (e.g. `let MedicationStrength: ...`) or a reference to it (e.g. `MedicationStrength.unit`).
+     *
+     * A let binding is a local alias rather than a query source alias, so it is labelled
+     * `(let)` to distinguish it from the `(alias)` label used for query sources. Its declared
+     * type comes from the ELM [LetClause] that declares it.
+     */
+    private fun hoverLetBinding(
+        name: String,
+        range: Range,
+        compiler: CqlCompiler,
+        uri: URI,
+        library: Library,
+        position: Position,
+    ): Hover? {
+        val markup =
+            markupForAlias(name, compiler, uri, library, position, label = "(let)")
+                ?: return null
+        return Hover(markup, range)
     }
 
     private fun hoverFunctionCall(
@@ -253,7 +279,7 @@ class HoverProvider(
         val funcDef =
             library.statements?.def?.firstOrNull { it is FunctionDef && it.name == funcName } as? FunctionDef
                 ?: return null
-        val operand = funcDef.operand?.firstOrNull { it.name == category.name } ?: return null
+        val operand = funcDef.operand.firstOrNull { it.name == category.name } ?: return null
         val typeName = operand.resultType?.toString() ?: operand.operandType?.localPart ?: return null
         return Hover(
             cqlBlock("""parameter "${operand.name}": ${formatCqlType(typeName)}""", localLibraryLabel(library)),
@@ -266,7 +292,7 @@ class HoverProvider(
         compiler: CqlCompiler,
         library: Library,
     ): Hover? {
-        val modelManager = compiler.libraryManager?.modelManager ?: return null
+        val modelManager = compiler.libraryManager.modelManager
         val model =
             if (category.modelQualifier != null) {
                 modelManager.resolveModel(category.modelQualifier)
@@ -284,14 +310,14 @@ class HoverProvider(
     ): FunctionDef? {
         if (candidates.isEmpty()) return null
         if (arity == null) return candidates.first()
-        return candidates.firstOrNull { (it.operand?.size ?: 0) == arity } ?: candidates.first()
+        return candidates.firstOrNull { it.operand.size == arity } ?: candidates.first()
     }
 
     private fun walkUpToFunctionDef(ctx: ParserRuleContext): cqlParser.FunctionDefinitionContext? {
         var c: ParserRuleContext? = ctx
         while (c != null) {
             if (c is cqlParser.FunctionDefinitionContext) return c
-            c = c.getParent() as? ParserRuleContext
+            c = c.getParent()
         }
         return null
     }
@@ -359,8 +385,15 @@ class HoverProvider(
         val defs = library.statements?.def ?: return null
         val searchDefs = defs.filter { Elements.containsPosition(it, position) }.ifEmpty { defs }
         for (def in searchDefs) {
-            val aqs = findAliasSource(def, aliasName) as? AliasedQuerySource ?: continue
-            val sourceType = aqs.expression?.resultType ?: continue
+            val source = findAliasSource(def, aliasName) ?: continue
+            // A let binding declares its type on the LetClause itself; a query source alias
+            // takes the type of the expression it wraps.
+            val sourceType =
+                when (source) {
+                    is AliasedQuerySource -> source.expression?.resultType
+                    is LetClause -> source.resultType
+                    else -> null
+                } ?: continue
             val elementType = if (sourceType is ListType) sourceType.elementType else sourceType
             val propType = resolvePropertyType(elementType, category.name) ?: continue
             return Hover(
@@ -412,7 +445,7 @@ class HoverProvider(
         val aliasName = category.aliasName ?: return null
         val aqs = CursorClassifier.findAliasedQuerySource(parseTree, position, aliasName) ?: return null
         val typeName = resolveAliasTypeFromAntlr(aqs, library) ?: return null
-        val modelManager = compiler.libraryManager?.modelManager ?: return null
+        val modelManager = compiler.libraryManager.modelManager
         val model = resolveModelForRetrieve(aqs, modelManager) ?: return null
         val sourceType = model.resolveTypeName(typeName)
         val elementType =
@@ -546,6 +579,7 @@ class HoverProvider(
         uri: URI,
         library: Library,
         position: Position? = null,
+        label: String = "(alias)",
     ): MarkupContent? {
         val defs = library.statements?.def ?: return null
         val searchDefs =
@@ -558,7 +592,7 @@ class HoverProvider(
             val found = findAliasSource(def, alias)
             if (found != null) {
                 val rt = found.resultType ?: continue
-                return cqlBlock("""(alias) $alias: ${formatCqlType(rt.toString())}""", localLibraryLabel(library))
+                return cqlBlock("""$label $alias: ${formatCqlType(rt.toString())}""", localLibraryLabel(library))
             }
         }
         return null
@@ -572,6 +606,8 @@ class HoverProvider(
      * Recurses through structural wrappers ([Query], [ExpressionDef]) and through
      * operator expressions ([OperatorExpression]) so queries nested inside
      * aggregates like `Last(...)` or wrappers like `exists(...)` are reachable.
+     * Within a [Query] it also descends into the where, return and aggregate clauses so
+     * that a subquery declaring its own let clauses is reachable.
      */
     private fun findAliasSource(
         elm: Element?,
@@ -584,7 +620,10 @@ class HoverProvider(
             is Query ->
                 elm.source.firstNotNullOfOrNull { findAliasSource(it, alias) }
                     ?: elm.relationship.firstNotNullOfOrNull { findAliasSource(it, alias) }
-                    ?: elm.let?.firstNotNullOfOrNull { findAliasSource(it, alias) }
+                    ?: elm.let.firstNotNullOfOrNull { findAliasSource(it, alias) }
+                    ?: findAliasSource(elm.`where`, alias)
+                    ?: findAliasSource(elm.`return`?.expression, alias)
+                    ?: findAliasSource(elm.aggregate?.expression, alias)
             is ExpressionDef -> findAliasSource(elm.expression, alias)
             is org.hl7.elm.r1.UnaryExpression -> findAliasSource(elm.operand, alias)
             is org.hl7.elm.r1.BinaryExpression -> elm.operand.firstNotNullOfOrNull { findAliasSource(it, alias) }
@@ -618,10 +657,10 @@ class HoverProvider(
      * using only the ANTLR parse tree. Returns null for non-retrieve sources.
      */
     private fun resolveRetrieveTypeFromAntlr(aqs: cqlParser.AliasedQuerySourceContext): String? {
-        val retrieveCtx = aqs.querySource()?.retrieve() ?: return null
-        val nts = retrieveCtx.namedTypeSpecifier() ?: return null
+        val retrieveCtx = aqs.querySource().retrieve() ?: return null
+        val nts = retrieveCtx.namedTypeSpecifier()
         val qualifiers = nts.qualifier().joinToString(".") { it.text }
-        val typeName = nts.referentialOrTypeNameIdentifier()?.text ?: return null
+        val typeName = nts.referentialOrTypeNameIdentifier().text
         return if (qualifiers.isNotEmpty()) "$qualifiers.$typeName" else typeName
     }
 
@@ -635,13 +674,13 @@ class HoverProvider(
         modelManager: org.cqframework.cql.cql2elm.ModelManager?,
     ): Model? {
         if (modelManager == null) return null
-        val retrieveCtx = aqs.querySource()?.retrieve() ?: return null
-        val nts = retrieveCtx.namedTypeSpecifier() ?: return null
+        val retrieveCtx = aqs.querySource().retrieve() ?: return null
+        val nts = retrieveCtx.namedTypeSpecifier()
         val qualifiers = nts.qualifier().toList()
         if (qualifiers.isNotEmpty()) {
             return modelManager.resolveModel(qualifiers.first().text)
         }
-        val typeName = nts.referentialOrTypeNameIdentifier()?.text ?: return null
+        val typeName = nts.referentialOrTypeNameIdentifier().text
         return modelManager.globalCache.values.firstOrNull { it.resolveTypeName(typeName) != null }
     }
 
@@ -662,7 +701,7 @@ class HoverProvider(
         val retrieveType = resolveRetrieveTypeFromAntlr(aqs)
         if (retrieveType != null) return retrieveType
 
-        val qie = aqs.querySource()?.qualifiedIdentifierExpression()
+        val qie = aqs.querySource().qualifiedIdentifierExpression()
         if (qie != null) {
             val exprName = qie.text.removeSurrounding("\"")
             val def =
@@ -675,14 +714,14 @@ class HoverProvider(
         // (handles common patterns like `([Retrieve])`, `([Retrieve].filter())`, etc.)
         val nestedRetrieve = findNestedRetrieve(aqs.querySource())
         if (nestedRetrieve != null) {
-            val nts = nestedRetrieve.namedTypeSpecifier() ?: return null
+            val nts = nestedRetrieve.namedTypeSpecifier()
             val qualifiers = nts.qualifier().joinToString(".") { it.text }
-            val typeName = nts.referentialOrTypeNameIdentifier()?.text ?: return null
+            val typeName = nts.referentialOrTypeNameIdentifier().text
             return if (qualifiers.isNotEmpty()) "$qualifiers.$typeName" else typeName
         }
 
         // Fallback: bridge to ELM via alias name
-        val aliasName = aqs.alias()?.identifier()?.text?.removeSurrounding("\"") ?: return null
+        val aliasName = aqs.alias().identifier().text.removeSurrounding("\"")
         for (def in library.statements?.def.orEmpty()) {
             val found = findAliasSource(def, aliasName)
             if (found != null) return found.resultType?.toString()
@@ -743,7 +782,7 @@ class HoverProvider(
     ): DataType? {
         val aqs = CursorClassifier.findAliasedQuerySource(parseTree, position, aliasName) ?: return null
         val typeName = resolveAliasTypeFromAntlr(aqs, library) ?: return null
-        val modelManager = compiler.libraryManager?.modelManager ?: return null
+        val modelManager = compiler.libraryManager.modelManager
         val model = resolveModelForRetrieve(aqs, modelManager) ?: return null
         val sourceType = model.resolveTypeName(typeName) ?: return null
         val elementType = if (sourceType is ListType) sourceType.elementType else sourceType
@@ -833,7 +872,7 @@ class HoverProvider(
         } catch (_: Exception) {
         }
         try {
-            lib.resolveFunctionRef(name)?.firstOrNull()?.let { return it }
+            lib.resolveFunctionRef(name).firstOrNull()?.let { return it }
         } catch (_: Exception) {
         }
         // Also check parameters from the source library, not compiledLibrary
@@ -1051,7 +1090,7 @@ class HoverProvider(
     ): MarkupContent? {
         if (def == null) return null
         val name = def.name ?: return null
-        val codes = def.code?.joinToString(", ") { it.name ?: "?" } ?: ""
+        val codes = def.code.joinToString(", ") { it.name ?: "?" }
         return cqlBlock("""${accessPrefix(def.accessLevel)}concept "$name": { $codes }""", fromLibrary)
     }
 

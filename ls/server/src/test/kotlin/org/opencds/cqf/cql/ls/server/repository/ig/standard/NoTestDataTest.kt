@@ -146,7 +146,7 @@ class NoTestDataTest {
 
     @Test
     fun searchNonExistentType() {
-        val results = repository.search(Bundle::class.java, Encounter::class.java, Searches.ALL)
+        val results = repository.search(Bundle::class.java, Encounter::class.java, Searches.builder().build())
         assertNotNull(results)
         assertEquals(0, results.entry.size)
     }

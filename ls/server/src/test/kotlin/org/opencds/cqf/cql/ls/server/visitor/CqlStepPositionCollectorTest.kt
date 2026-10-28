@@ -29,6 +29,93 @@ class CqlStepPositionCollectorTest {
             """.trimIndent()
         val lines = CqlStepPositionCollector.collect(parse(cql))
         assertTrue(6 in lines) // where clause line
+        assertTrue(7 in lines) // and continuation line inside where clause
+    }
+
+    @Test
+    fun multiLineAndExpression() {
+        val cql =
+            """
+            library Test
+            define "Multi-Line And":
+              true
+                and false
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // left operand line
+        assertTrue(4 in lines) // right operand line
+    }
+
+    @Test
+    fun multiLineOrExpression() {
+        val cql =
+            """
+            library Test
+            define "Multi-Line Or":
+              false
+                or true
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // left operand line
+        assertTrue(4 in lines) // right operand line
+    }
+
+    @Test
+    fun multiLineChainedAndExpression() {
+        val cql =
+            """
+            library Test
+            define "Chained And":
+              true
+                and false
+                and true
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // first operand line
+        assertTrue(4 in lines) // second operand line
+        assertTrue(5 in lines) // third operand line
+    }
+
+    @Test
+    fun multiLineAdditionExpression() {
+        val cql =
+            """
+            library Test
+            define "Multi-Line Addition":
+              1
+                + 2
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // left operand line
+        assertTrue(4 in lines) // right operand line
+    }
+
+    @Test
+    fun multiLineMultiplicationExpression() {
+        val cql =
+            """
+            library Test
+            define "Multi-Line Multiplication":
+              2
+                * 3
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // left operand line
+        assertTrue(4 in lines) // right operand line
+    }
+
+    @Test
+    fun multiLinePowerExpression() {
+        val cql =
+            """
+            library Test
+            define "Multi-Line Power":
+              2
+                ^ 3
+            """.trimIndent()
+        val lines = CqlStepPositionCollector.collect(parse(cql))
+        assertTrue(3 in lines) // left operand line
+        assertTrue(4 in lines) // right operand line
     }
 
     @Test

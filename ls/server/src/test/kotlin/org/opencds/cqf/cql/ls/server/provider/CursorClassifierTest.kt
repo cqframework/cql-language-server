@@ -351,4 +351,71 @@ class CursorClassifierTest {
         assertTrue(category is CursorCategory.FunctionDefName, "Expected FunctionDefName for fallback, got: ${category::class.simpleName}")
         assertEquals("Identity", (category as CursorCategory.FunctionDefName).name)
     }
+
+    // -- let clauses --------------------------------------------------------
+
+    @Test
+    fun classify_onLetClauseDeclaration_returnsLetDeclaration() {
+        // LetClauseHover.cql line 10: `    let EncounterPeriod: E.period`
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri)
+        val parseTree = compilationManager.getParseTree(uri)!!
+
+        // Cursor on the let identifier
+        val category = CursorClassifier.classify(parseTree, Position(9, 10))
+        assertTrue(category is CursorCategory.LetDeclaration, "Expected LetDeclaration, got: ${category::class.simpleName}")
+        assertEquals("EncounterPeriod", (category as CursorCategory.LetDeclaration).name)
+    }
+
+    @Test
+    fun classify_onLetClauseReference_returnsLetReference() {
+        // LetClauseHover.cql line 16: `    return MedicationStrength.unit`
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri)
+        val parseTree = compilationManager.getParseTree(uri)!!
+
+        // Cursor on the let reference (the base of the qualified member invocation)
+        val category = CursorClassifier.classify(parseTree, Position(15, 15))
+        assertTrue(category is CursorCategory.LetReference, "Expected LetReference, got: ${category::class.simpleName}")
+        assertEquals("MedicationStrength", (category as CursorCategory.LetReference).name)
+    }
+
+    @Test
+    fun classify_onBareLetClauseReference_returnsLetReference() {
+        // LetClauseHover.cql line 11: `    return EncounterPeriod`
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri)
+        val parseTree = compilationManager.getParseTree(uri)!!
+
+        val category = CursorClassifier.classify(parseTree, Position(10, 15))
+        assertTrue(category is CursorCategory.LetReference, "Expected LetReference, got: ${category::class.simpleName}")
+        assertEquals("EncounterPeriod", (category as CursorCategory.LetReference).name)
+    }
+
+    @Test
+    fun classify_onLetClauseProperty_returnsPropertyName() {
+        // LetClauseHover.cql line 16: `    return MedicationStrength.unit`
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri)
+        val parseTree = compilationManager.getParseTree(uri)!!
+
+        // Cursor on the property of the let binding
+        val category = CursorClassifier.classify(parseTree, Position(15, 31))
+        assertTrue(category is CursorCategory.PropertyName, "Expected PropertyName, got: ${category::class.simpleName}")
+        val pn = category as CursorCategory.PropertyName
+        assertEquals("unit", pn.name)
+        assertEquals("MedicationStrength", pn.aliasName)
+    }
+
+    @Test
+    fun classify_onQuerySourceAlias_stillReturnsAliasDeclaration() {
+        // LetClauseHover.cql line 9: `  [Encounter] E`
+        val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/LetClauseHover.cql")!!
+        compilationManager.compile(uri)
+        val parseTree = compilationManager.getParseTree(uri)!!
+
+        val category = CursorClassifier.classify(parseTree, Position(8, 14))
+        assertTrue(category is CursorCategory.AliasDeclaration, "Expected AliasDeclaration, got: ${category::class.simpleName}")
+        assertEquals("E", (category as CursorCategory.AliasDeclaration).name)
+    }
 }

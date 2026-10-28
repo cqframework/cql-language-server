@@ -10,11 +10,10 @@ LOG_FILE_IS_UNDEFINED
 
 *.log
 *.log.*
-LOG_FILE_IS_UNDEFINED
 .idea
 *.iml
 *.vsix
-.DS_store
+.DS_Store
 
 .settings
 .classpath
@@ -28,3 +27,7 @@ core.*
 heapdump.*
 javacore.*
 Snap.*
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]

@@ -70,7 +70,7 @@ class BadDataTest {
     fun searchThrowsBecauseOfInvalidContent() {
         // If there's any invalid content in the directory, the search will fail
         assertThrows(ResourceNotFoundException::class.java) {
-            repository.search(Bundle::class.java, Patient::class.java, Searches.ALL)
+            repository.search(Bundle::class.java, Patient::class.java, Searches.builder().build())
         }
     }
 }
