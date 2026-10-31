@@ -9,6 +9,7 @@ import org.opencds.cqf.cql.debug.DebugCommandContribution
 import org.opencds.cqf.cql.ls.server.CqlLanguageServer
 import org.opencds.cqf.cql.ls.server.command.ExecuteCqlCommandContribution
 import org.opencds.cqf.cql.ls.server.command.GetVersionInfoCommandContribution
+import org.opencds.cqf.cql.ls.server.command.ValidateTestCaseCommandContribution
 import org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution
 import org.opencds.cqf.cql.ls.server.command.VirtualSourceCommandContribution
 import org.opencds.cqf.cql.ls.server.manager.CompilerOptionsManager
@@ -87,6 +88,7 @@ fun main(args: Array<String>) {
     contributions.add(VirtualSourceCommandContribution(compilationManager))
     contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
     contributions.add(GetVersionInfoCommandContribution())
+    contributions.add(ValidateTestCaseCommandContribution())
     contributions.add(
         DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
     )
