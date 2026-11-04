@@ -228,7 +228,7 @@ class DefinitionProviderTest {
         val library = compilationManager.compile(uri)!!.library!!
         val def = library.statements!!.def.first { it.name == "UseCS" }
         val code = def.expression as Code
-        val csRef = code.system as? CodeSystemRef ?: return
+        val csRef = code.system ?: return
         val range = TrackBacks.toRange(csRef.locator!!)!!
         val pos = Position(range.start.line, range.start.character + 1)
 

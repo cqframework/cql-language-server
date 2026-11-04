@@ -229,6 +229,7 @@ class ActiveContentServiceTest {
     // -----------------------------------------------------------------------
 
     @Test
+    @Suppress("DEPRECATION")
     fun didChange_rangeBased_appliesPatch() {
         val svc = openDoc("hello world", 1)
 

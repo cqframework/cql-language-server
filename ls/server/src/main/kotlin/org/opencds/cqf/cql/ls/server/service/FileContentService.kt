@@ -184,7 +184,7 @@ class FileContentService(
 
         val tier2Uri = Uris.addPath(containingFolderUri, "input")?.let { Uris.addPath(it, "cql") }
         val tier2Enabled = tier2Uri != null && tier2Uri != root
-        val tier2File = if (tier2Enabled) tier2Uri?.let { toFile(it) } else null
+        val tier2File = if (tier2Enabled) toFile(tier2Uri) else null
 
         // Pass 1: exact version match (skipped when no version is specified)
         if (version != null) {

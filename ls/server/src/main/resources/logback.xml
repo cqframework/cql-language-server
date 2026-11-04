@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <!-- Status messages must never reach System.out: the LSP channel owns
+         stdout and shares it with the DAP socket handshake. Any extra bytes
+         before the first Content-Length frame desynchronize the client. -->
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
     <!-- LOG_FILE is set by the VS Code extension via -DLOG_FILE=... at launch.
          Falls back to the system temp directory when running outside the extension. -->
     <variable name="LOG_FILE" value="${LOG_FILE:-${java.io.tmpdir}/cql-ls.log}"/>
@@ -24,8 +28,11 @@
         </encoder>
     </appender>
 
-    <!-- Debug logging for debug server / breakpoint handler diagnostics -->
-    <logger name="org.opencds.cqf.cql.debug" level="DEBUG" />
+    <!-- Debug logging for debug server / breakpoint handler diagnostics.
+         TRACE (not DEBUG) so the bulkier opt-in diagnostics, e.g. the synthetic
+         __debugEval__ function for ad-hoc eval, only reach the output channel when
+         the CQL output channel is switched to Trace. -->
+    <logger name="org.opencds.cqf.cql.debug" level="TRACE" />
     <!-- Debug logging for View ELM / compilation diagnostics -->
     <logger name="org.opencds.cqf.cql.ls.server.command.ViewElmCommandContribution" level="DEBUG" />
     <logger name="org.opencds.cqf.cql.ls.server.manager.CqlCompilationManager" level="DEBUG" />

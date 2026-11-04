@@ -48,10 +48,8 @@ object CqlStepPositionCollector {
         val exprDef = stmt.expressionDefinition()
         if (exprDef != null) {
             val body = exprDef.expression()
-            if (body != null) {
-                body.start?.line?.let { lines.add(it) }
-                collectExpression(body, lines)
-            }
+            body.start?.line?.let { lines.add(it) }
+            collectExpression(body, lines)
         }
         val funcDef = stmt.functionDefinition()
         if (funcDef != null) {
@@ -65,10 +63,8 @@ object CqlStepPositionCollector {
         lines: MutableSet<Int>,
     ) {
         val body = exprDef.expression()
-        if (body != null) {
-            body.start?.line?.let { lines.add(it) }
-            collectExpression(body, lines)
-        }
+        body.start?.line?.let { lines.add(it) }
+        collectExpression(body, lines)
     }
 
     private fun collectFunctionDef(
@@ -101,14 +97,39 @@ object CqlStepPositionCollector {
         exprCtx: cqlParser.ExpressionContext,
         lines: MutableSet<Int>,
     ) {
+        collectBinaryExpressionOperandLines(exprCtx, lines)
         collectFromContext(exprCtx, lines)
+    }
+
+    private fun collectBinaryExpressionOperandLines(
+        exprCtx: cqlParser.ExpressionContext,
+        lines: MutableSet<Int>,
+    ) {
+        val operands = (0 until exprCtx.childCount).mapNotNull { exprCtx.getChild(it) as? cqlParser.ExpressionContext }
+        if (operands.size < 2) return
+        for (operand in operands) {
+            operand.start?.line?.let { lines.add(it) }
+        }
     }
 
     private fun collectExpressionTerm(
         termCtx: cqlParser.ExpressionTermContext,
         lines: MutableSet<Int>,
     ) {
+        collectBinaryExpressionTermOperandLines(termCtx, lines)
         collectFromContext(termCtx, lines)
+    }
+
+    private fun collectBinaryExpressionTermOperandLines(
+        termCtx: cqlParser.ExpressionTermContext,
+        lines: MutableSet<Int>,
+    ) {
+        val operands =
+            (0 until termCtx.childCount).mapNotNull { termCtx.getChild(it) as? cqlParser.ExpressionTermContext }
+        if (operands.size < 2) return
+        for (operand in operands) {
+            operand.start?.line?.let { lines.add(it) }
+        }
     }
 
     private fun collectQuery(
@@ -116,12 +137,10 @@ object CqlStepPositionCollector {
         lines: MutableSet<Int>,
     ) {
         val sourceClause = queryCtx.sourceClause()
-        if (sourceClause != null) {
-            for (i in 0 until sourceClause.childCount) {
-                val child = sourceClause.getChild(i)
-                if (child is AliasedQuerySourceContext) {
-                    child.start?.line?.let { lines.add(it) }
-                }
+        for (i in 0 until sourceClause.childCount) {
+            val child = sourceClause.getChild(i)
+            if (child is AliasedQuerySourceContext) {
+                child.start?.line?.let { lines.add(it) }
             }
         }
 
@@ -133,7 +152,7 @@ object CqlStepPositionCollector {
             for (i in 0 until letClause.childCount) {
                 val child = letClause.getChild(i)
                 if (child is LetClauseItemContext) {
-                    child.expression()?.start?.line?.let { lines.add(it) }
+                    child.expression().start?.line?.let { lines.add(it) }
                 }
             }
         }
@@ -142,7 +161,7 @@ object CqlStepPositionCollector {
 
         queryCtx.sortClause()?.let { sort ->
             for (item in sort.sortByItem()) {
-                item.expressionTerm()?.start?.line?.let { lines.add(it) }
+                item.expressionTerm().start?.line?.let { lines.add(it) }
             }
         }
 

@@ -128,10 +128,10 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val statements = library.statements
         statements?.def?.forEach { stmt ->
             items.add {
-                if (stmt is ExpressionDef) {
-                    renderExpressionDef(stmt)
-                } else if (stmt is FunctionDef) {
+                if (stmt is FunctionDef) {
                     renderFunctionDef(stmt)
+                } else {
+                    renderExpressionDef(stmt)
                 }
             }
         }
@@ -165,10 +165,10 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val fluent = if (def.fluent == true) " fluent" else ""
         val operands = def.operand
         val paramsStr =
-            operands?.joinToString(", ") { op ->
+            operands.joinToString(", ") { op ->
                 val typeName = op.operandType?.localPart ?: "?"
                 "${op.name ?: "_"} $typeName"
-            } ?: ""
+            }
         val typeSuffix = def.resultType?.toString()?.let { " returns ${formatType(it)}" } ?: ""
 
         nodeLine("define$fluent function: ${label(name)}($paramsStr)$typeSuffix$suffix")
@@ -324,7 +324,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val startLine = currentLine
         recordElement(sc)
         val by = sc.by
-        if (by != null && by.isNotEmpty()) {
+        if (by.isNotEmpty()) {
             pushIndent()
             by.forEachIndexed { i, item ->
                 isLast = i == by.size - 1
@@ -501,7 +501,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
             is If -> ifChildren(expr)
             is Tuple -> tupleChildren(expr)
             is Instance -> instanceChildren(expr)
-            is org.hl7.elm.r1.List -> expr.element?.map { ChildNode(it, "element") } ?: emptyList()
+            is org.hl7.elm.r1.List -> expr.element.map { ChildNode(it, "element") }
             is org.hl7.elm.r1.Interval -> intervalChildren(expr)
             is org.hl7.elm.r1.Slice -> sliceChildren(expr)
             is org.hl7.elm.r1.Repeat -> repeatChildren(expr)
@@ -532,18 +532,17 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
     }
 
     private fun tupleChildren(t: Tuple): List<ChildNode> {
-        return t.element?.map { ChildNode(it, "element") } ?: emptyList()
+        return t.element.map { ChildNode(it, "element") }
     }
 
     private fun instanceChildren(i: Instance): List<ChildNode> {
-        return i.element?.map { ChildNode(it, "element") } ?: emptyList()
+        return i.element.map { ChildNode(it, "element") }
     }
 
     private fun queryChildren(q: Query): List<ChildNode> {
         val list = mutableListOf<ChildNode>()
         q.source.forEach { list.add(ChildNode(it, "source")) }
-        val let = q.let
-        if (let != null) let.forEach { list.add(ChildNode(it, "let")) }
+        q.let.forEach { list.add(ChildNode(it, "let")) }
         q.relationship.forEach { list.add(ChildNode(it, "relationship")) }
         val whereExpr = q.where
         if (whereExpr != null) list.add(ChildNode(whereExpr, "where"))
@@ -558,8 +557,7 @@ class ElmAstLibraryWriter(private val compiler: CqlCompiler? = null) {
         val list = mutableListOf<ChildNode>()
         val src = s.source
         if (src != null) list.add(ChildNode(src, "source"))
-        val by = s.by
-        if (by != null) by.forEach { list.add(ChildNode(it, "by")) }
+        s.by.forEach { list.add(ChildNode(it, "by")) }
         return list
     }
 

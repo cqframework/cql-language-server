@@ -5,7 +5,6 @@ import org.hl7.elm.r1.Add
 import org.hl7.elm.r1.Code
 import org.hl7.elm.r1.CodeRef
 import org.hl7.elm.r1.CodeSystemRef
-import org.hl7.elm.r1.ConceptDef
 import org.hl7.elm.r1.ConceptRef
 import org.hl7.elm.r1.ExpressionRef
 import org.hl7.elm.r1.FunctionDef
@@ -112,11 +111,8 @@ class DefinitionTrackBackVisitorTest {
         // The ConceptDef contains a CodeRef referencing the code by name.
         val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
         val library = compilationManager.compile(uri)!!.library!!
-        val statements = library.statements ?: return
-        val defs = statements.def ?: return
-        val conceptDef = defs.firstOrNull { it.name == "Left Foot Pain" } ?: return
-        val codes = (conceptDef as? ConceptDef)?.code ?: return
-        val codeRef = codes.firstOrNull() ?: return
+        val conceptDef = library.concepts?.def?.firstOrNull { it.name == "Left Foot Pain" } ?: return
+        val codeRef = conceptDef.code.firstOrNull() ?: return
         val locator = codeRef.locator ?: return
         val range = TrackBacks.toRange(locator)!!
         val pos = Position(range.start.line, range.start.character + 1)

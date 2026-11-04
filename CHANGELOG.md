@@ -1,6 +1,31 @@
 # Change Log
 
 
+## v5.0.0
+
+Date: 2026-10-28
+
+* bump version to 5.0.0
+* upgrade to cql version 5.5.0
+* resolve numerous compiler warnings - tech debt cleanup
+* fix issue with virtual files on Windows boxes
+* fix issue with quoted identifiers
+* add hovering update for Let clause
+* add support for debug console code completion
+* add missing virtual library test files
+* fix issue with debugging embedded CQL files, e.g. FHIRHelpers
+* ad-hoc cql handling fixes
+* fix bug with debug session socket race condition
+* fix tuple alias types; quiet ad-hoc eval logs
+* add ClassInstance converter
+* normalize ad-hoc CQL alias types and log ELM
+* streamline Gson handling
+* add support for ClassInstance rendering as HAPI types
+* enhance variable layout during debug session
+* enhancess debugger REPL
+* add support for ad-hoc CQL execution when the debugger is paused
+* fix issue with navigating to included libraries
+* add debug step-operand breakpoints; evaluate thread-safety; case-sensitive dotted paths
 
 
 ## v4.10.0

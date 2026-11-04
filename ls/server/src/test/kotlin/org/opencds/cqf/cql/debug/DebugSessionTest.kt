@@ -65,6 +65,39 @@ class DebugSessionTest {
     }
 
     @Test
+    fun `server closes the accepted socket once the session exits`() {
+        // Regression test: startListening() previously only closed the listening
+        // ServerSocket (via `.use`), never the per-connection Socket returned by
+        // accept(). That left the client's TCP connection open with no FIN/RST
+        // after the session ended, so a request made after exit hung forever
+        // instead of failing. Bounded via soTimeout so this test fails fast
+        // (SocketTimeoutException) rather than hanging CI if the leak regresses.
+        val session = makeSession()
+        val port: Int = session.start().join()
+        val client = TestDebugClient()
+
+        Socket("localhost", port).use { socket ->
+            socket.soTimeout = 3000
+            val launcher =
+                DSPLauncher.createClientLauncher(
+                    client,
+                    socket.getInputStream(),
+                    socket.getOutputStream(),
+                )
+            val clientThread = launcher.startListening()
+            val server: IDebugProtocolServer = launcher.remoteProxy
+            server.initialize(InitializeRequestArguments()).get()
+            server.configurationDone(ConfigurationDoneArguments()).get()
+            server.disconnect(DisconnectArguments()).get()
+            client.exited().get()
+            clientThread.cancel(true)
+
+            val eof = socket.getInputStream().read()
+            assertEquals(-1, eof, "server should have closed its end of the socket after the session exited")
+        }
+    }
+
+    @Test
     fun `stop releases an unconnected accept and clears isActive`() {
         val session = makeSession()
         session.start().join()

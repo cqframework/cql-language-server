@@ -76,21 +76,4 @@ class CqlContentTest {
         lib.addContent().setContentType("text/cql").url = "not-a-real-path/Test.cql"
         assertThrows(ResourceNotFoundException::class.java) { IgStandardCqlContent.loadCqlContent(lib, tempDir!!) }
     }
-
-    @Suppress("ARGUMENT_TYPE_MISMATCH")
-    @Test
-    fun nullThrows() {
-        @Suppress("ARGUMENT_TYPE_MISMATCH")
-        assertThrows(NullPointerException::class.java) {
-            @Suppress("ARGUMENT_TYPE_MISMATCH")
-            IgStandardCqlContent.loadCqlContent(null as org.hl7.fhir.instance.model.api.IBaseResource?, tempDir!!)
-        }
-
-        val lib = Library()
-        @Suppress("ARGUMENT_TYPE_MISMATCH")
-        assertThrows(NullPointerException::class.java) {
-            @Suppress("ARGUMENT_TYPE_MISMATCH")
-            IgStandardCqlContent.loadCqlContent(lib, null as Path?)
-        }
-    }
 }

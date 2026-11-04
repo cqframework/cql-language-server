@@ -242,8 +242,8 @@ class ExpressionTrackBackVisitorTest {
         // The ConceptDef's code list contains a CodeRef referencing "Venous foot pain, left".
         val uri = Uris.parseOrNull("/org/opencds/cqf/cql/ls/server/TerminologyLib.cql")!!
         val library = compilationManager.compile(uri)!!.library!!
-        val conceptDef = library.concepts!!.def.first { it.name == "Left Foot Pain" } as org.hl7.elm.r1.ConceptDef
-        val codeRef = conceptDef.code?.firstOrNull() ?: return
+        val conceptDef = library.concepts!!.def.first { it.name == "Left Foot Pain" }
+        val codeRef = conceptDef.code.firstOrNull() ?: return
         val range = TrackBacks.toRange(codeRef.locator!!)!!
         val pos = Position(range.start.line, range.start.character + 1)
         val result = ExpressionTrackBackVisitor().visitLibrary(library, pos)

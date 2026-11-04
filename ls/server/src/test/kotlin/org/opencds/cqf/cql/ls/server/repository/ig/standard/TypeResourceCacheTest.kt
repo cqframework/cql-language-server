@@ -34,8 +34,8 @@ class TypeResourceCacheTest {
     fun `repeated search returns same results from cache`() {
         val repo = createRepository()
 
-        val first = repo.search(Bundle::class.java, Library::class.java, Searches.ALL)
-        val second = repo.search(Bundle::class.java, Library::class.java, Searches.ALL)
+        val first = repo.search(Bundle::class.java, Library::class.java, Searches.builder().build())
+        val second = repo.search(Bundle::class.java, Library::class.java, Searches.builder().build())
 
         assertEquals(first.entry.size, second.entry.size)
     }
@@ -45,7 +45,7 @@ class TypeResourceCacheTest {
         val repo = createRepository()
 
         // Warm the cache for Library.
-        val beforeCount = repo.search(Bundle::class.java, Library::class.java, Searches.ALL).entry.size
+        val beforeCount = repo.search(Bundle::class.java, Library::class.java, Searches.builder().build()).entry.size
 
         // Write a new Library file directly to disk, bypassing the repo API so resourceCache
         // is NOT updated — only the filesystem changes.
@@ -54,12 +54,12 @@ class TypeResourceCacheTest {
         newFile.toFile().writeText("""{"resourceType":"Library","id":"extra","type":{"coding":[{"code":"logic-library"}]},"content":[]}""")
 
         // Cache is still warm — new file is invisible to search().
-        val cachedCount = repo.search(Bundle::class.java, Library::class.java, Searches.ALL).entry.size
+        val cachedCount = repo.search(Bundle::class.java, Library::class.java, Searches.builder().build()).entry.size
         assertEquals(beforeCount, cachedCount, "typeResourceCache should hide the new file")
 
         // After clearCache(), the directory is re-scanned and the new file is visible.
         repo.clearCache()
-        val afterCount = repo.search(Bundle::class.java, Library::class.java, Searches.ALL).entry.size
+        val afterCount = repo.search(Bundle::class.java, Library::class.java, Searches.builder().build()).entry.size
         assertEquals(beforeCount + 1, afterCount, "clearCache() should expose the newly written file")
     }
 
@@ -67,16 +67,16 @@ class TypeResourceCacheTest {
     fun `cache is independent per resource type`() {
         val repo = createRepository()
 
-        val libraries = repo.search(Bundle::class.java, Library::class.java, Searches.ALL)
-        val valueSets = repo.search(Bundle::class.java, ValueSet::class.java, Searches.ALL)
+        val libraries = repo.search(Bundle::class.java, Library::class.java, Searches.builder().build())
+        val valueSets = repo.search(Bundle::class.java, ValueSet::class.java, Searches.builder().build())
 
         // Both types cached independently — counts are not mixed.
         assertEquals(
-            repo.search(Bundle::class.java, Library::class.java, Searches.ALL).entry.size,
+            repo.search(Bundle::class.java, Library::class.java, Searches.builder().build()).entry.size,
             libraries.entry.size,
         )
         assertEquals(
-            repo.search(Bundle::class.java, ValueSet::class.java, Searches.ALL).entry.size,
+            repo.search(Bundle::class.java, ValueSet::class.java, Searches.builder().build()).entry.size,
             valueSets.entry.size,
         )
     }
