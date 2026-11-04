@@ -30,6 +30,8 @@ import org.opencds.cqf.cql.ls.server.service.DiagnosticsService
 import org.opencds.cqf.cql.ls.server.service.FederatedContentService
 import org.opencds.cqf.cql.ls.server.service.FileContentService
 import org.opencds.cqf.cql.ls.server.utility.VersionReader
+import org.opencds.cqf.cql.ls.server.validation.profile.IgContextManagerIgInfo
+import org.opencds.cqf.cql.ls.server.validation.profile.ProfileValidatorRegistry
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
 import java.util.concurrent.CompletableFuture
@@ -88,7 +90,7 @@ fun main(args: Array<String>) {
     contributions.add(VirtualSourceCommandContribution(compilationManager))
     contributions.add(ExecuteCqlCommandContribution(igContextManager, federatedContentService, libraryResolutionManager))
     contributions.add(GetVersionInfoCommandContribution())
-    contributions.add(ValidateTestCaseCommandContribution())
+    contributions.add(ValidateTestCaseCommandContribution(ProfileValidatorRegistry(IgContextManagerIgInfo(igContextManager))))
     contributions.add(
         DebugCommandContribution(compilationManager, federatedContentService, igContextManager, libraryResolutionManager),
     )

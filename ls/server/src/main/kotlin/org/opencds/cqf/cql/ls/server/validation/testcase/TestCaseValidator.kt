@@ -2,7 +2,16 @@ package org.opencds.cqf.cql.ls.server.validation.testcase
 
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
+import org.opencds.cqf.cql.ls.server.validation.profile.CaseResourceIndex
+import org.opencds.cqf.cql.ls.server.validation.profile.CoreEngineProfileValidator
+import org.opencds.cqf.cql.ls.server.validation.profile.EngineMode
+import org.opencds.cqf.cql.ls.server.validation.profile.ProfileEngineState
+import org.opencds.cqf.cql.ls.server.validation.profile.ProfileIssuePolicy
+import org.opencds.cqf.cql.ls.server.validation.profile.ProfileValidatorLookup
+import org.opencds.cqf.cql.ls.server.validation.profile.ProfileValidatorProvider
+import org.opencds.cqf.cql.ls.server.validation.profile.ResourceProfileValidator
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -14,11 +23,22 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
-class TestCaseValidator {
+/**
+ * Validates test cases with custom case-level checks and, when [profileValidators] is set and a
+ * request asks for it, FHIR profile validation by the core engine.
+ */
+class TestCaseValidator(private val profileValidators: ProfileValidatorProvider? = null) {
     companion object {
         private val log = LoggerFactory.getLogger(TestCaseValidator::class.java)
 
+        /** Custom checks the core engine covers; dropped for files the engine validated. */
+        val COVERED_BY_CORE = setOf("ERR_DANGLING_REFERENCE", "ERR_MISSING_REQUIRED_FIELD", "WARN_MISSING_REQUIRED_FIELD", "WARN_FULLURL_MISMATCH")
+
+        const val WARMING_MESSAGE = "Profile validation is starting; results include custom checks only. Run again shortly."
+
         private val RESERVED_DIR_NAMES = setOf("results", "__MACOSX", ".git", ".cql-debug", "shared")
+        private val SLASH_DRIVE_LETTER = Regex("^/[A-Za-z]:")
+        private val GSON_LINE = Regex("line (\\d+)")
 
         fun normalizePath(pathStr: String): Path {
             return if (pathStr.startsWith("file:")) {
@@ -26,7 +46,8 @@ class TestCaseValidator {
                     Paths.get(URI.create(pathStr.replace(" ", "%20")))
                 } catch (e: Exception) {
                     val stripped = pathStr.removePrefix("file://").removePrefix("file:")
-                    Paths.get(stripped)
+                    // `/C:/...` is a Windows drive path carried over from the URI form
+                    Paths.get(if (SLASH_DRIVE_LETTER.containsMatchIn(stripped)) stripped.substring(1) else stripped)
                 }
             } else {
                 Paths.get(pathStr)
@@ -42,7 +63,25 @@ class TestCaseValidator {
         val jsonObject: JsonObject,
         val lines: List<String>,
         val jsonPathPrefix: String = "",
+        // 1-based line where this resource starts in its file, used to anchor line lookups
+        val anchorLine: Int = 1,
     )
+
+    data class ParsedFile(
+        val resources: List<RawResource>,
+        val issue: ValidationIssue? = null,
+    )
+
+    /** A request's profile validation: the engine mode and what the provider handed out. */
+    private data class ProfileRun(val mode: EngineMode, val lookup: ProfileValidatorLookup) {
+        val status: ProfileStatus
+            get() =
+                when (lookup.state) {
+                    ProfileEngineState.READY -> ProfileStatus.RAN
+                    ProfileEngineState.FAILED -> ProfileStatus.FAILED
+                    else -> ProfileStatus.WARMING
+                }
+    }
 
     data class DiscoveredCase(
         val name: String,
@@ -50,6 +89,7 @@ class TestCaseValidator {
         val resources: List<RawResource>,
         val sharedResources: List<RawResource>,
         val madieManifestPath: Path? = null,
+        val parseIssues: List<ValidationIssue> = emptyList(),
     )
 
     fun validate(request: ValidateTestCaseRequest): ValidateTestCaseResponse {
@@ -88,7 +128,8 @@ class TestCaseValidator {
         }
 
         val discoveredCases = discoverTestCases(targetPath, options)
-        val caseResults = discoveredCases.map { validateCase(it, options) }
+        val profileRun = startProfileRun(targetPath, options)
+        val caseResults = discoveredCases.map { validateCase(it, options, profileRun) }
 
         val totalErrors = caseResults.sumOf { it.errorCount }
         val totalWarnings = caseResults.sumOf { it.warningCount }
@@ -101,8 +142,36 @@ class TestCaseValidator {
             errorCount = totalErrors,
             warningCount = totalWarnings,
             testCases = caseResults,
+            profileStatus = profileRun?.status ?: ProfileStatus.OFF,
+            profileMessage = profileRun?.let { run -> responseProfileMessage(run, caseResults) },
         )
     }
+
+    private fun startProfileRun(
+        targetPath: Path,
+        options: ValidateTestCaseOptions,
+    ): ProfileRun? {
+        val mode =
+            when (options.profile) {
+                ProfileMode.QUICK -> EngineMode.QUICK
+                ProfileMode.FULL -> EngineMode.FULL
+                ProfileMode.OFF, null -> return null
+            }
+        val lookup =
+            profileValidators?.acquire(targetPath, options.packages.orEmpty(), mode)
+                ?: ProfileValidatorLookup(ProfileEngineState.FAILED, message = "Profile validation is not available in this language server.")
+        return ProfileRun(mode, lookup)
+    }
+
+    private fun responseProfileMessage(
+        run: ProfileRun,
+        caseResults: List<TestCaseValidationResult>,
+    ): String? =
+        when (run.status) {
+            ProfileStatus.WARMING -> run.lookup.message ?: WARMING_MESSAGE
+            ProfileStatus.RAN -> caseResults.firstNotNullOfOrNull { it.profileMessage }
+            else -> run.lookup.message
+        }
 
     private fun discoverTestCases(
         targetPath: Path,
@@ -111,16 +180,16 @@ class TestCaseValidator {
         val cases = mutableListOf<DiscoveredCase>()
 
         if (targetPath.isRegularFile() && targetPath.name.endsWith(".json", ignoreCase = true)) {
-            val resources = parseJsonFile(targetPath)
-            if (resources.isNotEmpty()) {
-                val isBundle = resources.size > 1 || resources.firstOrNull()?.jsonObject?.get("resourceType")?.asString == "Bundle"
+            val parsed = parseJsonFile(targetPath)
+            if (parsed.resources.isNotEmpty() || parsed.issue != null) {
                 val shared = loadSharedResources(targetPath.parent, options)
                 cases.add(
                     DiscoveredCase(
                         name = targetPath.name.removeSuffix(".json"),
                         casePath = targetPath,
-                        resources = resources,
+                        resources = parsed.resources,
                         sharedResources = shared,
+                        parseIssues = listOfNotNull(parsed.issue),
                     ),
                 )
             }
@@ -128,11 +197,10 @@ class TestCaseValidator {
         }
 
         if (targetPath.isDirectory()) {
-            // Check if this directory directly contains resource JSON files
-            val directJsonFiles = listJsonFiles(targetPath)
-            val directResources = directJsonFiles.flatMap { parseJsonFile(it) }
+            // Check if this directory directly contains resource JSON files (or JSON files that failed to parse)
+            val directParsed = listJsonFiles(targetPath).map { parseJsonFile(it) }
 
-            if (directResources.isNotEmpty()) {
+            if (directParsed.any { it.resources.isNotEmpty() || it.issue != null }) {
                 // Single test case directory
                 val shared = loadSharedResources(targetPath.parent, options)
                 val madieFile = findMadieManifest(targetPath.parent)
@@ -140,9 +208,10 @@ class TestCaseValidator {
                     DiscoveredCase(
                         name = targetPath.name,
                         casePath = targetPath,
-                        resources = directResources,
+                        resources = directParsed.flatMap { it.resources },
                         sharedResources = shared,
                         madieManifestPath = madieFile,
+                        parseIssues = directParsed.mapNotNull { it.issue },
                     ),
                 )
                 return cases
@@ -157,16 +226,16 @@ class TestCaseValidator {
                     stream.filter { Files.isDirectory(it) && !RESERVED_DIR_NAMES.contains(it.name) && !it.name.startsWith(".") }
                         .sorted()
                         .forEach { subDir ->
-                            val files = listJsonFiles(subDir)
-                            val subResources = files.flatMap { parseJsonFile(it) }
-                            if (subResources.isNotEmpty()) {
+                            val subParsed = listJsonFiles(subDir).map { parseJsonFile(it) }
+                            if (subParsed.any { it.resources.isNotEmpty() || it.issue != null }) {
                                 cases.add(
                                     DiscoveredCase(
                                         name = subDir.name,
                                         casePath = subDir,
-                                        resources = subResources,
+                                        resources = subParsed.flatMap { it.resources },
                                         sharedResources = shared,
                                         madieManifestPath = madieFile,
+                                        parseIssues = subParsed.mapNotNull { it.issue },
                                     ),
                                 )
                             }
@@ -200,13 +269,13 @@ class TestCaseValidator {
         if (dir != null) {
             val sharedDir = dir.resolve("shared")
             if (Files.isDirectory(sharedDir)) {
-                listJsonFiles(sharedDir).forEach { sharedList.addAll(parseJsonFile(it)) }
+                listJsonFiles(sharedDir).forEach { sharedList.addAll(parseJsonFile(it).resources) }
             }
         }
         options.sharedDirs?.forEach { sharedPathStr ->
             val p = normalizePath(sharedPathStr)
             if (Files.isDirectory(p)) {
-                listJsonFiles(p).forEach { sharedList.addAll(parseJsonFile(it)) }
+                listJsonFiles(p).forEach { sharedList.addAll(parseJsonFile(it).resources) }
             }
         }
         return sharedList
@@ -221,64 +290,119 @@ class TestCaseValidator {
         return null
     }
 
-    private fun parseJsonFile(filePath: Path): List<RawResource> {
+    private fun parseJsonFile(filePath: Path): ParsedFile {
+        val text =
+            try {
+                filePath.readText()
+            } catch (e: Exception) {
+                log.warn("Failed to read JSON file {}: {}", filePath, e.message)
+                return ParsedFile(emptyList())
+            }
+        val lines = text.lines()
+
+        fun invalidJson(
+            message: String,
+            line: Int,
+        ) = ValidationIssue(
+            severity = ValidationSeverity.ERROR,
+            code = "ERR_INVALID_JSON",
+            message = message,
+            filePath = filePath.toString(),
+            line = line,
+        )
+
         return try {
-            val text = filePath.readText()
-            val lines = text.lines()
             val parsed = JsonParser.parseString(text)
-            if (!parsed.isJsonObject) return emptyList()
+            if (!parsed.isJsonObject) return ParsedFile(emptyList())
 
             val obj = parsed.asJsonObject
-            val type = obj.get("resourceType")?.asString ?: return emptyList()
+            // A JSON object without resourceType (e.g. config.json) is not a FHIR resource; ignore it
+            val typeElement = obj.get("resourceType") ?: return ParsedFile(emptyList())
+            val type =
+                typeElement.stringOrNull()
+                    ?: return ParsedFile(
+                        emptyList(),
+                        invalidJson(
+                            "Invalid FHIR JSON in ${filePath.name}: 'resourceType' must be a string.",
+                            findLine(lines, Regex("\"resourceType\"\\s*:")) ?: 1,
+                        ),
+                    )
 
             if (type == "Bundle") {
-                val entries = obj.getAsJsonArray("entry") ?: return emptyList()
+                val entries = obj.getAsJsonArray("entry") ?: return ParsedFile(emptyList())
                 val list = mutableListOf<RawResource>()
+                var issue: ValidationIssue? = null
+                var previousAnchor = 1
                 for (i in 0 until entries.size()) {
                     val entry = entries.get(i)
                     if (entry.isJsonObject) {
                         val entryObj = entry.asJsonObject
-                        val res = entryObj.getAsJsonObject("resource")
-                        val fullUrl = entryObj.get("fullUrl")?.asString
-                        if (res != null && res.has("resourceType")) {
-                            list.add(
-                                RawResource(
-                                    resourceType = res.get("resourceType").asString,
-                                    id = res.get("id")?.asString,
-                                    fullUrl = fullUrl,
-                                    filePath = filePath,
-                                    jsonObject = res,
-                                    lines = lines,
-                                    jsonPathPrefix = "entry[$i].resource",
-                                ),
-                            )
+                        val res = entryObj.get("resource")?.takeIf { it.isJsonObject }?.asJsonObject
+                        val fullUrl = entryObj.get("fullUrl")?.stringOrNull()
+                        val resTypeElement = res?.get("resourceType") ?: continue
+                        val resType = resTypeElement.stringOrNull()
+                        if (resType == null) {
+                            issue =
+                                issue ?: invalidJson(
+                                    "Invalid FHIR JSON in ${filePath.name}: entry[$i].resource.resourceType must be a string.",
+                                    findLine(lines, Regex("\"resourceType\"\\s*:\\s*[^\"\\s]"), previousAnchor - 1) ?: 1,
+                                )
+                            continue
                         }
+                        val id = res.get("id")?.stringOrNull()
+                        val anchor =
+                            id?.let { findLineFrom(lines, Regex("\"id\"\\s*:\\s*\"${Regex.escape(it)}\""), previousAnchor - 1) }
+                                ?: findLineFrom(lines, Regex("\"resourceType\"\\s*:\\s*\"${Regex.escape(resType)}\""), previousAnchor - 1)
+                                ?: 1
+                        previousAnchor = maxOf(previousAnchor, anchor)
+                        list.add(
+                            RawResource(
+                                resourceType = resType,
+                                id = id,
+                                fullUrl = fullUrl,
+                                filePath = filePath,
+                                jsonObject = res,
+                                lines = lines,
+                                jsonPathPrefix = "entry[$i].resource",
+                                anchorLine = anchor,
+                            ),
+                        )
                     }
                 }
-                list
+                ParsedFile(list, issue)
             } else {
-                listOf(
-                    RawResource(
-                        resourceType = type,
-                        id = obj.get("id")?.asString,
-                        fullUrl = null,
-                        filePath = filePath,
-                        jsonObject = obj,
-                        lines = lines,
+                ParsedFile(
+                    listOf(
+                        RawResource(
+                            resourceType = type,
+                            id = obj.get("id")?.stringOrNull(),
+                            fullUrl = null,
+                            filePath = filePath,
+                            jsonObject = obj,
+                            lines = lines,
+                            anchorLine = findLine(lines, Regex("\"resourceType\"\\s*:\\s*\"${Regex.escape(type)}\"")) ?: 1,
+                        ),
                     ),
                 )
             }
+        } catch (e: JsonParseException) {
+            log.warn("Failed to parse JSON file {}: {}", filePath, e.message)
+            val line = e.message?.let { GSON_LINE.find(it) }?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            ParsedFile(emptyList(), invalidJson("Invalid JSON in ${filePath.name}: ${e.cause?.message ?: e.message}", line))
         } catch (e: Exception) {
             log.warn("Failed to parse JSON file {}: {}", filePath, e.message)
-            emptyList()
+            ParsedFile(emptyList())
         }
     }
+
+    private fun JsonElement.stringOrNull(): String? = if (isJsonPrimitive && asJsonPrimitive.isString) asString else null
 
     private fun validateCase(
         case: DiscoveredCase,
         options: ValidateTestCaseOptions,
+        profileRun: ProfileRun? = null,
     ): TestCaseValidationResult {
-        val issues = mutableListOf<ValidationIssue>()
+        val issues = case.parseIssues.toMutableList()
 
         // 1. Identify patients
         val patients = case.resources.filter { it.resourceType == "Patient" }
@@ -304,13 +428,18 @@ class TestCaseValidator {
                             code = "ERR_MULTIPLE_PATIENTS",
                             message = "Test case '${case.name}' contains multiple Patient resources ($ids). Expected exactly one Patient.",
                             filePath = patients.first().filePath.toString(),
-                            line = findLine(patients.first().lines, Regex("\"resourceType\"\\s*:\\s*\"Patient\"")),
+                            line = patients.first().anchorLine,
                         ),
                     )
-                    patients.firstOrNull()?.id
+                    patients.first().let { it.id ?: it.fullUrlUuid() }
                 }
-                else -> patients.first().id
+                else -> patients.first().let { it.id ?: it.fullUrlUuid() }
             }
+        // Every form a reference to the test case patient may take: id, fullUrl, and the fullUrl's urn:uuid
+        val patientIdentities =
+            patients.firstOrNull()?.let { patient ->
+                setOfNotNull(patient.id, patient.fullUrl, patient.fullUrl?.let { normalizeReferenceId(it) })
+            } ?: emptySet()
 
         // 2. Duplicate Resource IDs check
         if (options.checkDuplicateIds) {
@@ -329,7 +458,7 @@ class TestCaseValidator {
                                 resourceId = id,
                                 filePath = dup.filePath.toString(),
                                 jsonPath = if (dup.jsonPathPrefix.isNotEmpty()) "${dup.jsonPathPrefix}.id" else "id",
-                                line = findLine(dup.lines, Regex("\"id\"\\s*:\\s*\"$id\"")),
+                                line = findLine(dup.lines, Regex("\"id\"\\s*:\\s*\"${Regex.escape(id)}\""), dup.anchorLine - 1),
                             ),
                         )
                     }
@@ -364,16 +493,16 @@ class TestCaseValidator {
         if (options.checkPatientLinkage && patientId != null) {
             for (res in case.resources) {
                 if (res.resourceType == "Patient") continue
+                // MeasureReport subjects are checked (once) by validateMeasureReport
+                if (res.resourceType == "MeasureReport" && options.checkMadieStructure) continue
 
                 // Check subject, patient, beneficiary
-                val subjectRef =
-                    extractReferenceTarget(res.jsonObject, "subject")
-                        ?: extractReferenceTarget(res.jsonObject, "patient")
-                        ?: extractReferenceTarget(res.jsonObject, "beneficiary")
+                val subjectField = listOf("subject", "patient", "beneficiary").firstOrNull { extractReferenceTarget(res.jsonObject, it) != null }
+                val subjectRef = subjectField?.let { extractReferenceTarget(res.jsonObject, it) }
 
                 if (subjectRef != null) {
                     val normalizedTargetId = normalizeReferenceId(subjectRef)
-                    if (isPatientReference(subjectRef) && normalizedTargetId != patientId) {
+                    if (isPatientReference(subjectRef) && !isTestCasePatient(subjectRef, patientIdentities)) {
                         issues.add(
                             ValidationIssue(
                                 severity = ValidationSeverity.ERROR,
@@ -382,8 +511,13 @@ class TestCaseValidator {
                                 resourceType = res.resourceType,
                                 resourceId = res.id,
                                 filePath = res.filePath.toString(),
-                                jsonPath = if (res.jsonPathPrefix.isNotEmpty()) "${res.jsonPathPrefix}.subject.reference" else "subject.reference",
-                                line = findLine(res.lines, Regex("\"reference\"\\s*:\\s*\"[^\"]*$normalizedTargetId[^\"]*\"")),
+                                jsonPath = if (res.jsonPathPrefix.isNotEmpty()) "${res.jsonPathPrefix}.$subjectField.reference" else "$subjectField.reference",
+                                line =
+                                    findLine(
+                                        res.lines,
+                                        Regex("\"reference\"\\s*:\\s*\"${Regex.escape(subjectRef)}\""),
+                                        res.anchorLine - 1,
+                                    ),
                             ),
                         )
                     }
@@ -396,18 +530,26 @@ class TestCaseValidator {
             for (res in case.resources) {
                 val refs = mutableListOf<Pair<String, String>>() // (jsonPath, refValue)
                 collectReferences(res.jsonObject, "", refs)
+                val containedIds by lazy {
+                    res.jsonObject.get("contained")?.takeIf { it.isJsonArray }?.asJsonArray
+                        ?.mapNotNull { it.takeIf { c -> c.isJsonObject }?.asJsonObject?.get("id")?.stringOrNull() }
+                        ?.toSet() ?: emptySet()
+                }
 
                 for ((jsonPath, refValue) in refs) {
                     if (isIgnoredReference(refValue)) continue
 
                     val resolved =
-                        if (refValue.startsWith("urn:uuid:")) {
+                        if (refValue.startsWith("#")) {
+                            // Local reference to a contained resource ("#" alone is the container itself)
+                            refValue == "#" || containedIds.contains(refValue.substring(1))
+                        } else if (refValue.startsWith("urn:uuid:")) {
                             val uuid = refValue.removePrefix("urn:uuid:")
                             allUuids.contains(uuid) || fullUrls.contains(refValue)
                         } else if (refValue.contains("/")) {
                             val parts = refValue.split("/", limit = 2)
                             val refType = parts[0]
-                            val refId = parts[1]
+                            val refId = parts[1].substringBefore("/_history/")
                             if (refType in setOf("Measure", "Library")) {
                                 true
                             } else {
@@ -429,7 +571,7 @@ class TestCaseValidator {
                                 resourceId = res.id,
                                 filePath = res.filePath.toString(),
                                 jsonPath = fullJsonPath,
-                                line = findLine(res.lines, Regex("\"reference\"\\s*:\\s*\"${Regex.escape(refValue)}\"")),
+                                line = findLine(res.lines, Regex("\"reference\"\\s*:\\s*\"${Regex.escape(refValue)}\""), res.anchorLine - 1),
                             ),
                         )
                     }
@@ -441,7 +583,7 @@ class TestCaseValidator {
         if (options.checkMadieStructure) {
             for (res in case.resources) {
                 if (res.resourceType == "MeasureReport") {
-                    validateMeasureReport(res, patientId, issues)
+                    validateMeasureReport(res, patientId, patientIdentities, issues)
                 }
 
                 // Check bundle fullUrl vs resource id
@@ -452,7 +594,7 @@ class TestCaseValidator {
                         issues.add(
                             ValidationIssue(
                                 severity = ValidationSeverity.WARNING,
-                                code = "ERR_FULLURL_MISMATCH",
+                                code = "WARN_FULLURL_MISMATCH",
                                 message = "Bundle entry fullUrl '${res.fullUrl}' does not match resource ${res.resourceType}/${res.id}.",
                                 resourceType = res.resourceType,
                                 resourceId = res.id,
@@ -478,6 +620,16 @@ class TestCaseValidator {
             }
         }
 
+        // 7. Profile validation by the core engine, when it is ready
+        var suppressedCount = 0
+        var profileMessage = profileRun?.lookup?.message ?: if (profileRun?.status == ProfileStatus.WARMING) WARMING_MESSAGE else null
+        val profileValidator = profileRun?.lookup?.validator
+        if (profileRun != null && profileValidator != null) {
+            val result = runProfileValidation(case, options, profileRun.mode, profileValidator, issues)
+            suppressedCount = result.suppressedCount
+            profileMessage = result.hint
+        }
+
         val errors = issues.count { it.severity == ValidationSeverity.ERROR }
         val warnings = issues.count { it.severity == ValidationSeverity.WARNING }
 
@@ -489,12 +641,45 @@ class TestCaseValidator {
             errorCount = errors,
             warningCount = warnings,
             issues = issues,
+            profileStatus = profileRun?.status ?: ProfileStatus.OFF,
+            profileMessage = profileMessage,
+            suppressedCount = suppressedCount,
         )
+    }
+
+    private data class ProfileResult(val suppressedCount: Int, val hint: String?)
+
+    /**
+     * Runs the core engine on the case's files and merges its issues into [issues], dropping the
+     * custom checks it covers for each file it validated. Files that failed to parse keep only the
+     * custom ERR_INVALID_JSON (its line number is reliable) and are not sent to the engine.
+     */
+    private fun runProfileValidation(
+        case: DiscoveredCase,
+        options: ValidateTestCaseOptions,
+        mode: EngineMode,
+        validator: ResourceProfileValidator,
+        issues: MutableList<ValidationIssue>,
+    ): ProfileResult {
+        val unparsable = case.parseIssues.mapNotNull { it.filePath }.toSet()
+        val files = case.resources.map { it.filePath }.distinct().filter { it.toString() !in unparsable }
+        if (files.isEmpty()) return ProfileResult(0, null)
+
+        val coreIssues = validator.validate(files, CaseResourceIndex.of(case.resources + case.sharedResources), mode, options.checkReferences)
+        val hint = ProfileIssuePolicy.unknownProfileHint(coreIssues)
+        val filtered = ProfileIssuePolicy(mode, options.suppressMessageIds, options.downgradeMessageIds).apply(coreIssues)
+
+        val engineFailed = coreIssues.filter { it.code == CoreEngineProfileValidator.VALIDATION_FAILED_CODE }.mapNotNull { it.filePath }.toSet()
+        val validated = files.map { it.toString() }.toSet() - engineFailed
+        issues.removeAll { it.code in COVERED_BY_CORE && it.filePath in validated }
+        issues.addAll(filtered.issues)
+        return ProfileResult(filtered.suppressedCount, hint)
     }
 
     private fun validateMeasureReport(
         res: RawResource,
         patientId: String?,
+        patientIdentities: Set<String>,
         issues: MutableList<ValidationIssue>,
     ) {
         val obj = res.jsonObject
@@ -510,8 +695,7 @@ class TestCaseValidator {
                             if (p.isJsonObject && p.asJsonObject.get("name")?.asString == "subject") {
                                 val subjectVal = p.asJsonObject.get("valueString")?.asString
                                 if (subjectVal != null && patientId != null) {
-                                    val norm = normalizeReferenceId(subjectVal)
-                                    if (norm != patientId) {
+                                    if (!isTestCasePatient(subjectVal, patientIdentities)) {
                                         issues.add(
                                             ValidationIssue(
                                                 severity = ValidationSeverity.ERROR,
@@ -521,7 +705,7 @@ class TestCaseValidator {
                                                 resourceId = res.id,
                                                 filePath = res.filePath.toString(),
                                                 jsonPath = "contained[Parameters].parameter[subject].valueString",
-                                                line = findLine(res.lines, Regex("\"valueString\"\\s*:\\s*\"${Regex.escape(subjectVal)}\"")),
+                                                line = findLine(res.lines, Regex("\"valueString\"\\s*:\\s*\"${Regex.escape(subjectVal)}\""), res.anchorLine - 1),
                                             ),
                                         )
                                     }
@@ -536,8 +720,7 @@ class TestCaseValidator {
         // Check top-level subject
         val topSubject = extractReferenceTarget(obj, "subject")
         if (topSubject != null && patientId != null) {
-            val norm = normalizeReferenceId(topSubject)
-            if (norm != patientId) {
+            if (!isTestCasePatient(topSubject, patientIdentities)) {
                 issues.add(
                     ValidationIssue(
                         severity = ValidationSeverity.ERROR,
@@ -547,7 +730,7 @@ class TestCaseValidator {
                         resourceId = res.id,
                         filePath = res.filePath.toString(),
                         jsonPath = "subject.reference",
-                        line = findLine(res.lines, Regex("\"reference\"\\s*:\\s*\"[^\"]*${Regex.escape(norm)}[^\"]*\"")),
+                        line = findLine(res.lines, Regex("\"reference\"\\s*:\\s*\"${Regex.escape(topSubject)}\""), res.anchorLine - 1),
                     ),
                 )
             }
@@ -614,7 +797,7 @@ class TestCaseValidator {
                         resourceId = id,
                         filePath = res.filePath.toString(),
                         jsonPath = "$prefix$field",
-                        line = findLine(res.lines, Regex("\"resourceType\"\\s*:\\s*\"$type\"")) ?: 1,
+                        line = res.anchorLine,
                     ),
                 )
             }
@@ -670,13 +853,21 @@ class TestCaseValidator {
     }
 
     private fun normalizeReferenceId(ref: String): String {
+        val unversioned = ref.substringBefore("/_history/")
         return when {
-            ref.startsWith("Patient/") -> ref.removePrefix("Patient/")
-            ref.startsWith("urn:uuid:") -> ref.removePrefix("urn:uuid:")
-            ref.contains("/") -> ref.substringAfterLast("/")
-            else -> ref
+            unversioned.startsWith("Patient/") -> unversioned.removePrefix("Patient/")
+            unversioned.startsWith("urn:uuid:") -> unversioned.removePrefix("urn:uuid:")
+            unversioned.contains("/") -> unversioned.substringAfterLast("/")
+            else -> unversioned
         }
     }
+
+    private fun isTestCasePatient(
+        ref: String,
+        patientIdentities: Set<String>,
+    ): Boolean = ref in patientIdentities || normalizeReferenceId(ref) in patientIdentities
+
+    private fun RawResource.fullUrlUuid(): String? = fullUrl?.takeIf { it.startsWith("urn:uuid:") }?.removePrefix("urn:uuid:")
 
     private fun isIgnoredReference(ref: String): Boolean {
         if (ref.isBlank()) return true
@@ -707,11 +898,24 @@ class TestCaseValidator {
         }
     }
 
+    /**
+     * Returns the 1-based line of the first match on or after [startIndex] (0-based), falling back to
+     * the first match in the whole file (e.g. a bundle entry's fullUrl sits above its resource's anchor).
+     */
     private fun findLine(
         lines: List<String>,
         regex: Regex,
+        startIndex: Int = 0,
+    ): Int? = findLineFrom(lines, regex, startIndex) ?: if (startIndex > 0) findLineFrom(lines, regex, 0) else null
+
+    private fun findLineFrom(
+        lines: List<String>,
+        regex: Regex,
+        startIndex: Int,
     ): Int? {
-        val idx = lines.indexOfFirst { regex.containsMatchIn(it) }
-        return if (idx >= 0) idx + 1 else null
+        for (i in startIndex.coerceAtLeast(0) until lines.size) {
+            if (regex.containsMatchIn(lines[i])) return i + 1
+        }
+        return null
     }
 }

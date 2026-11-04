@@ -185,6 +185,17 @@
                 <version>1.27.1</version>
             </dependency>
 
+            <!--
+                org.hl7.fhir.validation declares commons-collections4 (managed at 4.4 by
+                org.hl7.fhir.core 6.9.12) but it does not reach our tree; ValidationEngine needs
+                PassiveExpiringMap to build its SimpleWorkerContext.
+            -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-collections4</artifactId>
+                <version>4.4</version>
+            </dependency>
+
             <dependency>
                 <groupId>jakarta.xml.bind</groupId>
                 <artifactId>jakarta.xml.bind-api</artifactId>
