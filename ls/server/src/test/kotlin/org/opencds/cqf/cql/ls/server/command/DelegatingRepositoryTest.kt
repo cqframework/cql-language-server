@@ -1,7 +1,9 @@
 package org.opencds.cqf.cql.ls.server.command
 
 import ca.uhn.fhir.context.FhirContext
+import ca.uhn.fhir.model.api.IQueryParameterType
 import com.google.common.collect.ArrayListMultimap
+import com.google.common.collect.Multimap
 import org.hl7.fhir.r4.model.Bundle
 import org.hl7.fhir.r4.model.Patient
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -62,19 +64,21 @@ class DelegatingRepositoryTest {
         }
     }
 
+    private fun emptySearch(): Multimap<String?, MutableList<IQueryParameterType?>?> = ArrayListMultimap.create()
+
     @Test
     fun `ProxyRepository backed by DelegatingRepository reflects current swap`() {
         val delegating = DelegatingRepository(NoOpRepository(fhirContext))
         val proxy = ProxyRepository(delegating, delegating, delegating)
 
         // Search via the proxy should pass through the delegate to NoOp (empty bundle)
-        val result = proxy.search(Bundle::class.java, Patient::class.java, ArrayListMultimap.create(), emptyMap())
-        assertTrue(result.entry.isEmpty())
+        val result = proxy.search(Bundle::class.java, Patient::class.java, emptySearch(), HashMap<String?, String?>())
+        assertTrue(result!!.entry.isEmpty())
 
         // Swap to another NoOp — proxy still delegates correctly
         delegating.current = NoOpRepository(fhirContext)
-        val result2 = proxy.search(Bundle::class.java, Patient::class.java, ArrayListMultimap.create(), emptyMap())
-        assertTrue(result2.entry.isEmpty())
+        val result2 = proxy.search(Bundle::class.java, Patient::class.java, emptySearch(), HashMap<String?, String?>())
+        assertTrue(result2!!.entry.isEmpty())
     }
 
     @Test

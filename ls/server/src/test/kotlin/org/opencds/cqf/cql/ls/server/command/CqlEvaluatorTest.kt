@@ -193,9 +193,13 @@ class CqlEvaluatorTest {
 
     @Test
     fun `formatValue renders Tuple with full recursion and unwraps strings`() {
-        val tuple = org.opencds.cqf.cql.engine.runtime.Tuple()
-        tuple.elements["name"] = org.opencds.cqf.cql.engine.runtime.String("Annie")
-        tuple.elements["age"] = org.opencds.cqf.cql.engine.runtime.Integer(42)
+        val tuple =
+            org.opencds.cqf.cql.engine.runtime.Tuple(
+                linkedMapOf(
+                    "name" to org.opencds.cqf.cql.engine.runtime.String("Annie"),
+                    "age" to org.opencds.cqf.cql.engine.runtime.Integer(42),
+                ),
+            )
         assertEquals("Tuple {\n  name: Annie,\n  age: 42\n}", formatValue(tuple))
     }
 
@@ -225,9 +229,7 @@ class CqlEvaluatorTest {
 
     @Test
     fun `formatValue renders runtime Quantity via its toString`() {
-        val q = org.opencds.cqf.cql.engine.runtime.Quantity()
-        q.value = java.math.BigDecimal("5.4")
-        q.unit = "mg"
+        val q = org.opencds.cqf.cql.engine.runtime.Quantity(java.math.BigDecimal("5.4"), "mg")
         assertEquals("5.4 'mg'", formatValue(q))
     }
 
