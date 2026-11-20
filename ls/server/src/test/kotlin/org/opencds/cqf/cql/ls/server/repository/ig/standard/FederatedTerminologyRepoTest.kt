@@ -59,7 +59,7 @@ class FederatedTerminologyRepoTest {
         repo: FederatedTerminologyRepo,
         id: String,
     ): List<ValueSet> {
-        val result = repo.search(Bundle::class.java, ValueSet::class.java, Searches.byId(id), null)
+        val result = repo.search(Bundle::class.java, ValueSet::class.java, Searches.byId(id))
         @Suppress("UNCHECKED_CAST")
         return BundleUtil.toListOfResources(fhirContext, result) as List<ValueSet>
     }
@@ -129,7 +129,7 @@ class FederatedTerminologyRepoTest {
     @Test
     fun search_emptyDelegateList_returnsEmptyBundle() {
         val repo = FederatedTerminologyRepo(fhirContext, emptyList())
-        val result = repo.search(Bundle::class.java, ValueSet::class.java, Searches.byId("Any"), null)
+        val result = repo.search(Bundle::class.java, ValueSet::class.java, Searches.byId("Any"))
 
         assertNotNull(result)
         assertTrue(BundleUtil.toListOfResources(fhirContext, result).isEmpty())

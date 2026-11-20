@@ -54,6 +54,16 @@ open class IgContextManager(private val contentService: ContentService) {
         return cachedContext.computeIfAbsent(root) { readContext(it) }.orElse(null)
     }
 
+    /**
+     * The IGContext for the `ig.ini` at [igIniUri], cached under the IG root (the key an ig.ini
+     * change clears). Unlike [getContext] this never builds an NpmProcessor.
+     */
+    fun getIgContext(igIniUri: URI): IGContext? {
+        val root = Uris.getHead(igIniUri)
+        cachedIgContext[root]?.orElse(null)?.let { return it }
+        return findIgContext(igIniUri)?.also { cachedIgContext[root] = Optional.of(it) }
+    }
+
     protected fun clearContext(uri: URI) {
         val root = Uris.getHead(uri)
         cachedContext.remove(root)

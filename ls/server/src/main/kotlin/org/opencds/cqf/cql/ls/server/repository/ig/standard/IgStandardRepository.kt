@@ -537,7 +537,7 @@ open class IgStandardRepository : IRepository {
         resource: IBaseResource,
     ): Boolean {
         for (nextEntry in searchParameters.entries()) {
-            if (!resourceMatcher.matches(nextEntry.key, nextEntry.value, resource)) return false
+            if (!resourceMatcher.matches(nextEntry.key, nextEntry.value.toMutableList<IQueryParameterType?>(), resource)) return false
         }
         return true
     }
@@ -570,13 +570,15 @@ open class IgStandardRepository : IRepository {
     ): R {
         val provider = checkNotNull(operationProvider) { "No operation provider found. Unable to invoke operations." }
         @Suppress("UNCHECKED_CAST")
-        return provider.invokeOperation<org.hl7.fhir.instance.model.api.IPrimitiveType<String>, R>(
-            this,
-            id,
-            resourceType,
-            operationName,
-            parameters,
-        )
+        return checkNotNull(
+            provider.invokeOperation<org.hl7.fhir.instance.model.api.IPrimitiveType<String?>, R>(
+                this,
+                id,
+                resourceType,
+                operationName,
+                parameters,
+            ),
+        ) { "Operation \$$operationName returned no result." }
     }
 
     protected open fun compartmentFrom(headers: Map<String, String>?): IgStandardRepositoryCompartment {
