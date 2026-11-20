@@ -4,6 +4,10 @@
 
 A CQL Language server compatible with the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
 
+## Features
+
+See [docs/features.md](docs/features.md) for an overview of the supported LSP features, custom commands, the debugger, and test case validation.
+
 ## Usage
 
 Building this project requires Java 9+ and Maven 3.5+. The resulting jar is compatible with Java 8+.
