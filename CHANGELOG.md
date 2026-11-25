@@ -1,6 +1,16 @@
 # Change Log
 
 
+## v5.1.0
+
+Date: 2026-11-20
+
+* add test case resource validation command (org.opencds.cqf.cql.ls.validateTestCase)
+* add FHIR profile validation to test case validation (HL7 core validator; QUICK/FULL modes; prewarm command org.opencds.cqf.cql.ls.prewarmProfileValidation)
+* add language server feature overview (docs/features.md)
+* upgrade to cqf-fhir-cr 4.15.0 and cql 5.6.1
+* upgrade hapi-fhir-caching-caffeine to 8.12.0
+
 ## v5.0.0
 
 Date: 2026-10-28
